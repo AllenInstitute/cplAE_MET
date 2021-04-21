@@ -24,3 +24,8 @@ pip install rich tqdm timebudget
 ```bash
 pip install -e .
 ```
+
+### Additional repositories
+ - [celltype_hierarchy](https://github.com/AllenInstitute/celltype_hierarchy) - Helpers for dendrogram manipulation
+ - [cplAE_TE](https://github.com/AllenInstitute/coupledAE-patchseq) - Coupled autoencoders for T and E
+

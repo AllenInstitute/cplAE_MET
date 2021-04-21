@@ -4,7 +4,6 @@ from tensorflow.python.keras import layers
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.utils import tf_utils
 from tensorflow.python.ops import array_ops
-from tensorflow.python.ops.ragged.ragged_config import auto_cast_partition_dtype
 
 
 class Encoder_T(layers.Layer):
