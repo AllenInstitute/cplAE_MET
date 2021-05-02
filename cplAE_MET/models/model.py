@@ -570,9 +570,9 @@ class Model_TME(tf.keras.Model):
                E_dropout=0.1,
                M_gauss_noise_std=0.5,
                latent_dim=3,
-               train_T=True,
-               train_E=True, 
-               train_M=True,
+               train_T=False,
+               train_E=False, 
+               train_M=False,
                augment_decoders=False,
                name='TME',
                **kwargs):

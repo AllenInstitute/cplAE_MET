@@ -155,25 +155,26 @@ class Model_M(tf.keras.Model):
 
 
     def call(self, inputs):
-        #inputs[0]: T, 
-        #inputs[1]: E 
-        #inputs[2]: Hist 
+        #inputs[0]: T,
+        #inputs[1]: E
+        #inputs[2]: Hist
         #inputs[3]: soma_density
 
         #M arm forward pass
-        XM = tf.where(tf.math.is_nan(inputs[2]),x=0.0,y=inputs[2])  #Mask nans
-        maskM = tf.where(tf.math.is_nan(inputs[2]),x=0.0,y=1.0)     #Get mask to ignore error contribution
-        zM = self.encoder_M(XM,training=self.train_M)
-        XrM = self.decoder_M(zM,training=self.train_M)
-        
+        XM = tf.where(tf.math.is_nan(inputs[2]), x=0.0, y=inputs[2])  # Mask nans
+        # Get mask to ignore error contribution
+        maskM = tf.where(tf.math.is_nan(inputs[2]), x=0.0, y=1.0)
+        zM = self.encoder_M(XM, training=self.train_M)
+        XrM = self.decoder_M(zM, training=self.train_M)
+
         #Loss calculations
-        mse_loss_M_ = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XM, XrM),maskM))
-        mse_loss_M = mse_loss_M_ 
-                
+        mse_loss_M_ = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XM, XrM), maskM))
+        mse_loss_M = mse_loss_M_
+
         #Append to keras model losses for gradient calculations
         self.add_loss(self.alpha_M*mse_loss_M)
-        
+
         #For logging only
         self.mse_loss_M = mse_loss_M_
-        
+
         return zM,XrM
