@@ -4,9 +4,9 @@
  - Extending results from Patch-seq dataset to EM reconstructions
 
 ### Data
- - Patch-seq dataset for V1 cortical interneurons (Gala et al. 2021: 3,411 cells in T and E)
- - Patch-seq dataset for V1 cortical interneurons (Gouwens et al. 2020: 3,819 cells in T and E)
- - Density representations for morphology ()
+ - Patch-seq dataset for V1 cortical interneurons (Gala et al. 2021: 3411 cells in T and E)
+ - Patch-seq dataset for V1 cortical interneurons (Gouwens et al. 2020: 3819 cells in T and E)
+ - Density representations for morphology (721 cells)
 
 ### Environment
 
@@ -40,7 +40,6 @@ Test set: 5 cells from 14 t-types that have > 15 M samples
 `/data/results/:`
 `MET_3819_e1`: decoders were not augmented - leads to worse than possible reconstruction errors
 `MET_3819_e1_aug`: Augmented decoders, some improvement in reconstructions. Experiments with different parameter sets. 
-```
 
 ### Additional repositories
  - [celltype_hierarchy](https://github.com/AllenInstitute/celltype_hierarchy) - Helpers for dendrogram manipulation
