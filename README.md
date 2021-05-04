@@ -25,6 +25,23 @@ pip install rich tqdm timebudget
 pip install -e .
 ```
 
+4. Install the cplAE_TE repository. Directly installing from github through pip doesn't work as expected. 
+```bash
+git clone https://github.com/AllenInstitute/coupledAE-patchseq
+cd coupledAE-patchseq
+pip install -e .
+```
+
+### Experiments
+
+Performed on v2 dataset: 3819 T & E cells out of which 721 have M reconstructions
+Test set: 5 cells from 14 t-types that have > 15 M samples
+
+`/data/results/:`
+`MET_3819_e1`: decoders were not augmented - leads to worse than possible reconstruction errors
+`MET_3819_e1_aug`: Augmented decoders, some improvement in reconstructions. Experiments with different parameter sets. 
+```
+
 ### Additional repositories
  - [celltype_hierarchy](https://github.com/AllenInstitute/celltype_hierarchy) - Helpers for dendrogram manipulation
  - [cplAE_TE](https://github.com/AllenInstitute/coupledAE-patchseq) - Coupled autoencoders for T and E

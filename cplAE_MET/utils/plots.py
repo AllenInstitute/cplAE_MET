@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from numpy.core.numeric import zeros_like
 import seaborn as sns
 
 sns.set(style='white')
@@ -75,4 +76,66 @@ def matrix_scatterplot(M, xticklabels, yticklabels, xlabel='', ylabel='', fig_wi
     plt.grid(color='gray', linestyle='-', linewidth=0.5, alpha=0.4)
     plt.box(False)
     plt.tight_layout()
+    return
+
+
+def scatter3(X,col,xlims=(3,3),ylims=(3,3),zlims=(3,3),fig=None):
+    sns.set_style("whitegrid")
+    if fig is None:
+        fig = plt.figure(figsize=(4,4))
+        
+
+    plt.ion()    
+    ax = fig.add_subplot(111, projection='3d')
+    sc = ax.scatter(X[:,0], X[:,1], X[:,2],s=1,alpha=1,c=col)
+
+    ax.set_xticks([])
+    ax.set_zticks([])
+    ax.set_yticks([])
+    
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.set_zlabel('')
+    
+    ax.set_xlim(xlims[0],xlims[1])
+    ax.set_ylim(ylims[0],ylims[1])
+    ax.set_zlim(zlims[0],zlims[1])
+
+    plt.axis('on')
+    ax.set_frame_on(False)
+    plt.tight_layout()
+    return ax,sc
+
+
+def show_ax_de_maps(Left,Right=None):
+    """plots axon and dendrite density maps for comparison. Right image can be left empty.
+
+    Args:
+        Left: Data image with shape (120, 4, 2)
+        Right: Predicted image with shape (120, 4, 2)
+    """
+    if Right is None:
+        Right = np.zeros_like(Left)
+
+    plt.figure(figsize=(3,6))
+
+    plt.subplot(221)
+    plt.imshow(np.squeeze(Left[...,0]),aspect='auto',vmin=0,vmax=np.max(Left[...,0]))
+    plt.gca().set(**{'title':r'$X_m$','ylabel':'Dendrite map','xticks':[],'yticks':[]})
+    plt.grid(False)
+
+    plt.subplot(222)
+    plt.imshow(np.squeeze(Right[...,0]),aspect='auto',vmin=0,vmax=np.max(Right[...,1]))
+    plt.gca().set(**{'title':r'$X_t \rightarrow X_m$','xticks':[],'yticks':[]})
+    plt.grid(False)
+    
+    plt.subplot(223)
+    plt.imshow(np.squeeze(Left[...,1]),aspect='auto',vmin=0,vmax=np.max(Left[...,0]))
+    plt.gca().set(**{'ylabel':'Axon map','xticks':[],'yticks':[]})
+    plt.grid(False)
+
+    plt.subplot(224)
+    plt.imshow(np.squeeze(Right[...,1]),aspect='auto',vmin=0,vmax=np.max(Right[...,1]))
+    plt.gca().set(**{'xticks':[],'yticks':[]})
+    plt.grid(False)
     return

@@ -251,12 +251,6 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0,
                 save_results(model=model_TME, Data=D.copy(), fname=f'{save_fname}-summary.mat')
                 print(f'Model saved with best validation loss: {val_best_loss}')
 
-
-
-
-
-
-
     #Save model weights on exit
     save_fname = dir_pth['result']+fileid+'_exit'
     model_TME.save_weights(f'{save_fname}-weights.h5')

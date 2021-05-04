@@ -612,14 +612,15 @@ class Model_TME(tf.keras.Model):
 
         #T arm forward pass
         XT = inputs[0]
-        zT = self.encoder_T(XT,training=self.train_T)
-        XrT = self.decoder_T(zT,training=self.train_T)
+        zT = self.encoder_T(XT, training=self.train_T)
+        XrT = self.decoder_T(zT, training=self.train_T)
 
         #E arm forward pass
-        XE = tf.where(tf.math.is_nan(inputs[1]),x=0.0,y=inputs[1]) #Mask nans
-        maskE = tf.where(tf.math.is_nan(inputs[1]),x=0.0,y=1.0)    #Get mask to ignore error contribution
-        zE = self.encoder_E(XE,training=self.train_E)
-        XrE = self.decoder_E(zE,training=self.train_E)
+        XE = tf.where(tf.math.is_nan(inputs[1]), x=0.0, y=inputs[1])  # Mask nans
+        # Get mask to ignore error contribution
+        maskE = tf.where(tf.math.is_nan(inputs[1]), x=0.0, y=1.0)
+        zE = self.encoder_E(XE, training=self.train_E)
+        XrE = self.decoder_E(zE, training=self.train_E)
 
         #M arm forward pass
         XM = tf.where(tf.math.is_nan(inputs[2]),x=0.0,y=inputs[2]) #Mask nans
@@ -629,8 +630,8 @@ class Model_TME(tf.keras.Model):
         
         #Loss calculations
         mse_loss_T = tf.reduce_mean(tf.math.squared_difference(XT, XrT))
-        mse_loss_E = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XE, XrE),maskE))
-        mse_loss_M = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XM, XrM),maskM))
+        mse_loss_E = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XE, XrE), maskE))
+        mse_loss_M = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XM, XrM), maskM))
         
         keep_M = tf.where(tf.math.reduce_any(maskM > 0, axis=[1, 2, 3]),x=1.0,y=0.0)
         cpl_loss_TE = min_var_loss(zT, zE)
@@ -651,13 +652,29 @@ class Model_TME(tf.keras.Model):
         #Cross modal reconstructions - treat zE and zT as constants for this purpose
         mse_loss_T_aug = 0
         mse_loss_E_aug = 0
+        mse_loss_M_aug = 0
         if self.augment_decoders:
-            XrT_aug = self.decoder_T(tf.stop_gradient(zE),training=self.train_T)
-            XrE_aug = self.decoder_E(tf.stop_gradient(zT),training=self.train_E)
-            mse_loss_T_aug = tf.reduce_mean(tf.math.squared_difference(XT, XrT_aug))
-            mse_loss_E_aug = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XE, XrE_aug),maskE))
-            self.add_loss(self.alpha_T*mse_loss_T_aug)
-            self.add_loss(self.alpha_E*mse_loss_E_aug)
+            XrT_from_XE_aug = self.decoder_T(tf.stop_gradient(zE), training=self.train_T)
+            XrT_from_XM_aug = self.decoder_T(tf.stop_gradient(zM), training=self.train_T)
+            mse_loss_T_from_E_aug = tf.reduce_mean(tf.math.squared_difference(XT, XrT_from_XE_aug))
+            mse_loss_T_from_M_aug = tf.reduce_mean(tf.math.squared_difference(XT, XrT_from_XM_aug))
+            mse_loss_T_aug = mse_loss_T_from_E_aug + mse_loss_T_from_M_aug
+
+            XrE_from_XT_aug = self.decoder_E(tf.stop_gradient(zT), training=self.train_E)
+            XrE_from_XM_aug = self.decoder_E(tf.stop_gradient(zM), training=self.train_E)
+            mse_loss_E_from_T_aug = tf.reduce_mean(tf.math.squared_difference(XE, XrE_from_XT_aug))
+            mse_loss_E_from_M_aug = tf.reduce_mean(tf.math.squared_difference(XE, XrE_from_XM_aug))
+            mse_loss_E_aug = mse_loss_E_from_T_aug + mse_loss_E_from_M_aug
+
+            XrM_from_XT_aug = self.decoder_M(tf.stop_gradient(zT), training=self.train_M)
+            XrM_from_XE_aug = self.decoder_M(tf.stop_gradient(zE), training=self.train_M)
+            mse_loss_M_from_E_aug = tf.reduce_mean(tf.math.squared_difference(XM, XrM_from_XE_aug))
+            mse_loss_M_from_T_aug = tf.reduce_mean(tf.math.squared_difference(XM, XrM_from_XT_aug))
+            mse_loss_M_aug = mse_loss_M_from_E_aug + mse_loss_M_from_T_aug
+
+            self.add_loss(self.alpha_T*(mse_loss_T_from_E_aug + mse_loss_T_from_M_aug))
+            self.add_loss(self.alpha_E*(mse_loss_E_from_T_aug + mse_loss_E_from_M_aug))
+            self.add_loss(self.alpha_M*(mse_loss_M_from_E_aug + mse_loss_M_from_T_aug))
         
         #For logging only
         self.mse_loss_T = mse_loss_T
@@ -670,4 +687,5 @@ class Model_TME(tf.keras.Model):
 
         self.mse_loss_T_aug = mse_loss_T_aug
         self.mse_loss_E_aug = mse_loss_E_aug
-        return zT,zE,zM,XrT,XrE,XrM
+        self.mse_loss_M_aug = mse_loss_M_aug
+        return zT, zE, zM, XrT, XrE, XrM
