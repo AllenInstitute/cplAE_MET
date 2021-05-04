@@ -1,16 +1,17 @@
 ### Coupled autoencoders for M, E, and T analysis
 
+Objectives:
  - Joint analysis of Morphology, Electrophysiology, and Transcriptomic data from Patch-seq experiments.
  - Extending results from Patch-seq dataset to EM reconstructions
 
 ### Data
- - Patch-seq dataset for V1 cortical interneurons (Gala et al. 2021: 3411 cells in T and E)
- - Patch-seq dataset for V1 cortical interneurons (Gouwens et al. 2020: 3819 cells in T and E)
+ - Patch-seq dataset for V1 cortical interneurons ([Gala et al. 2021](https://www.nature.com/articles/s43588-021-00030-1): 3411 cells in T and E)
+ - Patch-seq dataset for V1 cortical interneurons ([Gouwens et al. 2020](https://www.sciencedirect.com/science/article/pii/S009286742031254X): 3819 cells in T and E)
  - Density representations for morphology (721 cells)
 
 ### Environment
 
-1. Navigate to the cplAE_MET folder with the `setup.py` file.
+1. Navigate to the `cplAE_MET` folder with the `setup.py` file.
 2. Create the conda environment with the main dependencies.
 ```bash
 conda create -n cplAE_MET
@@ -25,8 +26,9 @@ pip install rich tqdm timebudget
 pip install -e .
 ```
 
-4. Install the cplAE_TE repository. Directly installing from github through pip doesn't work as expected. 
+4. Install the `cplAE_TE` repository. Directly installing from github through pip doesn't work as expected. 
 ```bash
+# can do this within any directory on local machine
 git clone https://github.com/AllenInstitute/coupledAE-patchseq
 cd coupledAE-patchseq
 pip install -e .
