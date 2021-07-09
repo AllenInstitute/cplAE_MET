@@ -12,7 +12,7 @@ import seaborn as sns
 import scipy.io as sio
 from functools import reduce
 import matplotlib.pyplot as plt
-import cplAE_TE.utils.preproc_helpers as proc_utils
+import cplAE_MET.utils.preproc_helpers as proc_utils
 from cplAE_TE.utils.load_helpers import get_paths, load_dataset, load_summary_files
 
 
