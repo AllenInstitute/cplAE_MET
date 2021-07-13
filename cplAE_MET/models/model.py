@@ -4,6 +4,7 @@ from tensorflow.python.keras import layers
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.utils import tf_utils
 from tensorflow.python.ops import array_ops
+from tensorflow.python.keras import Model
 
 
 class Encoder_T(layers.Layer):
@@ -248,71 +249,114 @@ class Decoder_M(layers.Layer):
         return x
 
 
-class Model_TE(tf.keras.Model):
-    """
-    Coupled autoencoder
-
+class Model_TE(Model):
+    """Coupled autoencoder model
     Args:
-        T_output_dim: n(genes)
-        E_output_dim: n(features)
-        T_intermediate_dim: units in hidden layers of T autoencoder
-        E_intermediate_dim: units in hidden layers of T autoencoder
-        T_dropout: dropout probability for 
+        T_dim: Number of genes in T data
+        E_dim: Number of features in E data
+        T_intermediate_dim: hidden layer dims for T model
+        E_intermediate_dim: hidden layer dims for E model
+        T_dropout: dropout for T data
         E_gnoise_sd: gaussian noise std for E data
         E_dropout: dropout for E data
         latent_dim: dim for representations
-        train_T: bool: set T encoder and decoder to training mode
-        train_E: bool: set T encoder and decoder to training mode
+        train_T (bool): training/inference mode for E autoencoder
+        train_E (bool): training/inference mode for E autoencoder
+        augment_decoders (bool): augment decoder with cross modal representation if True
         name: TE
     """
 
     def __init__(self,
-               T_output_dim,
-               E_output_dim,
-               T_intermediate_dim=50,
-               E_intermediate_dim=40,
-               T_dropout=0.5,
-               E_gnoise_sd=0.05,
-               E_dropout=0.1,
-               latent_dim=3,
-               train_T=True,
-               train_E=True,
-               name='TE',
-               **kwargs):
-  
+                 T_dim,
+                 E_dim,
+                 T_intermediate_dim=50,
+                 E_intermediate_dim=40,
+                 alpha_T=1.0,
+                 alpha_E=1.0,
+                 lambda_TE=1.0,
+                 T_dropout=0.5,
+                 E_gauss_noise_wt=1.0,
+                 E_gnoise_sd=0.05,
+                 E_dropout=0.1,
+                 latent_dim=3,
+                 train_T=True,
+                 train_E=True,
+                 augment_decoders=True,
+                 name='TE',
+                 **kwargs):
         super(Model_TE, self).__init__(name=name, **kwargs)
-        self.encoder_T = Encoder_T(dropout_rate=T_dropout,
-                                   latent_dim=latent_dim,
-                                   intermediate_dim=T_intermediate_dim,
+        self.T_dim = T_dim
+        self.E_dim = E_dim
+
+        self.alpha_T = tf.constant(alpha_T, dtype=tf.float32)
+        self.alpha_E = tf.constant(alpha_E, dtype=tf.float32)
+        self.lambda_TE = tf.constant(lambda_TE, dtype=tf.float32)
+
+        E_gnoise_sd_weighted = E_gauss_noise_wt * E_gnoise_sd
+        self.encoder_T = Encoder_T(dropout_rate=T_dropout, latent_dim=latent_dim, intermediate_dim=T_intermediate_dim,
                                    name='Encoder_T')
+        self.encoder_E = Encoder_E(gaussian_noise_sd=E_gnoise_sd_weighted, dropout_rate=E_dropout,
+                                   latent_dim=latent_dim, intermediate_dim=E_intermediate_dim, name='Encoder_E')
 
-        self.encoder_E = Encoder_E(gaussian_noise_sd=E_gnoise_sd,
-                                   dropout_rate=E_dropout,
-                                   latent_dim=latent_dim,
-                                   intermediate_dim=E_intermediate_dim,
-                                   name='Encoder_E')
+        self.decoder_T = Decoder_T(output_dim=T_dim, intermediate_dim=T_intermediate_dim, name='Decoder_T')
+        self.decoder_E = Decoder_E(output_dim=E_dim, intermediate_dim=E_intermediate_dim, name='Decoder_E')
 
-        self.decoder_T = Decoder_T(output_dim=T_output_dim,
-                                   intermediate_dim=T_intermediate_dim,
-                                   name='Decoder_T')
-
-        self.decoder_E = Decoder_E(output_dim=E_output_dim,
-                                   intermediate_dim=E_intermediate_dim,
-                                   name='Decoder_E')
         self.train_T = train_T
         self.train_E = train_E
+        self.augment_decoders = augment_decoders
+        return
 
     def call(self, inputs):
-        #T arm
-        zT = self.encoder_T(inputs[0],training=self.train_T)
-        XrT = self.decoder_T(zT,training=self.train_T)
-        
+        # T arm forward pass
+        XT = inputs[0]
+        zT = self.encoder_T(XT, training=self.train_T)
+        XrT = self.decoder_T(zT, training=self.train_T)
 
-        #E arm
-        zE = self.encoder_E(inputs[1],training=self.train_E)
-        XrE = self.decoder_E(zE,training=self.train_E)
-        return zT,zE,XrT,XrE
+        # E arm forward pass
+        XE = tf.where(tf.math.is_nan(inputs[1]), x=0.0, y=inputs[1])  # Mask nans
+        maskE = tf.where(tf.math.is_nan(inputs[1]), x=0.0, y=1.0)  # Get mask to ignore error contribution
+        zE = self.encoder_E(XE, training=self.train_E)
+        XrE = self.decoder_E(zE, training=self.train_E)
 
+        # Loss calculations
+        mse_loss_T = tf.reduce_mean(tf.math.squared_difference(XT, XrT))
+        mse_loss_E = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XE, XrE), maskE))
+        cpl_loss_TE = min_var_loss(zT, zE)
+
+        # Append to keras model losses for gradient calculations
+        self.add_loss(self.alpha_T * mse_loss_T)
+        self.add_loss(self.alpha_E * mse_loss_E)
+        self.add_loss(self.lambda_TE * cpl_loss_TE)
+
+        # Cross modal reconstructions - treat zE and zT as constants for this purpose
+        mse_loss_T_aug = 0
+        mse_loss_E_aug = 0
+        if self.augment_decoders:
+            XrT_aug = self.decoder_T(tf.stop_gradient(zE), training=self.train_T)
+            XrE_aug = self.decoder_E(tf.stop_gradient(zT), training=self.train_E)
+            mse_loss_T_aug = tf.reduce_mean(tf.math.squared_difference(XT, XrT_aug))
+            mse_loss_E_aug = tf.reduce_mean(tf.multiply(tf.math.squared_difference(XE, XrE_aug), maskE))
+            self.add_loss(self.alpha_T * mse_loss_T_aug)
+            self.add_loss(self.alpha_E * mse_loss_E_aug)
+
+        # For logging only
+        self.mse_loss_T = mse_loss_T
+        self.mse_loss_E = mse_loss_E
+        self.mse_loss_TE = tf.reduce_mean(tf.math.squared_difference(zT, zE))
+        self.mse_loss_T_aug = mse_loss_T_aug
+        self.mse_loss_E_aug = mse_loss_E_aug
+        return zT, zE, XrT, XrE
+
+    def buildme(model):
+        """
+        Initialize the model with this if loading saved weights.
+        """
+        x = tf.constant(np.random.rand(1, model.T_dim), dtype=tf.float32)
+        y = tf.constant(np.random.rand(1, model.E_dim), dtype=tf.float32)
+        model.train_E = False
+        model.train_T = False
+        _, _, _, _ = model((x, y))
+        return model
 
 class WeightedGaussianNoise(layers.Layer):
     """Custom additive zero-centered Gaussian noise. Std is weighted.

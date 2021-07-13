@@ -139,3 +139,44 @@ def show_ax_de_maps(Left,Right=None):
     plt.gca().set(**{'xticks':[],'yticks':[]})
     plt.grid(False)
     return
+
+
+def plot3D_embedding(emb_array, color_list, **kwargs):
+    """Takes embedding nparray and list of colors for all the points and plot3d the embedding
+
+    Args:
+    emb_array: nparray of embedding points coordinates
+    color_list: a list of colors for each embedding point
+    figsize(optional):
+    xlim(optional): a tuple of x limits for plotting
+    ylim(optional): a tuple of y limits for plotting
+    zlim(optional): a tuple of z limits for plotting
+    annotation_list(optional): annotation list of embedding points
+
+    Returns:
+    ax
+
+    """
+    figsize = kwargs.get('figsize', (10, 10))
+    pointsize = kwargs.get('pointsize', 1)
+    xlim = kwargs.get('xlim', None)
+    ylim = kwargs.get('ylim', None)
+    zlim = kwargs.get('zlim', None)
+    annotation_list = kwargs.get('annotation_list', None)
+
+    fig = plt.figure(figsize=figsize)
+    ax = plt.axes(projection='3d')
+    ax.scatter3D(emb_array[:, 0], emb_array[:, 1], emb_array[:, 2], c=color_list, s=pointsize)
+
+    if annotation_list is not None:
+        for i, txt in enumerate(annotation_list):
+            ax.text(x[i], y[i], z[i], txt, size=10)
+
+    if xlim:
+        ax.set_xlim(xlim[0], xlim[1])
+    if ylim:
+        ax.set_ylim(ylim[0], ylim[1])
+    if zlim:
+        ax.set_zlim(zlim[0], zlim[1])
+
+    return ax
