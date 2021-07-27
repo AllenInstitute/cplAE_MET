@@ -92,7 +92,8 @@ class Encoder_E(layers.Layer):
                  gaussian_noise_sd=0.05,
                  dropout_rate=0.1,
                  latent_dim=3,
-                 intermediate_dim=40,
+                 intermediate_dim0=220,
+                 intermediate_dim1=40,
                  name='Encoder_E',
                  dtype=tf.float32,
                  **kwargs):
@@ -100,10 +101,10 @@ class Encoder_E(layers.Layer):
         super(Encoder_E, self).__init__(name=name, **kwargs)
         self.gnoise = WeightedGaussianNoise(stddev=gaussian_noise_sd)
         self.drp = layers.Dropout(rate=dropout_rate)
-        self.fc0 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc0')
-        self.fc1 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc1')
-        self.fc2 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc2')
-        self.fc3 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc3')
+        self.fc0 = layers.Dense(intermediate_dim0, activation='relu', name=name+'fc0')
+        self.fc1 = layers.Dense(intermediate_dim1, activation='relu', name=name+'fc1')
+        self.fc2 = layers.Dense(intermediate_dim1, activation='relu', name=name+'fc2')
+        self.fc3 = layers.Dense(intermediate_dim1, activation='relu', name=name+'fc3')
         self.fc4 = layers.Dense(latent_dim, use_bias=False, activation='linear', name=name+'fc4')
         self.bn = layers.BatchNormalization(scale=False, center=False, epsilon=1e-10, momentum=0.05, name=name+'BN')
         return
@@ -132,16 +133,17 @@ class Decoder_E(layers.Layer):
 
     def __init__(self,
                  output_dim,
-                 intermediate_dim=40,
+                 intermediate_dim0=220,
+                 intermediate_dim1=40,
                  name='Decoder_E',
                  dtype=tf.float32,
                  **kwargs):
 
         super(Decoder_E, self).__init__(name=name, **kwargs)
-        self.fc0 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc0')
-        self.fc1 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc1')
-        self.fc2 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc2')
-        self.fc3 = layers.Dense(intermediate_dim, activation='relu', name=name+'fc3')
+        self.fc0 = layers.Dense(intermediate_dim0, activation='relu', name=name+'fc0')
+        self.fc1 = layers.Dense(intermediate_dim1, activation='relu', name=name+'fc1')
+        self.fc2 = layers.Dense(intermediate_dim1, activation='relu', name=name+'fc2')
+        self.fc3 = layers.Dense(intermediate_dim1, activation='relu', name=name+'fc3')
         self.drp = layers.Dropout(rate=0.1)
         self.Xout = layers.Dense(output_dim, activation='linear', name=name+'Xout')
         return
@@ -270,7 +272,8 @@ class Model_TE(Model):
                  T_dim,
                  E_dim,
                  T_intermediate_dim=50,
-                 E_intermediate_dim=40,
+                 E_intermediate_dim0=40,
+                 E_intermediate_dim1=40,
                  alpha_T=1.0,
                  alpha_E=1.0,
                  lambda_TE=1.0,
@@ -296,10 +299,12 @@ class Model_TE(Model):
         self.encoder_T = Encoder_T(dropout_rate=T_dropout, latent_dim=latent_dim, intermediate_dim=T_intermediate_dim,
                                    name='Encoder_T')
         self.encoder_E = Encoder_E(gaussian_noise_sd=E_gnoise_sd_weighted, dropout_rate=E_dropout,
-                                   latent_dim=latent_dim, intermediate_dim=E_intermediate_dim, name='Encoder_E')
+                                   latent_dim=latent_dim, intermediate_dim0=E_intermediate_dim0,
+                                   intermediate_dim1=E_intermediate_dim1,name='Encoder_E')
 
         self.decoder_T = Decoder_T(output_dim=T_dim, intermediate_dim=T_intermediate_dim, name='Decoder_T')
-        self.decoder_E = Decoder_E(output_dim=E_dim, intermediate_dim=E_intermediate_dim, name='Decoder_E')
+        self.decoder_E = Decoder_E(output_dim=E_dim, intermediate_dim0=E_intermediate_dim0,
+                                   intermediate_dim1=E_intermediate_dim1, name='Decoder_E')
 
         self.train_T = train_T
         self.train_E = train_E

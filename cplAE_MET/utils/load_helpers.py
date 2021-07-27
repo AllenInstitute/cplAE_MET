@@ -9,7 +9,7 @@ import toml
 from cplAE_MET.utils.tree_helpers import HTree, get_merged_ordered_classes, simplify_tree
 
 
-def get_paths(warn=True, write_toml=False):
+def get_paths(inputmat_fileid, warn=True, write_toml=False):
     """Get paths for all data used in the analysis. 
     
     Args: 
@@ -24,8 +24,8 @@ def get_paths(warn=True, write_toml=False):
     
 
     # Input data
-    #path['proc_dataset'] = path['package'] / "data/proc/PS_v5_beta_0-4_pc_scaled_ipfx_eqTE.mat"
-    path['proc_dataset'] = path['package'] / "data/proc/inh_model_input_mat.mat"
+    path['proc_dataset'] = path['package'] / "data/proc/" / inputmat_fileid
+    # path['proc_dataset'] = path['package'] / "data/proc/inh_model_input_mat.mat"
     path['proc_E_names'] = path['package'] / "data/proc/E_names.json"
     path['htree'] = path['package'] / "data/proc/dend_RData_Tree_20181220.csv"
 
@@ -63,7 +63,7 @@ def get_paths(warn=True, write_toml=False):
     return path
 
 
-def load_dataset(min_sample_thr=10):
+def load_dataset(inputmat_fileid, subtree_node, min_sample_thr=10):
     """Load input transcriptomic and electrophysiological profiles and label annotations as a dictionary.
 
     Args:
@@ -72,7 +72,7 @@ def load_dataset(min_sample_thr=10):
     Returns:
         data(Dict)
     """
-    path = get_paths(warn=False,write_toml=False)
+    path = get_paths(inputmat_fileid, warn=False,write_toml=False)
     data = sio.loadmat(path['proc_dataset'], squeeze_me=True)
     del_keys = [key for key in data.keys() if '__' in key]
     for key in del_keys:
@@ -88,10 +88,9 @@ def load_dataset(min_sample_thr=10):
     #Get t-types in order as per reference taxonomy
     n_required_classes = np.unique(data['cluster']).size
     _, t_types = get_merged_ordered_classes(data_labels=data['cluster'].copy(),
-                                            subtree_node="n59",
+                                            subtree_node=subtree_node,
                                             htree_file=path['htree'],
-                                            n_required_classes=n_required_classes,
-                                            verbose=False)
+                                            n_required_classes=n_required_classes)
     data['unique_sorted_t_types']=np.array(t_types)
 
     #well-sampled t-types and helpers:
@@ -112,7 +111,7 @@ def load_dataset(min_sample_thr=10):
     return data
 
 
-def load_dataset_v2(subtree_node, min_sample_thr=10):
+def load_dataset_v2(inputmat_fileid, subtree_node, min_sample_thr=10):
     """Load input transcriptomic and electrophysiological profiles and label annotations as a dictionary.
 
     Args:
@@ -121,7 +120,7 @@ def load_dataset_v2(subtree_node, min_sample_thr=10):
     Returns:
         data(Dict)
     """
-    path = get_paths(warn=False, write_toml=False)
+    path = get_paths(inputmat_fileid, warn=False, write_toml=False)
     data = sio.loadmat(path['proc_dataset'], squeeze_me=True)
     del_keys = [key for key in data.keys() if '__' in key]
     for key in del_keys:
@@ -152,7 +151,7 @@ def load_dataset_v2(subtree_node, min_sample_thr=10):
     data['XE'][np.isnan(data['XE'])] = 0.0
     return data
 
-def load_htree_well_sampled(subtree_node, min_sample_thr=10, simplify=True):
+def load_htree_well_sampled(inputmat_fileid, subtree_node, min_sample_thr=10, simplify=True):
     """Loads heirarchical taxonomy for subset of well-sampled inhibitory cell types (leaf nodes).
 
     Args:
@@ -165,7 +164,7 @@ def load_htree_well_sampled(subtree_node, min_sample_thr=10, simplify=True):
 
     #Get inhibitory tree
     print('Only searching through inhibitory taxonomy (', subtree_node,"')")
-    path = get_paths(warn=False, write_toml=False)
+    path = get_paths(inputmat_fileid, warn=False, write_toml=False)
     htree = HTree(htree_file=path['htree'])
     subtree = htree.get_subtree(node=subtree_node)
 
@@ -193,7 +192,7 @@ def load_htree_well_sampled(subtree_node, min_sample_thr=10, simplify=True):
     return htree
 
 
-def load_summary_files(data_type='NM_cc', key_list=['XrE', 'XrT', 'zE', 'zT', 'train_ind', 'val_ind', 'test_ind'], **kwargs):
+def load_summary_files(inputmat_fileid, data_type='NM_cc', key_list=['XrE', 'XrT', 'zE', 'zT', 'train_ind', 'val_ind', 'test_ind'], **kwargs):
     """Loads saved output of autoencoder runs for specified experiment.
     Output is a dict with different runs as keys.
 
@@ -205,7 +204,7 @@ def load_summary_files(data_type='NM_cc', key_list=['XrE', 'XrT', 'zE', 'zT', 't
         CVdict: dictionary with each run as a key
     """
     O = load_dataset()
-    path = get_paths()
+    path = get_paths(inputmat_fileid)
     CVdict = {}
 
     #'NM_cc' has data for 21 repeats on the same train/test split
@@ -318,7 +317,7 @@ def relabel_gmm_clusters(X:Dict, datadict: Dict, n_components:int):
     return ccT_lbl_matched, ccE_lbl_matched
 
 
-def taxonomy_assignments(initial_labels, datadict: Dict, n_required_classes: int, merge_on='well_sampled'):
+def taxonomy_assignments(inputmat_fileid, initial_labels, datadict: Dict, n_required_classes: int, merge_on='well_sampled'):
     """Relabels the the input labels according to a lower resolution of the reference taxonomy. 
 
     Args:
@@ -341,7 +340,7 @@ def taxonomy_assignments(initial_labels, datadict: Dict, n_required_classes: int
         reference_labels = datadict['unique_sorted_t_types'].copy()
     assert reference_labels is not None, "reference_labels not set"
 
-    path = get_paths(warn=False,write_toml=False)
+    path = get_paths(inputmat_fileid, warn=False,write_toml=False)
     new_reference_labels, _ = get_merged_ordered_classes(data_labels=reference_labels.copy(),
                                                          htree_file=str(path['htree']),
                                                          n_required_classes=n_required_classes,

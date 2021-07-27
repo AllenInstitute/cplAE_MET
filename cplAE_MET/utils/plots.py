@@ -163,10 +163,13 @@ def plot3D_embedding(emb_array, color_list, **kwargs):
     ylim = kwargs.get('ylim', None)
     zlim = kwargs.get('zlim', None)
     annotation_list = kwargs.get('annotation_list', None)
+    x = emb_array[:, 0]
+    y = emb_array[:, 1]
+    z = emb_array[:, 2]
 
     fig = plt.figure(figsize=figsize)
     ax = plt.axes(projection='3d')
-    ax.scatter3D(emb_array[:, 0], emb_array[:, 1], emb_array[:, 2], c=color_list, s=pointsize)
+    ax.scatter3D(x, y, z, c=color_list, s=pointsize)
 
     if annotation_list is not None:
         for i, txt in enumerate(annotation_list):
@@ -178,5 +181,58 @@ def plot3D_embedding(emb_array, color_list, **kwargs):
         ax.set_ylim(ylim[0], ylim[1])
     if zlim:
         ax.set_zlim(zlim[0], zlim[1])
+
+    return ax
+
+
+def multiple_scatter_2D_plot(x, y, **kwargs):
+    """
+    Takes x and multiple y(in a dict format) and scatter plot them
+
+    Args
+    ----------
+    x: a list
+    y: a dict with keys and y as values
+
+    Return
+    ----------
+    a scatter plot of all ys with respect to x
+    """
+
+    fig_size = kwargs.get('fig_size', (10, 10))
+    point_size = kwargs.get('point_size', 20)
+
+    y_axis_label = kwargs.get('y_axis_label', "Y")
+    x_axis_label = kwargs.get('x_axis_label', "X")
+
+    xtick_labels = kwargs.get('xtick_labels', None)
+    ytick_labels = kwargs.get('ytick_labels', None)
+
+    xtick_label_size = kwargs.get('xtick_label_size', 10)
+    ytick_label_size = kwargs.get('ytick_label_size', 10)
+
+    xticks_rotation = kwargs.get('xticks_rotation', 0)
+    yticks_rotation = kwargs.get('yticks_rotation', 0)
+
+    fig = plt.figure(figsize=fig_size)
+    ax = fig.add_subplot(111)
+    for k, v in y.items():
+        ax.scatter(x, v, label=k, s=point_size)
+
+    if xtick_labels:
+        ax.set_xticks([i for i in range(len(xtick_labels))])
+        ax.set_xticklabels(xtick_labels,
+                           rotation=xticks_rotation,
+                           fontsize=xtick_label_size)
+    if ytick_labels:
+        ax.set_xticks([i for i in range(len(ytick_labels))])
+        ax.set_xticklabels(ytick_labels,
+                           rotation=yticks_rotation,
+                           fontsize=ytick_label_size)
+
+    ax.set_xlabel(x_axis_label, fontsize=12)
+    ax.set_ylabel(y_axis_label, fontsize=12)
+
+    plt.legend()
 
     return ax

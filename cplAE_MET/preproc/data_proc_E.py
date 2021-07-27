@@ -25,6 +25,19 @@ args = parser.parse_args()
 with open(args.input) as json_data:
     data = json.load(json_data)
 
+# data = {"input_path": "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/",
+#  "output_path": "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/",
+#  "T_data_file": "data.feather",
+#  "T_annotation_file": "anno.feather",
+#  "gene_file": "good_genes_beta_score.csv",
+#  "specimen_ids_file": "specimen_ids_for_revision_Apr_2020.txt",
+#  "E_timeseries_file": "inh_fv_Ephys_run_all_20July2021.h5",
+#  "ipfx_features_file": "inh_ipfx_features_20July2021.csv",
+#  "beta_threshold": 0.4,
+#  "pca_comp_threshold": 0.97,
+#  "output_file_prefix": "inh"
+# }
+
 #Input vars
 E_timeseries_path = data['input_path'] + data['E_timeseries_file']
 ipfx_file_path = data['input_path'] + data['ipfx_features_file']

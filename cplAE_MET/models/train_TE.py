@@ -8,7 +8,7 @@ import scipy.io as sio
 import tensorflow as tf
 from pathlib import Path
 from cplAE_MET.models.model import Model_TE
-from cplAE_MET.utils.load_helpers import get_paths,load_dataset_v2
+from cplAE_MET.utils.load_helpers import get_paths,load_dataset_v2, load_dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--batchsize",         default=200,       type=int,     help="Batch size")
@@ -19,15 +19,16 @@ parser.add_argument("--lambda_TE",         default=1.0,       type=float,   help
 parser.add_argument("--augment_decoders",  default=1,         type=int,     help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",        default=3,         type=int,     help="Number of latent dims")
 parser.add_argument("--n_epochs",          default=1500,      type=int,     help="Number of epochs to train")
-parser.add_argument("--n_steps_per_epoch", default=10,       type=int,     help="Number of model updates per epoch")
+parser.add_argument("--n_steps_per_epoch", default=10,        type=int,     help="Number of model updates per epoch")
 parser.add_argument("--run_iter",          default=0,         type=int,     help="Run-specific id")
-parser.add_argument("--subtree_node",      default='n59',      type=str,     help="The part of the tree that we are studing")
+parser.add_argument("--subtree_node",      default='n5',     type=str,     help="The part of the tree that we are studing")
 parser.add_argument("--model_id",          default='cplTE',   type=str,     help="Model-specific id")
-parser.add_argument("--exp_name",          default='PSv1',    type=str,     help="Experiment set")
+parser.add_argument("--exp_name",          default='PSv1_exc_model1',    type=str,     help="Experiment set")
+parser.add_argument("--inputmat_fileid",   default='exc_model_input_mat.mat', type=str,     help="input mat file")
 
 
-def set_paths(exp_name='TEMP'):
-    path = get_paths()
+def set_paths(inputmat_fileid, exp_name='TEMP'):
+    path = get_paths(inputmat_fileid)
     path['result'] = path['package'] / "data" / "experiment" / exp_name
     path['logs'] = path['result'] / "logs"
     Path(path['logs']).mkdir(parents=True, exist_ok=True)
@@ -81,9 +82,10 @@ class Datagen():
 def main(batchsize=200, cvfold=0, subtree_node="n5",
          alpha_T=1.0, alpha_E=1.0, lambda_TE=1.0, augment_decoders=True,
          latent_dim=3, n_epochs=1500, n_steps_per_epoch=500,
-         run_iter=0, model_id='cplTE', exp_name='PSv1'):
+         run_iter=0, model_id='cplTE', exp_name='PSv1',
+         inputmat_fileid='PS_v5_beta_0-4_pc_scaled_ipfx_eqTE.mat'):
 
-    path = set_paths(exp_name=exp_name)
+    path = set_paths(inputmat_fileid, exp_name=exp_name)
 
     #Augment only if lambda_TE > 0
     if lambda_TE == 0.0:
@@ -98,8 +100,10 @@ def main(batchsize=200, cvfold=0, subtree_node="n5",
     augment_decoders = augment_decoders > 0
  
     #Data operations and definitions:
-    D = load_dataset_v2(subtree_node=subtree_node)
-    D['XE'][D['maskE']==0] = np.nan # network expects missing data to be encoded as nan. 
+    D = load_dataset_v2(inputmat_fileid, subtree_node=subtree_node)
+    #D = load_dataset(inputmat_fileid, subtree_node=subtree_node)
+
+    D['XE'][D['maskE']==0] = np.nan # network expects missing data to be encoded as nan.
     train_ind, val_ind = TE_get_splits(matdict=D, cvfold=cvfold, n=20)
     Partitions = {'train_ind': train_ind, 'val_ind': val_ind}
 
@@ -123,7 +127,8 @@ def main(batchsize=200, cvfold=0, subtree_node="n5",
     model_TE = Model_TE(T_dim=train_T_dat.shape[1],
                                      E_dim=train_E_dat.shape[1],
                                      T_intermediate_dim=50,
-                                     E_intermediate_dim=40,
+                                     E_intermediate_dim0=150,
+                                     E_intermediate_dim1=40,
                                      T_dropout=0.5,
                                      E_gauss_noise_wt=XE_var,
                                      E_gnoise_sd=0.05,

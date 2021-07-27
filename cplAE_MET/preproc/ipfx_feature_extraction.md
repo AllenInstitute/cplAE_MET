@@ -80,3 +80,4 @@ The output of these two runs will be two files:
     Ephys_timeseries.h5
     ipfx_features.csv
     
+To prepare the transcriptomic and ephys data ready for training, read ET_model_input_preparation.md

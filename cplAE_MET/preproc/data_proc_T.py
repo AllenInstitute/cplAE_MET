@@ -12,6 +12,7 @@ import seaborn as sns
 import scipy.io as sio
 from functools import reduce
 import matplotlib.pyplot as plt
+from cplAE_MET.utils.utils import *
 import cplAE_MET.utils.preproc_helpers as proc_utils
 from cplAE_TE.utils.load_helpers import get_paths, load_dataset, load_summary_files
 
@@ -33,6 +34,7 @@ beta_threshold = data['beta_threshold']
 output_path = data['output_path']
 output_file_prefix = data['output_file_prefix']
 
+
 print("...................................................")
 print("Loading input files")
 T_dat = feather.read_dataframe(T_data_path)
@@ -48,6 +50,13 @@ T_ann = T_ann[['spec_id_label',
                'Tree_first_cl_label',
                'Tree_first_cl_color',
                'Tree_call_label']].reset_index(drop=True)
+
+# print("...................................................")
+# rohan_sample_ids = read_list_from_csv(
+#     "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/rohan_sample_ids.csv")
+# T_ann = T_ann.loc[T_ann['sample_id'].isin(rohan_sample_ids)]
+# T_ann.reset_index(drop=True,inplace=True)
+# print("Keeping only cell that Rohan used", T_ann.shape[0])
 
 keep_gene_id = pd.read_csv(gene_file_path)
 keep_gene_id = keep_gene_id[keep_gene_id.BetaScore>beta_threshold]['Gene'].to_list()
