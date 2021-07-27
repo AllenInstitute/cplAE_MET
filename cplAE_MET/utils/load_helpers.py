@@ -1,5 +1,4 @@
 import json
-import pickle
 from pathlib import Path
 from typing import Dict
 
@@ -151,6 +150,7 @@ def load_dataset_v2(inputmat_fileid, subtree_node, min_sample_thr=10):
     data['XE'][np.isnan(data['XE'])] = 0.0
     return data
 
+
 def load_htree_well_sampled(inputmat_fileid, subtree_node, min_sample_thr=10, simplify=True):
     """Loads heirarchical taxonomy for subset of well-sampled inhibitory cell types (leaf nodes).
 
@@ -190,131 +190,6 @@ def load_htree_well_sampled(inputmat_fileid, subtree_node, min_sample_thr=10, si
     else:
         htree = kept_htree
     return htree
-
-
-def load_summary_files(inputmat_fileid, data_type='NM_cc', key_list=['XrE', 'XrT', 'zE', 'zT', 'train_ind', 'val_ind', 'test_ind'], **kwargs):
-    """Loads saved output of autoencoder runs for specified experiment.
-    Output is a dict with different runs as keys.
-
-    Args:
-        data_type (str, optional): One of 'NM' ,'NM_cc', 'CS'.
-        key_list (list, optional): [description]. Defaults to ['XrE','XrT','zE','zT','train_ind','val_ind','test_ind']. Also available ['XrT_from_XE', XrE_from_XT]
-
-    Returns:
-        CVdict: dictionary with each run as a key
-    """
-    O = load_dataset()
-    path = get_paths(inputmat_fileid)
-    CVdict = {}
-
-    #'NM_cc' has data for 21 repeats on the same train/test split
-    if data_type == 'NM_cc':
-        alpha_T = kwargs.get('alpha_T', 1.0)
-        alpha_E = kwargs.get('alpha_E', 1.0)
-        lambda_TE = kwargs.get('lambda_TE', 1.0)
-        aug = kwargs.get('aug', 1)
-        fold_list = kwargs.get('fold_list', list(range(21)))
-        n_components = kwargs.get('n_components', 33)
-        load_gmm = kwargs.get('load_gmm', True)
-        cv = 0
-        
-         
-        for fold in fold_list:
-            cvfold_fname = (f'NM_Edat_pcipfx_aT_{alpha_T:0.1f}_aE_{alpha_E:0.1f}_cs_{lambda_TE:0.1f}' +
-                            f'_ad_{aug:d}_ld_3_bs_200_se_500_ne_1500_cv_{cv:d}_ri_{fold}_500_ft-summary').replace('.', '-') + '.mat'
-
-            if (path['exp_repeat_init'] / cvfold_fname).is_file():
-                X = sio.loadmat(path['exp_repeat_init'] / cvfold_fname, squeeze_me=True)
-                CVdict[fold] = {key: X[key] for key in key_list}
-                CVdict[fold]['well_sampled_test_ind'] = X['test_ind'][np.isin(X['test_ind'], O['well_sampled_ind'])]
-                CVdict[fold]['well_sampled_train_ind'] = X['train_ind'][np.isin(X['train_ind'], O['well_sampled_ind'])]
-
-                if load_gmm:  # Assign labels to unsupervised clusters.
-                    #gmm.predict might fail if scikit-learn version is not the same (we used 0.22.2).
-                    gmm_fname = (f'gmmfit_restricted_perc_100-0_aT_{alpha_T:.1f}_aE_{alpha_E:.1f}_cs_{lambda_TE:.1f}_' +
-                                 f'ad_1_cv_0_ri_{fold:d}_ld_3_ne_1500_fiton_zT_n_{n_components:d}').replace('.', '-')+'.pkl'
-                    with open(path['exp_repeat_init_gmm'] / gmm_fname, 'rb') as fid:
-                        gmm = pickle.load(fid)
-                        X['ccT_lbl'] = gmm.predict(X['zT'])
-                        X['ccE_lbl'] = gmm.predict(X['zE'])
-                        t_lbl, e_lbl = relabel_gmm_clusters(X=X, datadict=O.copy(), n_components=n_components)
-                        CVdict[fold]['ccT_lbl_matched'], CVdict[fold]['ccE_lbl_matched'] = t_lbl, e_lbl
-                del X
-
-            else:
-                print(path+cvfold_fname+' not found')
-
-    #'NM' has data for 44 cross validation splits. 
-    elif data_type == 'NM':
-        alpha_T = kwargs.get('alpha_T', 1.0)
-        alpha_E = kwargs.get('alpha_E', 1.0)
-        lambda_TE = kwargs.get('lambda_TE', 1.0)
-        latent_dim = kwargs.get('latent_dim', 1.0)
-        aug = kwargs.get('aug', 1)
-        fold_list = kwargs.get('fold_list', list(range(44)))
-        fstr = f'Loading aT_{alpha_T:0.1f}_aE_{alpha_E:0.1f}_cs_{lambda_TE:0.1f}_ad_{aug:d}'
-        print(fstr.replace('.','-'))
-
-        ri = 0
-        for fold in fold_list:
-            cvfold_fname = (f'NM_Edat_pcipfx_aT_{alpha_T:0.1f}_aE_{alpha_E:0.1f}_cs_{lambda_TE:0.1f}' +
-                            f'_ad_{aug:d}_ld_{latent_dim:d}_bs_200_se_500_ne_1500_cv_{fold:d}_ri_{ri}_500_ft-summary').replace('.', '-') + '.mat'
-
-            if (path['exp_kfold'] / cvfold_fname).is_file():
-                X = sio.loadmat(path['exp_kfold'] / cvfold_fname, squeeze_me=True)
-                CVdict[fold] = {key: X[key] for key in key_list}
-                del X
-            else:
-                print(cvfold_fname, 'not found')
-
-    return CVdict
-
-
-def relabel_gmm_clusters(X:Dict, datadict: Dict, n_components:int):
-    """Given a collection of T and E clusters, finds the best match with  
-    reference taxonomy labels (ordered nbased on the hierarchical tree) and 
-    relabels the clusters with that order.
-
-    Args:
-        X (Dict): Contains predictions of the coupled autoencoder network
-        datadict (Dict): various dataset fields
-        n_components (int): Number of components in the gmm fit
-
-    Returns:
-        ccT_lbl_matched, ccE_lbl_matched: Labels for the T and E samples that are an optimal 
-        match w.r.t the transcriptomic taxonomy labels.
-    """
-    from cplAE_TE.utils.compute import contingency
-    from scipy.optimize import linear_sum_assignment
-
-    for key in ['train_ind', 'ccT_lbl', 'ccE_lbl']:
-        assert key in X.keys(), 'Input does not contain required fields'
-
-    for key in ['unique_sorted_t_types', 'cluster']:
-        assert key in datadict.keys(), 'Input does not contain required fields'
-
-    #Calculate contingency matrix based on label assignments
-    C = contingency(a=datadict['cluster'][X['train_ind']],
-                    b=X['ccT_lbl'][X['train_ind']],
-                    unique_a=datadict['unique_sorted_t_types'].copy(),
-                    unique_b=np.arange(n_components))
-
-    #Hungarian algorithm assignments:
-    row_ind, col_ind = linear_sum_assignment(-C)
-    C_ordered = C[:, col_ind]
-    order_y = np.arange(0, n_components)[col_ind]
-
-    ccT_lbl_matched = X['ccT_lbl'].copy()
-    ccE_lbl_matched = X['ccE_lbl'].copy()
-
-    for i in range(n_components):
-        ind = X['ccT_lbl'] == order_y[i]
-        ccT_lbl_matched[ind] = i
-
-        ind = X['ccE_lbl'] == order_y[i]
-        ccE_lbl_matched[ind] = i
-
-    return ccT_lbl_matched, ccE_lbl_matched
 
 
 def taxonomy_assignments(inputmat_fileid, initial_labels, datadict: Dict, n_required_classes: int, merge_on='well_sampled'):
