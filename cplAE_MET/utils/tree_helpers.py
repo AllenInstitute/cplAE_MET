@@ -364,7 +364,10 @@ def simplify_tree(pruned_subtree,skip_nodes=None):
     return simple_tree,skip_nodes
 
 
-def get_merged_ordered_classes(data_labels, htree_file='../data/proc/dend_RData_Tree_20181220.csv', n_required_classes=30):
+def get_merged_ordered_classes(data_labels,
+                               subtree_node,
+                               htree_file='../data/proc/dend_RData_Tree_20181220.csv',
+                               n_required_classes=30):
     """Provide merged labels based on the hierarchical tree.
     Exits when number of labels in the data equals or is just above `n_required_classes`.
 
@@ -379,7 +382,7 @@ def get_merged_ordered_classes(data_labels, htree_file='../data/proc/dend_RData_
     """
     #Load inhibitory subtree
     htree = HTree(htree_file=htree_file)
-    subtree = htree.get_subtree(node='n59')
+    subtree = htree.get_subtree(node=subtree_node)
     L = subtree.get_mergeseq()
 
     #Init:
