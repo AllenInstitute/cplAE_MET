@@ -1,46 +1,5 @@
-from numpy import matrix
 import torch
 import torch.nn as nn
-
-
-# class WeightedGaussianNoise(layers.Layer):
-#     """Custom additive zero-centered Gaussian noise. Std is weighted.
-#
-#     Args:
-#         stddev: Can be a scalar or vector
-#     call args:
-#         inputs: Input tensor (of any rank).
-#         training: Python boolean indicating whether the layer should behave in
-#         training mode (adding noise) or in inference mode (doing nothing).
-#     Input shape:
-#         Arbitrary. Use the keyword argument `input_shape`
-#         (tuple of integers, does not include the samples axis)
-#         when using this layer as the first layer in a model.
-#     Output shape:
-#         Same shape as input.
-#     """
-#
-#     def __init__(self, stddev, **kwargs):
-#         super(WeightedGaussianNoise, self).__init__(**kwargs)
-#         self.stddev = stddev
-#         return
-#
-#     def call(self, inputs, training=None):
-#         def noised():
-#             return inputs + tf.random.normal(array_ops.shape(inputs),
-#                                              mean=0.0, stddev=self.stddev,
-#                                              dtype=inputs.dtype, seed=None)
-#
-#         return K.in_train_phase(noised, inputs, training=training)
-#
-#     def get_config(self):
-#         config = {'stddev': self.stddev}
-#         base_config = super(WeightedGaussianNoise, self).get_config()
-#         return dict(list(base_config.items()) + list(config.items()))
-#
-#     @tf_utils.shape_type_conversion
-#     def compute_output_shape(self, input_shape):
-#         return input_shape
 
 
 class Encoder_T(nn.Module):
@@ -75,7 +34,7 @@ class Encoder_T(nn.Module):
 
     def forward(self, x):
         x = self.drp(x)
-        x = self.elu(self.fc0(x)) #In the previous models this is a Relu
+        x = self.elu(self.fc0(x))
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
         x = self.relu(self.fc3(x))
@@ -110,7 +69,7 @@ class Decoder_T(nn.Module):
         return
 
     def forward(self, x):
-        x = self.elu(self.fc0(x)) #Also here was Relu before
+        x = self.elu(self.fc0(x))
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
         x = self.relu(self.fc3(x))
@@ -120,9 +79,11 @@ class Decoder_T(nn.Module):
 
 class Encoder_E(nn.Module):
     """
-    Encoder for epigenetic data
+    Encoder for electrophysiology data
+    TODO: Add gaussian noise: use this torch.normal(mean=torch.arange(1., 11.), std=torch.arange(1, 0, -0.1))
     
     Args:
+        per_feature_gaussian_noise_sd: std of gaussian noise injection if training=True
         in_dim: input size of data
         int_dim: number of units in hidden layers
         out_dim: set to latent space dim
@@ -133,13 +94,14 @@ class Encoder_E(nn.Module):
                  in_dim=300,
                  int_dim=40,
                  out_dim=3,
-                 gaussian_noise_sd=0.05,
+                 per_feature_gaussian_noise_sd=None,
                  dropout_rate=0.1,
                  dtype=torch.FloatTensor):
 
 
         super(Encoder_E, self).__init__()
-        self.gnoise = WeightedGaussianNoise(stddev=gaussian_noise_sd)
+        per_feature_gaussian_noise_sd = torch.as_tensor(per_feature_gaussian_noise_sd)
+        self.per_feature_gaussian_noise_sd = per_feature_gaussian_noise_sd.view(1,in_dim)
         self.drp = nn.Dropout(p=dropout_rate)
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
@@ -153,8 +115,17 @@ class Encoder_E(nn.Module):
         self.elu = nn.ELU()
         return
 
+    def gnoise(self,x):
+        if self.training:
+            batchsize = x.shape[0]
+            x = torch.tensor(self.per_feature)
+            x.repeat(batchsize, 0)
+            n = torch.normal(mean=torch.zeros(x.shape), std=)
+            x = x + n
+        return x
+
     def forward(self, x):
-        x = self.gnoise(x)
+        x = self.gnoise(self,x)
         x = self.drp(x)
         x = self.elu(self.fc0(x))
         x = self.relu(self.fc1(x))
@@ -179,8 +150,7 @@ class Decoder_E(nn.Module):
                  in_dim=3,
                  int_dim=40,
                  out_dim=300,
-                 dropout_rate=0.1,
-                 dtype = torch.FloatTensor):
+                 dropout_rate=0.1):
 
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
@@ -202,19 +172,18 @@ class Decoder_E(nn.Module):
 
 class Encoder_M(nn.Module):
     """
-    Encoder for morphology data. [histograms, soma_depth]
+    Encoder for morphology data
 
     Args:
-        dropout_rate: dropout probability if training=True
-        latent_dim: representation dimenionality
+        out_dim: representation dimenionality
     """
 
     def __init__(self,
-                 stddev=0.5,
-                 out_dim=3,
-                 **kwargs):
+                std_dev=0.1,
+                out_dim=3,
+                **kwargs):
         super(Encoder_M, self).__init__()
-        # self.addnoise = nn.GaussianNoise(stddev)
+        self.gaussian_noise_std_dev=std_dev
         self.conv1_ax = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
         self.conv1_de = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
 
@@ -222,25 +191,28 @@ class Encoder_M(nn.Module):
         self.conv2_de = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
 
         self.flat = nn.Flatten()
-        self.fc1 = nn.Linear(14040, 20)
+        self.fc1 = nn.Linear(300, 20)
         self.fc2 = nn.Linear(20, 20)
         self.fc3 = nn.Linear(20, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
-                                 momentum=0.95, track_running_stats=True)
+                                 momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
 
         return
 
     def forward(self, x):
-        # x = self.addnoise(x)
+        if self.training:
+            x = x + (torch.randn(x.shape) * self.gaussian_noise_std_dev)
+
         ax, de = torch.tensor_split(x, 2, dim=1)
+
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
-        #
+
         ax = self.elu(self.conv2_ax(ax))
         de = self.elu(self.conv2_de(de))
-        #
         x = torch.cat(tensors=(self.flat(ax), self.flat(de)), dim=1)
+
         x = self.elu(self.fc1(x))
         x = self.elu(self.fc2(x))
         x = self.fc3(x)
@@ -253,16 +225,15 @@ class Decoder_M(nn.Module):
     Decoder for morphology data
 
     Args:
-        output_dim: Should be same as input dim if using as an autoencoder
-        intermediate_dim: Number of units in hidden keras.layers
-        training: boolean value to indicate model operation mode
+        in_dim: representation dimensionality
     """
 
     def __init__(self,
-                 name='Decoder_M',
+                 in_dim=3,
                  **kwargs):
+
         super(Decoder_M, self).__init__()
-        self.fc1_dec = nn.Linear(3, 20)
+        self.fc1_dec = nn.Linear(in_dim, 20)
         self.fc2_dec = nn.Linear(20, 20)
         self.fc3_dec = nn.Linear(20, 300)
 
@@ -273,7 +244,6 @@ class Decoder_M(nn.Module):
         self.convT2_de = nn.ConvTranspose2d(10, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
 
         self.elu = nn.ELU()
-
         return
 
     def forward(self, x):
@@ -285,12 +255,12 @@ class Decoder_M(nn.Module):
         ax = ax.view(-1, 10, 15, 1)
         de = de.view(-1, 10, 15, 1)
 
-
         ax = self.convT1_ax(ax)
         de = self.convT1_de(de)
 
         ax = self.convT2_ax(ax)
         de = self.convT2_de(de)
+        
         x = torch.cat(tensors=(ax, de), dim=1)
         return x
 

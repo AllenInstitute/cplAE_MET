@@ -39,36 +39,36 @@ class Encoder_M(layers.Layer):
         x = self.addnoise(inputs,training=training)
         ax,de = tf.split(x, 2, axis=-1)
 
-        # print('---')
-        # print(ax.shape)
-        # print(de.shape)
+        print('---')
+        print(ax.shape)
+        print(de.shape)
 
         ax = self.conv1_ax(ax)
         de = self.conv1_de(de)
         
-        # print('---')
-        # print(ax.shape)
-        # print(de.shape)
+        print('---')
+        print(ax.shape)
+        print(de.shape)
 
         ax = self.conv2_ax(ax)
         de = self.conv2_de(de)
         
-        # print('---')
-        # print(ax.shape)
-        # print(de.shape)
+        print('---')
+        print(ax.shape)
+        print(de.shape)
 
         x = self.cat(inputs=[self.flat(ax),self.flat(de)])
         
-        # print('---')
-        # print(x.shape)
+        print('---')
+        print(x.shape)
 
         x = self.fc1(x)
         x = self.fc2(x)
         x = self.fc3(x)
         x = self.bn(x,training=training)
         
-        # print('---')
-        # print(x.shape)
+        print('---')
+        print(x.shape)
 
         return x
 
