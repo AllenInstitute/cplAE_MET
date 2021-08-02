@@ -138,7 +138,7 @@ class Encoder_E(nn.Module):
 
 class Decoder_E(nn.Module):
     """
-    Decoder for epigenetic data
+    Decoder for electrophysiology data
 
     Args:
         in_dim: set to embedding dim obtained from encoder
@@ -176,7 +176,8 @@ class Decoder_E(nn.Module):
 
 class Encoder_M(nn.Module):
     """
-    Encoder for morphology data
+    Encoder for morphology data. Hard-coded values for architecture. 
+    Input is expected to be shape: (batch_size x 2 x 120 x 4)
 
     Args:
         out_dim: representation dimenionality
@@ -225,7 +226,8 @@ class Encoder_M(nn.Module):
 
 class Decoder_M(nn.Module):
     """
-    Decoder for morphology data
+    Decoder for morphology data. Hard-coded architecture.
+    Output is expected to be shape: (batch_size x 2 x 120 x 4)
 
     Args:
         in_dim: representation dimensionality
@@ -390,6 +392,7 @@ class Model_MET(nn.Module):
         self.eT = Encoder_T(dropout_p=T_dropout, in_dim=T_dim, out_dim=latent_dim, int_dim=T_int_dim)
         self.eE = Encoder_E(dropout_p=E_dropout, in_dim=E_dim, out_dim=latent_dim, int_dim=E_int_dim)
         self.eM = Encoder_M(std_dev=std_dev, out_dim=latent_dim)
+
         self.dT = Decoder_T(in_dim=latent_dim, out_dim=T_dim, int_dim=T_int_dim)
         self.dE = Decoder_E(in_dim=latent_dim, out_dim=E_dim, int_dim=E_int_dim)
         self.dM = Decoder_M(in_dim=latent_dim)
