@@ -132,6 +132,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
     #Model ============================
     model = Model_MET(T_dim=n_genes, T_int_dim=50, T_dropout=0.2,
                       E_dim=n_E_features, E_int_dim=50, E_dropout=0.2,
+                      E_noise_sd=0.1*np.std(train_dataset.E_dat,axis=0),
                       latent_dim=latent_dim, alpha_T=alpha_T, alpha_E=alpha_E, alpha_M=alpha_M,
                       lambda_TE=lambda_TE, lambda_ME=lambda_ME, lambda_MT=lambda_MT,
                       augment_decoders=augment_decoders)
@@ -164,6 +165,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
         #Validation: train mode -> eval mode + no_grad + eval mode -> train mode
         model.eval()
         with torch.no_grad():
+            breakpoint()
             _ = model((tensor_(D['XT'][val_ind, :]), tensor_(D['XE'][val_ind, :]), tensor_(D['XM'][val_ind, :])))
 
         val_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss={})

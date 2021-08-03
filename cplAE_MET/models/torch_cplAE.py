@@ -98,12 +98,15 @@ class Encoder_E(nn.Module):
                  in_dim=300,
                  int_dim=40,
                  out_dim=3,
-                 noise_sd=0,
+                 noise_sd=None,
                  dropout_p=0.1):
 
 
         super(Encoder_E, self).__init__()
-        self.noise_sd = tensor_(noise_sd)
+        if noise_sd is not None:
+            self.noise_sd = tensor_(noise_sd)
+        else:
+            self.noise_sd = None
         self.drp = nn.Dropout(p=dropout_p)
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
@@ -118,13 +121,13 @@ class Encoder_E(nn.Module):
         return
 
     def addnoise(self,x):
-        if self.training:
+        if (self.training) and (self.noise_sd is not None):
             # batch dim is inferred from shapes of x and self.noise_sd
             x = torch.normal(mean=x, std=self.noise_sd)
         return x
 
     def forward(self, x):
-        x = self.addnoise(self,x)
+        x = self.addnoise(x)
         x = self.drp(x)
         x = self.elu(self.fc0(x))
         x = self.relu(self.fc1(x))
@@ -277,6 +280,7 @@ class Model_TE(nn.Module):
         E_int_dim: hidden layer dims for E model
         T_dropout: dropout for T data
         E_dropout: dropout for E data
+        E_noise_sd: per-feature Gaussian noise standard deviation
         latent_dim: dim for representations
         alpha_T: loss weight for T reconstruction
         alpha_E: loss weight for E reconstruction
@@ -287,7 +291,7 @@ class Model_TE(nn.Module):
 
     def __init__(self,
                  T_dim=1000, T_int_dim=50, T_dropout=0.5,
-                 E_dim=1000, E_int_dim=50, E_dropout=0.5,
+                 E_dim=1000, E_int_dim=50, E_dropout=0.5, E_noise_sd=None, 
                  latent_dim=3, alpha_T=1.0, alpha_E=1.0, lambda_TE=1.0,
                  augment_decoders=True):
 
@@ -298,7 +302,7 @@ class Model_TE(nn.Module):
         self.augment_decoders = augment_decoders
 
         self.eT = Encoder_T(dropout_p=T_dropout, in_dim=T_dim, out_dim=latent_dim, int_dim=T_int_dim)
-        self.eE = Encoder_E(dropout_p=E_dropout, in_dim=E_dim, out_dim=latent_dim, int_dim=E_int_dim)
+        self.eE = Encoder_E(dropout_p=E_dropout, noise_sd=E_noise_sd, in_dim=E_dim, out_dim=latent_dim, int_dim=E_int_dim)
         self.dT = Decoder_T(in_dim=latent_dim, out_dim=T_dim, int_dim=T_int_dim)
         self.dE = Decoder_E(in_dim=latent_dim, out_dim=E_dim, int_dim=E_int_dim)
         return
@@ -361,6 +365,7 @@ class Model_MET(nn.Module):
         E_int_dim: hidden layer dims for E model
         T_dropout: dropout for T data
         E_dropout: dropout for E data
+        E_noise_sd: per-feature gaussian noise
         latent_dim: dim for representations
         alpha_T: loss weight for T reconstruction
         alpha_E: loss weight for E reconstruction
@@ -374,7 +379,7 @@ class Model_MET(nn.Module):
 
     def __init__(self,
                  T_dim=1000, T_int_dim=50, T_dropout=0.5,
-                 E_dim=1000, E_int_dim=50, E_dropout=0.5,
+                 E_dim=1000, E_int_dim=50, E_dropout=0.5, E_noise_sd=None,
                  latent_dim=3, alpha_T=1.0, alpha_E=1.0,
                  alpha_M=1.0, lambda_TE=1.0, lambda_MT=1.0,
                  lambda_ME=1.0, std_dev=1.0, augment_decoders=True):
@@ -389,7 +394,7 @@ class Model_MET(nn.Module):
         self.augment_decoders = augment_decoders
 
         self.eT = Encoder_T(dropout_p=T_dropout, in_dim=T_dim, out_dim=latent_dim, int_dim=T_int_dim)
-        self.eE = Encoder_E(dropout_p=E_dropout, in_dim=E_dim, out_dim=latent_dim, int_dim=E_int_dim)
+        self.eE = Encoder_E(dropout_p=E_dropout, noise_sd=E_noise_sd, in_dim=E_dim, out_dim=latent_dim, int_dim=E_int_dim)
         self.eM = Encoder_M(std_dev=std_dev, out_dim=latent_dim)
 
         self.dT = Decoder_T(in_dim=latent_dim, out_dim=T_dim, int_dim=T_int_dim)
