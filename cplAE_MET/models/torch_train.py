@@ -10,7 +10,7 @@ from cplAE_MET.utils.dataset import partitions
 from torch.utils.data import DataLoader
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--batchsize",         default=100,             type=int,    help="Batch size")
+parser.add_argument("--batchsize",         default=500,             type=int,    help="Batch size")
 parser.add_argument("--alpha_T",           default=1.0,             type=float,  help="Transcriptomic reconstruction loss weight")
 parser.add_argument("--alpha_E",           default=1.0,             type=float,  help="Electrophisiology reconstruction loss weight")
 parser.add_argument("--alpha_M",           default=1.0,             type=float,  help="Morphology reconstruction loss weight")
@@ -20,10 +20,11 @@ parser.add_argument("--lambda_MT",         default=1.0,             type=float, 
 parser.add_argument("--augment_decoders",  default=1,               type=int,    help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",        default=3,               type=int,    help="Number of latent dims")
 parser.add_argument("--n_epochs",          default=1000,            type=int,    help="Number of epochs to train")
-parser.add_argument("--config_file",       default='config_exc_MET.toml',type=str,help="config file with data paths")
+parser.add_argument("--config_file",       default='config_exc_MET.toml', type=str, help="config file with data paths")
 parser.add_argument("--run_iter",          default=0,               type=int,    help="Run-specific id")
 parser.add_argument("--model_id",          default='MET',           type=str,    help="Model-specific id")
 parser.add_argument("--exp_name",          default='MET_torch',     type=str,    help="Experiment set")
+parser.add_argument("--input_mat_filename",          default='inh_MET_model_input_mat.mat',     type=str,    help="name of the .mat file of input")
 
 
 def set_paths(config_file=None, exp_name='TEMP'):
@@ -56,7 +57,8 @@ class MET_Dataset(torch.utils.data.Dataset):
 
 def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
          lambda_MT=1.0, augment_decoders=1.0, batchsize=500, latent_dim=3,
-         n_epochs=5000, run_iter=0, config_file='config_exc_MET.toml', model_id='MET', exp_name='MET_torch'):
+         n_epochs=5000, run_iter=0, config_file='config_exc_MET.toml', model_id='MET',
+         exp_name='MET_torch', input_mat_filename="inh_MET_model_input_mat.mat"):
     
     
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
@@ -71,15 +73,29 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
     augment_decoders = augment_decoders > 0
 
     #Data selection===================
-    n_genes = 1250
-    n_E_features = 120
+    data = sio.loadmat("/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/inh_MET_model_input_mat.mat")
+    #
+    # D = {}
+    # D["XT"] = data['T_dat']
+    # D["XE"] = data['E_dat']
+    # D["XM"] = data['M_dat']
+    #
+
+    # n_genes = 1252
+    # n_E_features = 120
     D={}
-    D["XT"] = np.random.randn(1000, 1250)
-    D["XE"] = np.random.randn(1000, 120)
-    D["XM"] = np.random.randn(1000, 2, 120, 4)
-    
+    D["XT"] = data['T_dat']
+    D["XE"] = data['E_dat']
+    # D["XM"] = data['M_dat']
+    # D["XT"] = np.random.randn(3819, 1252)
+    # D["XE"] = np.random.randn(3819, 120)
+    D["XM"] = np.random.randn(3819, 2, 120, 4)
+
+    n_genes = D["XT"].shape[1]
+    n_E_features = D["XE"].shape[1]
+
     train_ind = [i for i in range(0, 800)]
-    val_ind = [i for i in range(800, 1000)]
+    val_ind = [i for i in range(800, 3819)]
     #train_ind, val_ind = partitions(celltype=D['cluster'], n_partitions=10, seed=0)
     splits = {'train_ind': train_ind, 'val_ind': val_ind}
 
