@@ -6,6 +6,8 @@
  "specimen_ids_file": "specimen_ids_for_revision_Apr_2020.txt",
  "E_timeseries_file": "Ephys_timeseris.h5",
  "ipfx_features_file": "inh_ipfx_features_20July2021.csv", 
+ "M_data_file": "inh_M_data.mat",
+ "M_anno_file": "inh_M_anno.csv",
  "beta_threshold": 0.4, 
  "pca_comp_threshold": 0.97, 
  "output_file_prefix": "inh"
