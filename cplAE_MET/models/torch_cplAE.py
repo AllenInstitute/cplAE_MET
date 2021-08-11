@@ -6,6 +6,19 @@ def tensor(x): return torch.tensor(x).to(dtype=torch.float32).to(device)
 def tensor_(x): return torch.as_tensor(x).to(dtype=torch.float32).to(device)
 def tonumpy(x): return x.cpu().detach().numpy()
 
+def remove_nans(x):
+    "removes nans for the M tensors along dim=1"
+    # Flatten:
+    shape = x.shape
+    x_reshaped = x.reshape(shape[0], -1)
+    # Drop all rows containing any nan:
+    mask = torch.any(x_reshaped.isnan(), dim=1)
+    mask_indices = torch.where(~mask)[0]
+    x_reshaped = x_reshaped[~mask]
+    # Reshape back:
+    x = x_reshaped.reshape(x_reshaped.shape[0], *shape[1:])
+    return x, mask_indices
+
 class Encoder_T(nn.Module):
     """
     Encoder for transcriptomic data
@@ -120,13 +133,14 @@ class Encoder_E(nn.Module):
         self.elu = nn.ELU()
         return
 
-    def addnoise(self,x):
+    def addnoise(self, x):
         if (self.training) and (self.noise_sd is not None):
             # batch dim is inferred from shapes of x and self.noise_sd
             x = torch.normal(mean=x, std=self.noise_sd)
         return x
 
     def forward(self, x):
+        #x, mask_x = remove_nans(x)
         x = self.addnoise(x)
         x = self.drp(x)
         x = self.elu(self.fc0(x))
@@ -188,7 +202,7 @@ class Encoder_M(nn.Module):
 
     def __init__(self, std_dev=0.1,  out_dim=3):
 
-        super(Encoder_M, self).__init__()
+        super(Encoder_M, self) .__init__()
         self.gaussian_noise_std_dev=std_dev
         self.conv1_ax = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
         self.conv1_de = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
@@ -211,6 +225,11 @@ class Encoder_M(nn.Module):
             x = x + (torch.randn(x.shape) * self.gaussian_noise_std_dev)
 
         ax, de = torch.tensor_split(x, 2, dim=1)
+
+        #remove nans from ax and de
+
+        #ax, mask_ax = remove_nans(ax)
+        #de, mask_de = remove_nans(de)
 
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
@@ -423,35 +442,53 @@ class Model_MET(nn.Module):
     def mean_sq_diff(x, y):
         return torch.mean(torch.square(x-y))
 
+    @staticmethod
+    def find_pairs(x, y):
+        keep_x = [True if i in y else False for i in x]
+        keep_y = [True if i in x else False for i in y]
+        return keep_x, keep_y
+
+    def match_pairs(self, zi, mask_zi, zj, mask_zj):
+        keep_zi, keep_zj = self.find_pairs(mask_zi, mask_zj)
+        return zi[keep_zi], zj[keep_zj]
+
     def forward(self, inputs):
         #T arm forward pass
         XT = inputs[0]
+        XT, mask_T = remove_nans(XT)
         zT = self.eT(XT)
         XrT = self.dT(zT)
 
         #E arm forward pass
         XE = inputs[1]
+        XE, mask_E = remove_nans(XE)
         zE = self.eE(XE)
         XrE = self.dE(zE)
 
         # M arm forward pass
         XM = inputs[2]
+        XM, mask_M = remove_nans(XM)
         zM = self.eM(XM)
         XrM = self.dM(zM)
+
+        #Matching pairs
+        masked_zT_by_E, masked_zE_by_T = self.match_pairs(zT, mask_T, zE, mask_E)
+        masked_zM_by_E, masked_zE_by_M = self.match_pairs(zM, mask_M, zE, mask_E)
+        masked_zM_by_T, masked_zT_by_M = self.match_pairs(zM, mask_M, zT, mask_T)
 
         #Loss calculations
         self.loss_dict = {}
         self.loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT, XrT)
         self.loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE, XrE)
         self.loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM, XrM)
-        self.loss_dict['cpl_TE'] = self.lambda_TE * self.min_var_loss(zT, zE)
-        self.loss_dict['cpl_ME'] = self.lambda_ME * self.min_var_loss(zM, zE)
-        self.loss_dict['cpl_MT'] = self.lambda_MT * self.min_var_loss(zM, zT)
+        self.loss_dict['cpl_TE'] = self.lambda_TE * self.min_var_loss(masked_zT_by_E, masked_zE_by_T)
+        self.loss_dict['cpl_ME'] = self.lambda_ME * self.min_var_loss(masked_zM_by_E, masked_zE_by_M)
+        self.loss_dict['cpl_MT'] = self.lambda_MT * self.min_var_loss(masked_zM_by_T, masked_zT_by_M)
 
         if self.augment_decoders:
-            XrT_aug = self.dT(zE.detach())
-            XrE_aug = self.dE(zT.detach())
-            XrM_aug = self.dM(zM.detach()) #Do we have aug for M?
+            XrT_aug = self.dT(zT.detach())
+            XrE_aug = self.dE(zE.detach())
+            XrM_aug = self.dM(zM.detach())
             self.loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT, XrT_aug)
             self.loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE, XrE_aug)
             self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM, XrM_aug)
