@@ -7,7 +7,7 @@ def tensor_(x): return torch.as_tensor(x).to(dtype=torch.float32).to(device)
 def tonumpy(x): return x.cpu().detach().numpy()
 
 def remove_nans(x):
-    "removes nans for the M tensors along dim=1"
+    "removes nans from a tensor along dim=1"
     # Flatten:
     shape = x.shape
     x_reshaped = x.reshape(shape[0], -1)
@@ -140,7 +140,6 @@ class Encoder_E(nn.Module):
         return x
 
     def forward(self, x):
-        #x, mask_x = remove_nans(x)
         x = self.addnoise(x)
         x = self.drp(x)
         x = self.elu(self.fc0(x))
@@ -227,10 +226,6 @@ class Encoder_M(nn.Module):
         ax, de = torch.tensor_split(x, 2, dim=1)
 
         #remove nans from ax and de
-
-        #ax, mask_ax = remove_nans(ax)
-        #de, mask_de = remove_nans(de)
-
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
 
@@ -494,4 +489,4 @@ class Model_MET(nn.Module):
             self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM, XrM_aug)
 
         self.loss = sum(self.loss_dict.values())
-        return  zT, zE, zM, XrT, XrE, XrM
+        return zT, zE, zM, XrT, XrE, XrM
