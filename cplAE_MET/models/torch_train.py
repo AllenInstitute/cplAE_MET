@@ -14,12 +14,13 @@ parser.add_argument("--batchsize",         default=500,             type=int,   
 parser.add_argument("--alpha_T",           default=1.0,             type=float,  help="Transcriptomic reconstruction loss weight")
 parser.add_argument("--alpha_E",           default=1.0,             type=float,  help="Electrophisiology reconstruction loss weight")
 parser.add_argument("--alpha_M",           default=1.0,             type=float,  help="Morphology reconstruction loss weight")
+parser.add_argument("--alpha_soma_depth",  default=1.0,             type=float,  help="Soma depth reconstruction loss weight")
 parser.add_argument("--lambda_TE",         default=1.0,             type=float,  help="T and E coupling loss weight")
 parser.add_argument("--lambda_ME",         default=0.1,             type=float,  help="M and E coupling loss weight")
 parser.add_argument("--lambda_MT",         default=0.1,             type=float,  help="M and T coupling loss weight")
 parser.add_argument("--augment_decoders",  default=1,               type=int,    help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",        default=3,               type=int,    help="Number of latent dims")
-parser.add_argument("--n_epochs",          default=1000,            type=int,    help="Number of epochs to train")
+parser.add_argument("--n_epochs",          default=1000,              type=int,    help="Number of epochs to train")
 parser.add_argument("--config_file",       default='config_exc_MET.toml', type=str, help="config file with data paths")
 parser.add_argument("--run_iter",          default=0,               type=int,    help="Run-specific id")
 parser.add_argument("--model_id",          default='MET',           type=str,    help="Model-specific id")
@@ -39,24 +40,26 @@ def set_paths(config_file=None, exp_name='TEMP', input_mat_filename='ALSO_TEMP')
 
 
 class MET_Dataset(torch.utils.data.Dataset):
-    def __init__(self, T_dat, E_dat, M_dat):
+    def __init__(self, T_dat, E_dat, M_dat, soma_depth):
         super(MET_Dataset).__init__()
         self.T_dat = T_dat
         self.E_dat = E_dat
         self.M_dat = M_dat
+        self.soma_depth = soma_depth
         self.n_samples = np.shape(self.T_dat)[0]
 
     def __getitem__(self, idx):
         sample = {"XT": self.T_dat[idx, :],
                   "XE": self.E_dat[idx, :],
-                  "XM": self.M_dat[idx, :]}
+                  "XM": self.M_dat[idx, :],
+                  "X_soma_depth": self.soma_depth[idx]}
         return sample
 
     def __len__(self):
         return self.n_samples
 
 
-def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
+def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=1.0, lambda_ME=1.0,
          lambda_MT=1.0, augment_decoders=1.0, batchsize=500, latent_dim=3,
          n_epochs=5000, run_iter=0, config_file='config_exc_MET.toml', model_id='MET',
          exp_name='MET_torch', input_mat_filename="inh_MET_model_input_mat.mat"):
@@ -64,7 +67,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
     
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name, input_mat_filename=input_mat_filename)
 
-    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_' +
+    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_soma_depth)}_' +
               f'csTE_{str(lambda_TE)}_csME_{str(lambda_ME)}_csMT_{str(lambda_MT)}_' +
               f'ad_{str(augment_decoders)}_ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}').replace('.', '-')
@@ -79,6 +82,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
     D["XT"] = data['T_dat']
     D["XE"] = data['E_dat']
     D["XM"] = data['M_dat']
+    D["X_soma_depth"] = data['soma_depth']
     D['cluster'] = data['cluster']
 
     n_genes = D["XT"].shape[1]
@@ -112,13 +116,15 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
 
     def save_results(model, data, fname, splits=splits):
         model.eval()
-        zT, zE, zM, XrT, XrE, XrM = model(
+        zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth = model(
             (tensor_(data['XT']),
              tensor_(data['XE']),
-             (tensor_(data['XM']))))
+             tensor_(data['XM']),
+             tensor_(data['X_soma_depth'])))
         savemat = {'zT': tonumpy(zT), 'XrT': tonumpy(XrT), 
                    'zE': tonumpy(zE), 'XrE': tonumpy(XrE),
-                   'zM': tonumpy(zM), 'XrM': tonumpy(XrM)}
+                   'zM': tonumpy(zM_z_soma_depth),
+                   'XrM': tonumpy(XrM), 'Xr_soma_depth': tonumpy(XrM)}
         savemat.update(splits)
         sio.savemat(fname, savemat, do_compression=True)
         return
@@ -130,7 +136,8 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
         val_ind = split['val']
         train_dataset = MET_Dataset(T_dat=D['XT'][train_ind, :],
                                     E_dat=D['XE'][train_ind, :],
-                                    M_dat=D['XM'][train_ind, :])
+                                    M_dat=D['XM'][train_ind, :],
+                                    soma_depth=D['X_soma_depth'][train_ind])
         train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
         train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False,
                                   sampler=train_sampler, drop_last=True, pin_memory=True)
@@ -140,8 +147,8 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
                       E_dim=n_E_features, E_int_dim=50, E_dropout=0.2,
                       E_noise_sd=0.1 * np.nanstd(train_dataset.E_dat, axis=0),
                       latent_dim=latent_dim, alpha_T=alpha_T, alpha_E=alpha_E, alpha_M=alpha_M,
-                      lambda_TE=lambda_TE, lambda_ME=lambda_ME, lambda_MT=lambda_MT,
-                      augment_decoders=augment_decoders)
+                      alpha_soma_depth=alpha_soma_depth, lambda_TE=lambda_TE, lambda_ME=lambda_ME,
+                      lambda_MT=lambda_MT, augment_decoders=augment_decoders)
         optimizer = torch.optim.Adam(model.parameters())
 
         model.to(device)
@@ -160,8 +167,9 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
                 #zero + forward + backward + udpate
                 optimizer.zero_grad()
                 _ = model((tensor_(batch['XT']),
-                        tensor_(batch['XE']),
-                        tensor_(batch['XM'])))
+                           tensor_(batch['XE']),
+                           tensor_(batch['XM']),
+                           tensor_(batch['X_soma_depth'])))
                 model.loss.backward()
                 optimizer.step()
 
@@ -171,7 +179,10 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, lambda_TE=1.0, lambda_ME=1.0,
             #Validation: train mode -> eval mode + no_grad + eval mode -> train mode
             model.eval()
             with torch.no_grad():
-                _ = model((tensor_(D['XT'][val_ind, :]), tensor_(D['XE'][val_ind, :]), tensor_(D['XM'][val_ind, :])))
+                _ = model((tensor_(D['XT'][val_ind, :]),
+                           tensor_(D['XE'][val_ind, :]),
+                           tensor_(D['XM'][val_ind, :]),
+                           tensor_(D['X_soma_depth'][val_ind])))
 
             val_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss={})
             model.train()

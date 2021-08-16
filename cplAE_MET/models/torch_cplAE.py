@@ -108,7 +108,7 @@ class Encoder_E(nn.Module):
     """
 
     def __init__(self,
-                 in_dim=300,
+                 in_dim=301,
                  int_dim=40,
                  out_dim=3,
                  noise_sd=None,
@@ -164,7 +164,7 @@ class Decoder_E(nn.Module):
     def __init__(self,
                  in_dim=3,
                  int_dim=40,
-                 out_dim=300,
+                 out_dim=301,
                  dropout_p=0.1):
 
         super(Decoder_E, self).__init__()
@@ -201,7 +201,7 @@ class Encoder_M(nn.Module):
 
     def __init__(self, std_dev=0.1,  out_dim=3):
 
-        super(Encoder_M, self) .__init__()
+        super(Encoder_M, self).__init__()
         self.gaussian_noise_std_dev=std_dev
         self.conv1_ax = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
         self.conv1_de = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
@@ -210,7 +210,7 @@ class Encoder_M(nn.Module):
         self.conv2_de = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
 
         self.flat = nn.Flatten()
-        self.fc1 = nn.Linear(300, 20)
+        self.fc1 = nn.Linear(301, 20)
         self.fc2 = nn.Linear(20, 20)
         self.fc3 = nn.Linear(20, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
@@ -219,7 +219,7 @@ class Encoder_M(nn.Module):
 
         return
 
-    def forward(self, x):
+    def forward(self, x, soma_depth):
         if self.training:
             x = x + (torch.randn(x.shape) * self.gaussian_noise_std_dev)
 
@@ -232,6 +232,9 @@ class Encoder_M(nn.Module):
         ax = self.elu(self.conv2_ax(ax))
         de = self.elu(self.conv2_de(de))
         x = torch.cat(tensors=(self.flat(ax), self.flat(de)), dim=1)
+
+        soma_depth= soma_depth.view(-1, 1)
+        x = torch.cat(tensors=(x, soma_depth), dim=1)
 
         x = self.elu(self.fc1(x))
         x = self.elu(self.fc2(x))
@@ -254,7 +257,7 @@ class Decoder_M(nn.Module):
         super(Decoder_M, self).__init__()
         self.fc1_dec = nn.Linear(in_dim, 20)
         self.fc2_dec = nn.Linear(20, 20)
-        self.fc3_dec = nn.Linear(20, 300)
+        self.fc3_dec = nn.Linear(20, 301)
 
         self.convT1_ax = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
         self.convT1_de = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
@@ -270,7 +273,10 @@ class Decoder_M(nn.Module):
         x = self.elu(self.fc2_dec(x))
         x = self.elu(self.fc3_dec(x))
 
-        ax, de = torch.tensor_split(x, 2, dim=1)
+        ax_de = x[:, 0:300]
+        soma_depth = x[:, 300]
+
+        ax, de = torch.tensor_split(ax_de, 2, dim=1)
         ax = ax.view(-1, 10, 15, 1)
         de = de.view(-1, 10, 15, 1)
 
@@ -281,7 +287,7 @@ class Decoder_M(nn.Module):
         de = self.convT2_de(de)
 
         x = torch.cat(tensors=(ax, de), dim=1)
-        return x
+        return x, soma_depth
 
 
 class Model_TE(nn.Module):
@@ -394,7 +400,7 @@ class Model_MET(nn.Module):
     def __init__(self,
                  T_dim=1000, T_int_dim=50, T_dropout=0.5,
                  E_dim=1000, E_int_dim=50, E_dropout=0.5, E_noise_sd=None,
-                 latent_dim=3, alpha_T=1.0, alpha_E=1.0,
+                 latent_dim=3, alpha_T=1.0, alpha_E=1.0, alpha_soma_depth=1.0,
                  alpha_M=1.0, lambda_TE=1.0, lambda_MT=1.0,
                  lambda_ME=1.0, std_dev=1.0, augment_decoders=True):
 
@@ -402,6 +408,7 @@ class Model_MET(nn.Module):
         self.alpha_T = alpha_T
         self.alpha_E = alpha_E
         self.alpha_M = alpha_M
+        self.alpha_soma_depth = alpha_soma_depth
         self.lambda_TE = lambda_TE
         self.lambda_ME = lambda_ME
         self.lambda_MT = lambda_MT
@@ -462,20 +469,26 @@ class Model_MET(nn.Module):
 
         # M arm forward pass
         XM = inputs[2]
+        X_soma_depth = inputs[3]
         XM, mask_M = remove_nans(XM)
-        zM = self.eM(XM)
-        XrM = self.dM(zM)
+        X_soma_depth, mask_soma_depth = remove_nans(X_soma_depth)
+        zM_z_soma_depth = self.eM(XM, X_soma_depth)
+        XrM, Xr_soma_depth = self.dM(zM_z_soma_depth)
+
+        #If M_data is nan, soma_depth must be nan too
+        assert torch.all(torch.eq(mask_M, mask_soma_depth))
 
         #Matching pairs
         masked_zT_by_E, masked_zE_by_T = self.match_pairs(zT, mask_T, zE, mask_E)
-        masked_zM_by_E, masked_zE_by_M = self.match_pairs(zM, mask_M, zE, mask_E)
-        masked_zM_by_T, masked_zT_by_M = self.match_pairs(zM, mask_M, zT, mask_T)
+        masked_zM_by_E, masked_zE_by_M = self.match_pairs(zM_z_soma_depth, mask_M, zE, mask_E)
+        masked_zM_by_T, masked_zT_by_M = self.match_pairs(zM_z_soma_depth, mask_M, zT, mask_T)
 
         #Loss calculations
         self.loss_dict = {}
         self.loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT, XrT)
         self.loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE, XrE)
         self.loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM, XrM)
+        self.loss_dict['recon_soma_depth'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth, Xr_soma_depth)
         self.loss_dict['cpl_TE'] = self.lambda_TE * self.min_var_loss(masked_zT_by_E, masked_zE_by_T)
         self.loss_dict['cpl_ME'] = self.lambda_ME * self.min_var_loss(masked_zM_by_E, masked_zE_by_M)
         self.loss_dict['cpl_MT'] = self.lambda_MT * self.min_var_loss(masked_zM_by_T, masked_zT_by_M)
@@ -483,10 +496,11 @@ class Model_MET(nn.Module):
         if self.augment_decoders:
             XrT_aug = self.dT(zT.detach())
             XrE_aug = self.dE(zE.detach())
-            XrM_aug = self.dM(zM.detach())
+            XrM_aug, Xr_soma_depth_aug = self.dM(zM_z_soma_depth.detach())
             self.loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT, XrT_aug)
             self.loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE, XrE_aug)
             self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM, XrM_aug)
+            self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth, Xr_soma_depth_aug)
 
         self.loss = sum(self.loss_dict.values())
-        return zT, zE, zM, XrT, XrE, XrM
+        return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth
