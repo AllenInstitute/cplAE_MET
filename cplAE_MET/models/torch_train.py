@@ -20,7 +20,8 @@ parser.add_argument("--lambda_ME",         default=0.1,             type=float, 
 parser.add_argument("--lambda_MT",         default=0.1,             type=float,  help="M and T coupling loss weight")
 parser.add_argument("--augment_decoders",  default=1,               type=int,    help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",        default=3,               type=int,    help="Number of latent dims")
-parser.add_argument("--n_epochs",          default=1000,              type=int,    help="Number of epochs to train")
+parser.add_argument("--n_epochs",          default=1000,            type=int,    help="Number of epochs to train")
+parser.add_argument("--n_fold",            default=0,               type=int,    help="Fold number in the kfold cross validation training")
 parser.add_argument("--config_file",       default='config_exc_MET.toml', type=str, help="config file with data paths")
 parser.add_argument("--run_iter",          default=0,               type=int,    help="Run-specific id")
 parser.add_argument("--model_id",          default='MET',           type=str,    help="Model-specific id")
@@ -61,7 +62,7 @@ class MET_Dataset(torch.utils.data.Dataset):
 
 def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=1.0, lambda_ME=1.0,
          lambda_MT=1.0, augment_decoders=1.0, batchsize=500, latent_dim=3,
-         n_epochs=5000, run_iter=0, config_file='config_exc_MET.toml', model_id='MET',
+         n_epochs=5000, n_fold=0, run_iter=0, config_file='config_exc_MET.toml', model_id='MET',
          exp_name='MET_torch', input_mat_filename="inh_MET_model_input_mat.mat"):
     
     
@@ -130,95 +131,94 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
         return
 
     #Training data
-    for k, split in enumerate(splits):
-        fold_fileid = fileid + "_fold_" + str(k)
-        train_ind = split['train']
-        val_ind = split['val']
-        train_dataset = MET_Dataset(T_dat=D['XT'][train_ind, :],
-                                    E_dat=D['XE'][train_ind, :],
-                                    M_dat=D['XM'][train_ind, :],
-                                    soma_depth=D['X_soma_depth'][train_ind])
-        train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
-        train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False,
-                                  sampler=train_sampler, drop_last=True, pin_memory=True)
+    fold_fileid = fileid + "_fold_" + str(n_fold)
+    train_ind = splits[n_fold]['train']
+    val_ind = splits[n_fold]['val']
+    train_dataset = MET_Dataset(T_dat=D['XT'][train_ind, :],
+                                E_dat=D['XE'][train_ind, :],
+                                M_dat=D['XM'][train_ind, :],
+                                soma_depth=D['X_soma_depth'][train_ind])
+    train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False,
+                              sampler=train_sampler, drop_last=True, pin_memory=True)
 
-        #Model ============================
-        model = Model_MET(T_dim=n_genes, T_int_dim=50, T_dropout=0.2,
+    #Model ============================
+    model = Model_MET(T_dim=n_genes, T_int_dim=50, T_dropout=0.2,
                       E_dim=n_E_features, E_int_dim=50, E_dropout=0.2,
                       E_noise_sd=0.1 * np.nanstd(train_dataset.E_dat, axis=0),
                       latent_dim=latent_dim, alpha_T=alpha_T, alpha_E=alpha_E, alpha_M=alpha_M,
                       alpha_soma_depth=alpha_soma_depth, lambda_TE=lambda_TE, lambda_ME=lambda_ME,
                       lambda_MT=lambda_MT, augment_decoders=augment_decoders)
-        optimizer = torch.optim.Adam(model.parameters())
+    optimizer = torch.optim.Adam(model.parameters())
 
-        model.to(device)
+    model.to(device)
 
 
-        #Training loop ====================
-        best_loss = np.inf
-        monitor_loss = []
+    #Training loop ====================
+    best_loss = np.inf
+    monitor_loss = []
 
-        for epoch in range(n_epochs):
-            train_loss_dict = {}
-            train_datagen = iter(train_dataloader)
-            for _ in range(len(train_dataloader)):
-                batch = next(train_datagen)
+    for epoch in range(n_epochs):
+        train_loss_dict = {}
+        train_datagen = iter(train_dataloader)
+        for _ in range(len(train_dataloader)):
+            batch = next(train_datagen)
 
-                #zero + forward + backward + udpate
-                optimizer.zero_grad()
-                _ = model((tensor_(batch['XT']),
+            #zero + forward + backward + udpate
+            optimizer.zero_grad()
+            _ = model((tensor_(batch['XT']),
                            tensor_(batch['XE']),
                            tensor_(batch['XM']),
                            tensor_(batch['X_soma_depth'])))
-                model.loss.backward()
-                optimizer.step()
+            model.loss.backward()
+            optimizer.step()
 
-                #track loss over batches:
-                train_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss=train_loss_dict)
+            #track loss over batches:
+            train_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss=train_loss_dict)
 
-            #Validation: train mode -> eval mode + no_grad + eval mode -> train mode
-            model.eval()
-            with torch.no_grad():
-                _ = model((tensor_(D['XT'][val_ind, :]),
-                           tensor_(D['XE'][val_ind, :]),
-                           tensor_(D['XM'][val_ind, :]),
-                           tensor_(D['X_soma_depth'][val_ind])))
+        #Validation: train mode -> eval mode + no_grad + eval mode -> train mode
+        model.eval()
+        with torch.no_grad():
+            _ = model((tensor_(D['XT'][val_ind, :]),
+                        tensor_(D['XE'][val_ind, :]),
+                        tensor_(D['XM'][val_ind, :]),
+                        tensor_(D['X_soma_depth'][val_ind])))
 
-            val_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss={})
-            model.train()
+        val_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss={})
+        model.train()
 
-            train_loss = report_losses(loss_dict=train_loss_dict, partition="train")
-            val_loss = report_losses(loss_dict=val_loss_dict, partition="val")
-            print(f'epoch {epoch:04d} Train {train_loss}')
-            print(f'epoch {epoch:04d} ----- Val {val_loss}')
+        train_loss = report_losses(loss_dict=train_loss_dict, partition="train")
+        val_loss = report_losses(loss_dict=val_loss_dict, partition="val")
+        print(f'epoch {epoch:04d} Train {train_loss}')
+        print(f'epoch {epoch:04d} ----- Val {val_loss}')
 
-            #Logging ==============
-            with open(dir_pth['logs'] + f'{fold_fileid}.csv', "a") as f:
-                writer = csv.writer(f, delimiter=',')
-                if epoch == 0:
-                    writer.writerow(['epoch', *train_loss_dict.keys(), *val_loss_dict.keys()])
-                writer.writerow([epoch+1, *train_loss_dict.values(), *val_loss_dict.values()])
+        #Logging ==============
+        with open(dir_pth['logs'] + f'{fold_fileid}.csv', "a") as f:
+            writer = csv.writer(f, delimiter=',')
+            if epoch == 0:
+                writer.writerow(['epoch', *train_loss_dict.keys(), *val_loss_dict.keys()])
+            writer.writerow([epoch+1, *train_loss_dict.values(), *val_loss_dict.values()])
 
-            monitor_loss.append(val_loss_dict['recon_T']+val_loss_dict['recon_E']+val_loss_dict['cpl_TE'])
+        monitor_loss.append(val_loss_dict['recon_T']+val_loss_dict['recon_E']+val_loss_dict['cpl_TE'])
 
-            #Checkpoint ===========
-            if (monitor_loss[-1] < best_loss) and (epoch > 2500):
-                best_loss = monitor_loss[-1]
-                torch.save({'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'loss': best_loss, }, dir_pth['result'] + f'{fold_fileid}-best_loss_weights.pt')
-        print('\nTraining completed for fold:', k)
-        print()
+        #Checkpoint ===========
+        if (monitor_loss[-1] < best_loss) and (epoch > 2500):
+            best_loss = monitor_loss[-1]
+            torch.save({'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': best_loss, }, dir_pth['result'] + f'{fold_fileid}-best_loss_weights.pt')
+    print('\nTraining completed for fold:', n_fold)
+    print()
 
 
-        #Save model weights on exit
-        torch.save({'epoch': epoch,
+    #Save model weights on exit
+    torch.save({'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': best_loss}, dir_pth['result'] + f'{fold_fileid}-best_loss_weights.pt')
-        save_fname = dir_pth['result'] + f'{fold_fileid}_exit'
-        save_results(model=model, data=D.copy(), fname=f'{save_fname}-summary.mat')
+    save_fname = dir_pth['result'] + f'{fold_fileid}_exit'
+    save_results(model=model, data=D.copy(), fname=f'{save_fname}-summary.mat')
     return
 
 
