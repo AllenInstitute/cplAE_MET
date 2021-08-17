@@ -115,7 +115,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
             tracked_loss[key] += tonumpy(model_loss[key])
         return tracked_loss
 
-    def save_results(model, data, fname, splits=splits):
+    def save_results(model, data, fname, n_fold, splits=splits):
         model.eval()
         zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth = model(
             (tensor_(data['XT']),
@@ -124,9 +124,9 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
              tensor_(data['X_soma_depth'])))
         savemat = {'zT': tonumpy(zT), 'XrT': tonumpy(XrT), 
                    'zE': tonumpy(zE), 'XrE': tonumpy(XrE),
-                   'zM': tonumpy(zM_z_soma_depth),
+                   'zM_z_soma_depth': tonumpy(zM_z_soma_depth),
                    'XrM': tonumpy(XrM), 'Xr_soma_depth': tonumpy(XrM)}
-        savemat.update(splits)
+        savemat.update(splits[n_fold])
         sio.savemat(fname, savemat, do_compression=True)
         return
 
@@ -218,7 +218,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': best_loss}, dir_pth['result'] + f'{fold_fileid}-best_loss_weights.pt')
     save_fname = dir_pth['result'] + f'{fold_fileid}_exit'
-    save_results(model=model, data=D.copy(), fname=f'{save_fname}-summary.mat')
+    save_results(model=model, data=D.copy(), fname=f'{save_fname}-summary.mat', n_fold=n_fold)
     return
 
 
