@@ -17,7 +17,7 @@ def remove_nans(x):
     x_reshaped = x_reshaped[~mask]
     # Reshape back:
     x = x_reshaped.reshape(x_reshaped.shape[0], *shape[1:])
-    return x, mask_indices
+    return x, mask_indices, ~mask
 
 class Encoder_T(nn.Module):
     """
@@ -457,31 +457,31 @@ class Model_MET(nn.Module):
     def forward(self, inputs):
         #T arm forward pass
         XT = inputs[0]
-        XT, mask_T = remove_nans(XT)
+        XT, mask_T_indices, mask_T = remove_nans(XT)
         zT = self.eT(XT)
         XrT = self.dT(zT)
 
         #E arm forward pass
         XE = inputs[1]
-        XE, mask_E = remove_nans(XE)
+        XE, mask_E_indices, mask_E = remove_nans(XE)
         zE = self.eE(XE)
         XrE = self.dE(zE)
 
         # M arm forward pass
         XM = inputs[2]
         X_soma_depth = inputs[3]
-        XM, mask_M = remove_nans(XM)
-        X_soma_depth, mask_soma_depth = remove_nans(X_soma_depth)
+        XM, mask_M_indices, mask_M = remove_nans(XM)
+        X_soma_depth, mask_soma_depth_indices, mask_soma_depth = remove_nans(X_soma_depth)
         zM_z_soma_depth = self.eM(XM, X_soma_depth)
         XrM, Xr_soma_depth = self.dM(zM_z_soma_depth)
 
         #If M_data is nan, soma_depth must be nan too
-        assert torch.all(torch.eq(mask_M, mask_soma_depth))
+        assert torch.all(torch.eq(mask_M_indices, mask_soma_depth_indices))
 
         #Matching pairs
-        masked_zT_by_E, masked_zE_by_T = self.match_pairs(zT, mask_T, zE, mask_E)
-        masked_zM_by_E, masked_zE_by_M = self.match_pairs(zM_z_soma_depth, mask_M, zE, mask_E)
-        masked_zM_by_T, masked_zT_by_M = self.match_pairs(zM_z_soma_depth, mask_M, zT, mask_T)
+        masked_zT_by_E, masked_zE_by_T = self.match_pairs(zT, mask_T_indices, zE, mask_E_indices)
+        masked_zM_by_E, masked_zE_by_M = self.match_pairs(zM_z_soma_depth, mask_M_indices, zE, mask_E_indices)
+        masked_zM_by_T, masked_zT_by_M = self.match_pairs(zM_z_soma_depth, mask_M_indices, zT, mask_T_indices)
 
         #Loss calculations
         self.loss_dict = {}
@@ -503,4 +503,4 @@ class Model_MET(nn.Module):
             self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth, Xr_soma_depth_aug)
 
         self.loss = sum(self.loss_dict.values())
-        return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth
+        return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth, mask_T, mask_E, mask_M, mask_soma_depth

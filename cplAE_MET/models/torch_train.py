@@ -115,17 +115,37 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
             tracked_loss[key] += tonumpy(model_loss[key])
         return tracked_loss
 
+    def convert_to_original_shape(tensor, mask):
+        arr = tonumpy(tensor)
+        mask = tonumpy(mask)
+        shape_as_list = list(arr.shape)
+        shape_as_list[0] = mask.shape[0]
+        shape = tuple(shape_as_list)
+        arr_unmasked = np.zeros(shape)
+        arr_unmasked[mask] = arr
+        arr_unmasked[~mask] = np.nan
+        return arr_unmasked
+
+
     def save_results(model, data, fname, n_fold, splits=splits):
         model.eval()
-        zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth = model(
+        zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth, mask_T, mask_E, mask_M, mask_soma_depth = model(
             (tensor_(data['XT']),
              tensor_(data['XE']),
              tensor_(data['XM']),
              tensor_(data['X_soma_depth'])))
-        savemat = {'zT': tonumpy(zT), 'XrT': tonumpy(XrT), 
-                   'zE': tonumpy(zE), 'XrE': tonumpy(XrE),
+
+        XrT = convert_to_original_shape(XrT, mask_T)
+        XrE = convert_to_original_shape(XrE, mask_E)
+        XrM = convert_to_original_shape(XrM, mask_M)
+        Xr_soma_depth = convert_to_original_shape(Xr_soma_depth, mask_soma_depth)
+
+        savemat = {'zT': tonumpy(zT), 'XrT': XrT,
+                   'zE': tonumpy(zE), 'XrE': XrE,
                    'zM_z_soma_depth': tonumpy(zM_z_soma_depth),
-                   'XrM': tonumpy(XrM), 'Xr_soma_depth': tonumpy(XrM)}
+                   'XrM': XrM, 'Xr_soma_depth': Xr_soma_depth,
+                   'mask_T': tonumpy(mask_T), 'mask_E': tonumpy(mask_E),
+                   'mask_M': tonumpy(mask_M), 'mask_T_soma_depth': tonumpy(mask_soma_depth)}
         savemat.update(splits[n_fold])
         sio.savemat(fname, savemat, do_compression=True)
         return
