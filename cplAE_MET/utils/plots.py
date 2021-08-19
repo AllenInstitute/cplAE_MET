@@ -111,31 +111,32 @@ def show_ax_de_maps(Left,Right=None):
     """plots axon and dendrite density maps for comparison. Right image can be left empty.
 
     Args:
-        Left: Data image with shape (120, 4, 2)
-        Right: Predicted image with shape (120, 4, 2)
+        Left: Data image with shape (2, 120, 4)
+        Right: Predicted image with shape (2, 120, 4)
     """
     if Right is None:
         Right = np.zeros_like(Left)
 
-    plt.figure(figsize=(3,6))
+    plt.figure(figsize=(9,12))
 
     plt.subplot(221)
-    plt.imshow(np.squeeze(Left[...,0]),aspect='auto',vmin=0,vmax=np.max(Left[...,0]))
+    plt.imshow(np.squeeze(Left[0,...]),aspect='auto',vmin=0,vmax=np.max(Left[0,...]))
     plt.gca().set(**{'title':r'$X_m$','ylabel':'Dendrite map','xticks':[],'yticks':[]})
     plt.grid(False)
 
     plt.subplot(222)
-    plt.imshow(np.squeeze(Right[...,0]),aspect='auto',vmin=0,vmax=np.max(Right[...,1]))
-    plt.gca().set(**{'title':r'$X_t \rightarrow X_m$','xticks':[],'yticks':[]})
+    plt.imshow(np.squeeze(Right[0,...]),aspect='auto',vmin=0,vmax=np.max(Right[1,...]))
+    #plt.gca().set(**{'title':r'$X_t \rightarrow X_m$','xticks':[],'yticks':[]})
+    plt.gca().set(**{'title': r'$Xrm$', 'xticks': [], 'yticks': []})
     plt.grid(False)
     
     plt.subplot(223)
-    plt.imshow(np.squeeze(Left[...,1]),aspect='auto',vmin=0,vmax=np.max(Left[...,0]))
+    plt.imshow(np.squeeze(Left[1,...]),aspect='auto',vmin=0,vmax=np.max(Left[0,...]))
     plt.gca().set(**{'ylabel':'Axon map','xticks':[],'yticks':[]})
     plt.grid(False)
 
     plt.subplot(224)
-    plt.imshow(np.squeeze(Right[...,1]),aspect='auto',vmin=0,vmax=np.max(Right[...,1]))
+    plt.imshow(np.squeeze(Right[1,...]),aspect='auto',vmin=0,vmax=np.max(Right[1,...]))
     plt.gca().set(**{'xticks':[],'yticks':[]})
     plt.grid(False)
     return

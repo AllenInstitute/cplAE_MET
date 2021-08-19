@@ -91,3 +91,43 @@ def get_PCA_explained_variance_ratio_at_thr(nparray, threshold, show_plots=True)
         plt.ylabel('cumulative explained variance')
         plt.show()
     return n_components
+
+def remove_nan_observations(x):
+    """takes a np.array assuming that first dimension is the batch size or number of observations and remove
+    any observation that has nan features. Even if one of the features amon N features is nan, that observation
+    will be fropped
+
+        Args:
+        x: a numpy array
+
+        Returns:
+        x : a numpy array with nan removed
+        mask: a boolian array, True is showing non-nan values
+        """
+    shape = x.shape
+    x_reshaped = x.reshape(shape[0], -1)
+    # Drop all rows containing any nan:
+    mask = np.isnan(x_reshaped).any(axis=1)
+    x_reshaped = x_reshaped[~mask]
+    # Reshape back:
+    x = x_reshaped.reshape(x_reshaped.shape[0], *shape[1:])
+    return x, ~mask
+
+
+def convert_to_original_shape(x, mask):
+    """takes a np.array and a mask array that has been used on the arr and return a original version of the arr
+
+    Args:\
+    x: a numpy array
+    mask: a numpy array that was used to mask the original umased x
+
+    Returns:
+    x_unmasked
+    """
+    shape_as_list = list(x.shape)
+    shape_as_list[0] = mask.shape[0]
+    shape = tuple(shape_as_list)
+    x_unmasked = np.zeros(shape)
+    x_unmasked[mask] = x
+    x_unmasked[~mask] = np.nan
+    return x_unmasked
