@@ -6,18 +6,6 @@ def tensor(x): return torch.tensor(x).to(dtype=torch.float32).to(device)
 def tensor_(x): return torch.as_tensor(x).to(dtype=torch.float32).to(device)
 def tonumpy(x): return x.cpu().detach().numpy()
 
-def remove_nans(x):
-    "removes nans from a tensor along dim=1"
-    # Flatten:
-    shape = x.shape
-    x_reshaped = x.reshape(shape[0], -1)
-    # Drop all rows containing any nan:
-    mask = torch.any(x_reshaped.isnan(), dim=1)
-    mask_indices = torch.where(~mask)[0]
-    x_reshaped = x_reshaped[~mask]
-    # Reshape back:
-    x = x_reshaped.reshape(x_reshaped.shape[0], *shape[1:])
-    return x, mask_indices, ~mask
 
 class Encoder_T(nn.Module):
     """
@@ -233,7 +221,7 @@ class Encoder_M(nn.Module):
         de = self.elu(self.conv2_de(de))
         x = torch.cat(tensors=(self.flat(ax), self.flat(de)), dim=1)
 
-        soma_depth= soma_depth.view(-1, 1)
+        soma_depth = soma_depth.view(-1, 1)
         x = torch.cat(tensors=(x, soma_depth), dim=1)
 
         x = self.elu(self.fc1(x))
@@ -444,44 +432,39 @@ class Model_MET(nn.Module):
     def mean_sq_diff(x, y):
         return torch.mean(torch.square(x-y))
 
-    @staticmethod
-    def find_pairs(x, y):
-        keep_x = [True if i in y else False for i in x]
-        keep_y = [True if i in x else False for i in y]
-        return keep_x, keep_y
-
-    def match_pairs(self, zi, mask_zi, zj, mask_zj):
-        keep_zi, keep_zj = self.find_pairs(mask_zi, mask_zj)
-        return zi[keep_zi], zj[keep_zj]
-
     def forward(self, inputs):
         #T arm forward pass
         XT = inputs[0]
-        XT, mask_T_indices, mask_T = remove_nans(XT)
         zT = self.eT(XT)
         XrT = self.dT(zT)
 
         #E arm forward pass
         XE = inputs[1]
-        XE, mask_E_indices, mask_E = remove_nans(XE)
         zE = self.eE(XE)
         XrE = self.dE(zE)
 
         # M arm forward pass
         XM = inputs[2]
         X_soma_depth = inputs[3]
-        XM, mask_M_indices, mask_M = remove_nans(XM)
-        X_soma_depth, mask_soma_depth_indices, mask_soma_depth = remove_nans(X_soma_depth)
         zM_z_soma_depth = self.eM(XM, X_soma_depth)
         XrM, Xr_soma_depth = self.dM(zM_z_soma_depth)
 
-        #If M_data is nan, soma_depth must be nan too
-        assert torch.all(torch.eq(mask_M_indices, mask_soma_depth_indices))
+        #masks
+        mask_T_by_E = inputs[4]
+        mask_E_by_T = inputs[5]
+        mask_T_by_M = inputs[6]
+        mask_M_by_T = inputs[7]
+        mask_E_by_M = inputs[8]
+        mask_M_by_E = inputs[9]
 
         #Matching pairs
-        masked_zT_by_E, masked_zE_by_T = self.match_pairs(zT, mask_T_indices, zE, mask_E_indices)
-        masked_zM_by_E, masked_zE_by_M = self.match_pairs(zM_z_soma_depth, mask_M_indices, zE, mask_E_indices)
-        masked_zM_by_T, masked_zT_by_M = self.match_pairs(zM_z_soma_depth, mask_M_indices, zT, mask_T_indices)
+        masked_zT_by_E = zT[mask_E_by_T]
+        masked_zE_by_T = zE[mask_T_by_E]
+        masked_zM_by_E = zM_z_soma_depth[mask_E_by_M]
+        masked_zE_by_M = zE[mask_M_by_E]
+        masked_zM_by_T = zM_z_soma_depth[mask_T_by_M]
+        masked_zT_by_M = zT[mask_M_by_T]
+
 
         #Loss calculations
         self.loss_dict = {}
@@ -503,4 +486,4 @@ class Model_MET(nn.Module):
             self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth, Xr_soma_depth_aug)
 
         self.loss = sum(self.loss_dict.values())
-        return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth, mask_T, mask_E, mask_M, mask_soma_depth
+        return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth

@@ -20,7 +20,7 @@ parser.add_argument("--lambda_ME",         default=0.1,             type=float, 
 parser.add_argument("--lambda_MT",         default=0.1,             type=float,  help="M and T coupling loss weight")
 parser.add_argument("--augment_decoders",  default=1,               type=int,    help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",        default=3,               type=int,    help="Number of latent dims")
-parser.add_argument("--n_epochs",          default=1000,            type=int,    help="Number of epochs to train")
+parser.add_argument("--n_epochs",          default=10,            type=int,    help="Number of epochs to train")
 parser.add_argument("--n_fold",            default=0,               type=int,    help="Fold number in the kfold cross validation training")
 parser.add_argument("--config_file",       default='config_exc_MET.toml', type=str, help="config file with data paths")
 parser.add_argument("--run_iter",          default=0,               type=int,    help="Run-specific id")
@@ -30,7 +30,7 @@ parser.add_argument("--input_mat_filename",          default='inh_MET_model_inpu
 
 
 def set_paths(config_file=None, exp_name='TEMP', input_mat_filename='ALSO_TEMP'):
-    
+
     from cplAE_MET.utils.load_config import load_config
     paths = load_config(config_file=config_file, verbose=False)
     paths['input_mat'] = f'{str(paths["package_dir"] / "data/proc")}/{input_mat_filename}'
@@ -41,11 +41,14 @@ def set_paths(config_file=None, exp_name='TEMP', input_mat_filename='ALSO_TEMP')
 
 
 class MET_Dataset(torch.utils.data.Dataset):
-    def __init__(self, T_dat, E_dat, M_dat, soma_depth):
+    def __init__(self, T_dat, E_dat, M_dat, soma_depth, mask_T, mask_E, mask_M):
         super(MET_Dataset).__init__()
         self.T_dat = T_dat
         self.E_dat = E_dat
         self.M_dat = M_dat
+        self.mask_T = mask_T
+        self.mask_E = mask_E
+        self.mask_M = mask_M
         self.soma_depth = soma_depth
         self.n_samples = np.shape(self.T_dat)[0]
 
@@ -53,7 +56,10 @@ class MET_Dataset(torch.utils.data.Dataset):
         sample = {"XT": self.T_dat[idx, :],
                   "XE": self.E_dat[idx, :],
                   "XM": self.M_dat[idx, :],
-                  "X_soma_depth": self.soma_depth[idx]}
+                  "X_soma_depth": self.soma_depth[idx],
+                  "mask_T": self.mask_T[idx],
+                  "mask_E": self.mask_E[idx],
+                  "mask_M": self.mask_M[idx]}
         return sample
 
     def __len__(self):
@@ -64,8 +70,8 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
          lambda_MT=1.0, augment_decoders=1.0, batchsize=500, latent_dim=3,
          n_epochs=5000, n_fold=0, run_iter=0, config_file='config_exc_MET.toml', model_id='MET',
          exp_name='MET_torch', input_mat_filename="inh_MET_model_input_mat.mat"):
-    
-    
+
+
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name, input_mat_filename=input_mat_filename)
 
     fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_soma_depth)}_' +
@@ -85,16 +91,23 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
     D["XM"] = data['M_dat']
     D["X_soma_depth"] = data['soma_depth']
     D['cluster'] = data['cluster']
+    D['mask_T'] = data['mask_T'].astype(bool)
+    D['mask_E'] = data['mask_E'].astype(bool)
+    D['mask_M'] = data['mask_M'].astype(bool)
+    D['mask_soma_depth'] = data['mask_soma_depth'].astype(bool)
+    D['sample_id'] = data['sample_id'].astype(bool)
 
+    assert np.all(np.equal(D['mask_soma_depth'], D['mask_M']))
     n_genes = D["XT"].shape[1]
     n_E_features = D["XE"].shape[1]
 
-    splits = partitions(celltype=D['cluster'], n_partitions=2, seed=0)
+    splits = partitions(celltype=D['cluster'], n_partitions=10, seed=0)
 
     #Helpers ==========================
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     def tensor(x): return torch.tensor(x).to(dtype=torch.float32).to(device)
     def tensor_(x): return torch.as_tensor(x).to(dtype=torch.float32).to(device)
+    def booltensor_(x): return torch.as_tensor(x).to(dtype=torch.bool).to(device)
     def tonumpy(x): return x.cpu().detach().numpy()
 
     def report_losses(loss_dict, partition):
@@ -108,7 +121,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
         if not tracked_loss:
             tracked_loss = {key:0 for key in model_loss}
             tracked_loss['steps'] = 0.0
-        
+
         #Add info
         tracked_loss['steps'] += 1
         for key in model_loss:
@@ -116,36 +129,62 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
         return tracked_loss
 
     def convert_to_original_shape(tensor, mask):
-        arr = tonumpy(tensor)
-        mask = tonumpy(mask)
-        shape_as_list = list(arr.shape)
+        array = tonumpy(tensor)
+        # mask = tonumpy(mask)
+        shape_as_list = list(array.shape)
         shape_as_list[0] = mask.shape[0]
         shape = tuple(shape_as_list)
         arr_unmasked = np.zeros(shape)
-        arr_unmasked[mask] = arr
+        arr_unmasked[mask] = array
         arr_unmasked[~mask] = np.nan
         return arr_unmasked
 
+    def get_pairs_mask(mask_T, mask_E, mask_M):
+        mask_T_by_E = mask_T[mask_E]
+        mask_E_by_T = mask_E[mask_T]
+        mask_T_by_M = mask_T[mask_M]
+        mask_M_by_T = mask_M[mask_T]
+        mask_E_by_M = mask_E[mask_M]
+        mask_M_by_E = mask_M[mask_E]
+        return mask_T_by_E, mask_E_by_T, mask_T_by_M, mask_M_by_T, mask_E_by_M, mask_M_by_E
 
     def save_results(model, data, fname, n_fold, splits=splits):
+
+        XT = data['XT'][data['mask_T']]
+        XE = data['XE'][data['mask_E']]
+        XM = data['XM'][data['mask_M']]
+        X_soma_depth = data['X_soma_depth'][data['mask_M']]
+
+        mask_T_by_E, mask_E_by_T, mask_T_by_M, mask_M_by_T, mask_E_by_M, mask_M_by_E = get_pairs_mask(
+            data['mask_T'], data['mask_E'], data['mask_M'])
+
         model.eval()
-        zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth, mask_T, mask_E, mask_M, mask_soma_depth = model(
-            (tensor_(data['XT']),
-             tensor_(data['XE']),
-             tensor_(data['XM']),
-             tensor_(data['X_soma_depth'])))
+        zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth = model((tensor_(XT),
+                                                                       tensor_(XE),
+                                                                       tensor_(XM),
+                                                                       tensor_(X_soma_depth),
+                                                                       booltensor_(mask_T_by_E),
+                                                                       booltensor_(mask_E_by_T),
+                                                                       booltensor_(mask_T_by_M),
+                                                                       booltensor_(mask_M_by_T),
+                                                                       booltensor_(mask_E_by_M),
+                                                                       booltensor_(mask_M_by_E)))
 
-        XrT = convert_to_original_shape(XrT, mask_T)
-        XrE = convert_to_original_shape(XrE, mask_E)
-        XrM = convert_to_original_shape(XrM, mask_M)
-        Xr_soma_depth = convert_to_original_shape(Xr_soma_depth, mask_soma_depth)
+        XrT = convert_to_original_shape(XrT, data['mask_T'])
+        XrE = convert_to_original_shape(XrE, data['mask_E'])
+        XrM = convert_to_original_shape(XrM, data['mask_M'])
+        Xr_soma_depth = convert_to_original_shape(Xr_soma_depth, data['mask_M'])
 
-        savemat = {'zT': tonumpy(zT), 'XrT': XrT,
-                   'zE': tonumpy(zE), 'XrE': XrE,
+        savemat = {'zT': tonumpy(zT),
+                   'zE': tonumpy(zE),
                    'zM_z_soma_depth': tonumpy(zM_z_soma_depth),
-                   'XrM': XrM, 'Xr_soma_depth': Xr_soma_depth,
-                   'mask_T': tonumpy(mask_T), 'mask_E': tonumpy(mask_E),
-                   'mask_M': tonumpy(mask_M), 'mask_T_soma_depth': tonumpy(mask_soma_depth)}
+                   'XrT': XrT,
+                   'XrE': XrE,
+                   'XrM': XrM,
+                   'Xr_soma_depth': Xr_soma_depth,
+                   'mask_T': data['mask_T'],
+                   'mask_E': data['mask_E'],
+                   'mask_M': data['mask_M']}
         savemat.update(splits[n_fold])
         sio.savemat(fname, savemat, do_compression=True)
         return
@@ -157,7 +196,10 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
     train_dataset = MET_Dataset(T_dat=D['XT'][train_ind, :],
                                 E_dat=D['XE'][train_ind, :],
                                 M_dat=D['XM'][train_ind, :],
-                                soma_depth=D['X_soma_depth'][train_ind])
+                                soma_depth=D['X_soma_depth'][train_ind],
+                                mask_T=D['mask_T'][train_ind],
+                                mask_E=D['mask_E'][train_ind],
+                                mask_M=D['mask_M'][train_ind])
     train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
     train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False,
                               sampler=train_sampler, drop_last=True, pin_memory=True)
@@ -184,12 +226,31 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
         for _ in range(len(train_dataloader)):
             batch = next(train_datagen)
 
+            #remove nans from T, E and M for each batch
+            XT = batch['XT'][batch['mask_T']]
+            XE = batch['XE'][batch['mask_E']]
+            XM = batch['XM'][batch['mask_M']]
+            X_soma_depth = batch['X_soma_depth'][batch['mask_M']]
+
+            #pair masking for each batch
+            mask_T_by_E, mask_E_by_T, mask_T_by_M, mask_M_by_T, mask_E_by_M, mask_M_by_E = get_pairs_mask(
+                mask_T=batch['mask_T'],
+                mask_E=batch['mask_E'],
+                mask_M=batch['mask_M'])
+
             #zero + forward + backward + udpate
             optimizer.zero_grad()
-            _ = model((tensor_(batch['XT']),
-                           tensor_(batch['XE']),
-                           tensor_(batch['XM']),
-                           tensor_(batch['X_soma_depth'])))
+            _ = model((tensor_(XT),
+                       tensor_(XE),
+                       tensor_(XM),
+                       tensor_(X_soma_depth),
+                       booltensor_(mask_T_by_E),
+                       booltensor_(mask_E_by_T),
+                       booltensor_(mask_T_by_M),
+                       booltensor_(mask_M_by_T),
+                       booltensor_(mask_E_by_M),
+                       booltensor_(mask_M_by_E)))
+
             model.loss.backward()
             optimizer.step()
 
@@ -197,12 +258,28 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
             train_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss=train_loss_dict)
 
         #Validation: train mode -> eval mode + no_grad + eval mode -> train mode
+        XT = D['XT'][val_ind, :][D['mask_T'][val_ind]]
+        XE = D['XE'][val_ind, :][D['mask_E'][val_ind]]
+        XM = D['XM'][val_ind, :][D['mask_M'][val_ind]]
+        X_soma_depth = D['X_soma_depth'][val_ind][D['mask_M'][val_ind]]
+
+        mask_T_by_E, mask_E_by_T, mask_T_by_M, mask_M_by_T, mask_E_by_M, mask_M_by_E = get_pairs_mask(
+            mask_T=D['mask_T'][val_ind],
+            mask_E=D['mask_E'][val_ind],
+            mask_M=D['mask_M'][val_ind])
+
         model.eval()
         with torch.no_grad():
-            _ = model((tensor_(D['XT'][val_ind, :]),
-                        tensor_(D['XE'][val_ind, :]),
-                        tensor_(D['XM'][val_ind, :]),
-                        tensor_(D['X_soma_depth'][val_ind])))
+            _ = model((tensor_(XT),
+                       tensor_(XE),
+                       tensor_(XM),
+                       tensor_(X_soma_depth),
+                       booltensor_(mask_T_by_E),
+                       booltensor_(mask_E_by_T),
+                       booltensor_(mask_T_by_M),
+                       booltensor_(mask_M_by_T),
+                       booltensor_(mask_E_by_M),
+                       booltensor_(mask_M_by_E)))
 
         val_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss={})
         model.train()
