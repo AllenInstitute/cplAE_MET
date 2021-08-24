@@ -20,12 +20,12 @@ parser.add_argument("--lambda_ME",         default=0.1,             type=float, 
 parser.add_argument("--lambda_MT",         default=0.1,             type=float,  help="M and T coupling loss weight")
 parser.add_argument("--augment_decoders",  default=1,               type=int,    help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",        default=3,               type=int,    help="Number of latent dims")
-parser.add_argument("--n_epochs",          default=10,            type=int,    help="Number of epochs to train")
+parser.add_argument("--n_epochs",          default=5000,            type=int,    help="Number of epochs to train")
 parser.add_argument("--n_fold",            default=0,               type=int,    help="Fold number in the kfold cross validation training")
 parser.add_argument("--config_file",       default='config_exc_MET.toml', type=str, help="config file with data paths")
 parser.add_argument("--run_iter",          default=0,               type=int,    help="Run-specific id")
 parser.add_argument("--model_id",          default='MET',           type=str,    help="Model-specific id")
-parser.add_argument("--exp_name",          default='MET_torch',     type=str,    help="Experiment set")
+parser.add_argument("--exp_name",          default='MET_torch_not_normalM',     type=str,    help="Experiment set")
 parser.add_argument("--input_mat_filename",          default='inh_MET_model_input_mat.mat',     type=str,    help="name of the .mat file of input")
 
 
@@ -91,13 +91,16 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
     D["XM"] = data['M_dat']
     D["X_soma_depth"] = data['soma_depth']
     D['cluster'] = data['cluster']
+    D['cluster_id'] = data['cluster_id'].astype(int)
+    D['cluster_color'] = data['cluster_color']
     D['mask_T'] = data['mask_T'].astype(bool)
     D['mask_E'] = data['mask_E'].astype(bool)
     D['mask_M'] = data['mask_M'].astype(bool)
     D['mask_soma_depth'] = data['mask_soma_depth'].astype(bool)
-    D['sample_id'] = data['sample_id'].astype(bool)
+    D['sample_id'] = data['sample_id']
 
-    assert np.all(np.equal(D['mask_soma_depth'], D['mask_M']))
+
+    #assert np.all(np.equal(D['mask_soma_depth'], D['mask_M']))
     n_genes = D["XT"].shape[1]
     n_E_features = D["XE"].shape[1]
 
@@ -184,7 +187,12 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
                    'Xr_soma_depth': Xr_soma_depth,
                    'mask_T': data['mask_T'],
                    'mask_E': data['mask_E'],
-                   'mask_M': data['mask_M']}
+                   'mask_M': data['mask_M'],
+                   'sample_id': data['sample_id'],
+                   'cluster_label': data['cluster'],
+                   'cluster_id': data['cluster_id'],
+                   'cluster_color': data['cluster_color']}
+
         savemat.update(splits[n_fold])
         sio.savemat(fname, savemat, do_compression=True)
         return
