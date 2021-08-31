@@ -1,19 +1,12 @@
 #########################################################
-############ Preprocessing T and E data #################
+################ Preprocessing T data ###################
 #########################################################
-import csv
-import h5py
 import json
 import feather
 import argparse
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import scipy.io as sio
-from functools import reduce
-import matplotlib.pyplot as plt
-from cplAE_MET.utils.utils import *
-from cplAE_TE.utils.load_helpers import get_paths, load_dataset, load_summary_files
+from collections import Counter
 
 
 #Read the json file with all input args
@@ -23,6 +16,14 @@ args = parser.parse_args()
 
 with open(args.input) as json_data:
     data = json.load(json_data)
+    
+#The anno.feather file was copied from this path:
+# "/allen/programs/celltypes/workgroups/rnaseqanalysis/shiny/patch_seq/star"
+#"/mouse_patchseq_VISp_20200318_collapsed40_cpm/anno.feather"
+
+#The locked down specimen ids were copied from this path:
+#"/allen/programs/celltypes/workgroups/rnaseqanalysis/Fahimehb/Manuscript_patchseq_2019/"
+#"revised_manuscript_specimen_ids.txt"
 
 #Input vars
 T_data_path = data['input_path'] + data['T_data_file']
@@ -41,6 +42,8 @@ T_ann = feather.read_dataframe(T_anno_path)
 
 ids = pd.read_csv(specimen_path, header=None)
 ids.rename(columns = {0:'specimen_id'}, inplace = True)
+print("...................................................")
+print("There are", ids.shape[0], "sample_ids in the locked dataset")
 
 T_ann = T_ann.loc[T_ann['spec_id_label'].astype(np.int64).isin(ids['specimen_id'])]
 T_ann = T_ann[['spec_id_label',
@@ -50,12 +53,11 @@ T_ann = T_ann[['spec_id_label',
                'Tree_first_cl_color',
                'Tree_call_label']].reset_index(drop=True)
 
-# print("...................................................")
-# rohan_sample_ids = read_list_from_csv(
-#     "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/rohan_sample_ids.csv")
-# T_ann = T_ann.loc[T_ann['sample_id'].isin(rohan_sample_ids)]
-# T_ann.reset_index(drop=True,inplace=True)
-# print("Keeping only cell that Rohan used", T_ann.shape[0])
+
+counts = Counter(T_ann['Tree_call_label'])
+print("There are", counts['Core'] + counts['I1'], "highly consistent cells")
+print("There are", counts['I2'] + counts['I3'], "Moderately consistent cells")
+print("There are", counts['PoorQ'], "Inconsistent cells")
 
 keep_gene_id = pd.read_csv(gene_file_path)
 keep_gene_id = keep_gene_id[keep_gene_id.BetaScore>beta_threshold]['Gene'].to_list()
@@ -88,5 +90,7 @@ print("...................................................")
 print("writing output data and annotations")
 T_dat.to_csv(output_path + output_file_prefix + "_" + 'T_data.csv',index=False)
 T_ann.to_csv(output_path + output_file_prefix + "_" + 'T_annotations.csv',index=False)
-
+print("saved the following files:")
+print(output_path + output_file_prefix + "_" + 'T_data.csv')
+print(output_path + output_file_prefix + "_" + 'T_annotations.csv')
 print("Done!")

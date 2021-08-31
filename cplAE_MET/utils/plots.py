@@ -127,7 +127,7 @@ def show_ax_de_maps(Left,Right=None):
     plt.subplot(222)
     plt.imshow(np.squeeze(Right[0,...]),aspect='auto',vmin=0,vmax=np.max(Right[1,...]))
     #plt.gca().set(**{'title':r'$X_t \rightarrow X_m$','xticks':[],'yticks':[]})
-    plt.gca().set(**{'title': r'$Xrm$', 'xticks': [], 'yticks': []})
+    plt.gca().set(**{'title': r'$Xrm-from-zE$', 'xticks': [], 'yticks': []})
     plt.grid(False)
     
     plt.subplot(223)

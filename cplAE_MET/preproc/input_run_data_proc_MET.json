@@ -3,13 +3,15 @@
  "T_data_file": "data.feather",
  "T_annotation_file": "anno.feather",
  "gene_file": "good_genes_beta_score.csv",
- "specimen_ids_file": "specimen_ids_for_revision_Apr_2020.txt",
+ "specimen_ids_file": "revised_manuscript_specimen_ids.txt",
  "E_timeseries_file": "inh_fv_Ephys_run_all_20July2021.h5",
- "ipfx_features_file": "inh_ipfx_features_20July2021.csv", 
- "M_data_file": "inh_M_data.mat",
- "M_output_data_file": "inh_M_normal_data.mat",
- "M_anno_file": "inh_M_anno.csv",
- "beta_threshold": 0.4, 
- "pca_comp_threshold": 0.97, 
- "output_file_prefix": "inh"
+ "ipfx_features_file": "inh_ipfx_features_20July2021.csv",
+ "M_output_data_file": "M_data_25Aug2021.mat",
+ "M_output_anno_file": "M_anno_25Aug2021.csv",
+ "M_input_anno_file": "manual_auto823.csv",
+ "M_autotrace_anno_file":  "auto280.csv",
+ "beta_threshold": 0.4,
+ "pca_comp_threshold": 0.97,
+ "output_file_prefix": "inh",
+ "hist2d_120x4_folder": "hist2d_120x4"
 }

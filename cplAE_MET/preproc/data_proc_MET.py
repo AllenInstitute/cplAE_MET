@@ -18,14 +18,13 @@ with open(args.input) as json_data:
     data = json.load(json_data)
 
 
-
 #Input vars
 output_file_prefix = data['output_file_prefix']
 T_data_path = data['input_path'] + "/" + output_file_prefix + "_T_data.csv"
 T_anno_path = data['input_path'] + "/" + output_file_prefix + "_T_annotations.csv"
 E_data_path = data['input_path'] + "/" + output_file_prefix + "_Merged_Ephys_features.csv"
-M_normal_data_path = data['input_path'] + "/" + data["M_output_data_file"]
-M_anno_path = data['input_path'] + "/" + data["M_anno_file"]
+M_data_path = data['input_path'] + "/" + data["M_output_data_file"]
+M_anno_path = data['input_path'] + "/" + data["M_output_anno_file"]
 gene_file_path = data['input_path'] + data['gene_file']
 specimen_path = data['input_path'] + data['specimen_ids_file']
 output_path = data['output_path']
@@ -33,10 +32,16 @@ output_path = data['output_path']
 print("...................................................")
 print("Loading E, T and M data")
 E_data = pd.read_csv(E_data_path)
+print("shape of E data:", E_data.shape)
 T_data = pd.read_csv(T_data_path)
-M_dat = sio.loadmat(M_normal_data_path)
+print("shape of T data:", E_data.shape)
+M_dat = sio.loadmat(M_data_path)
+print("shape of hist_ax_de data:", M_dat['hist_ax_de'].shape)
 T_annotation = pd.read_csv(T_anno_path)
+print("length of T_annotation:", len(T_annotation))
 M_annotation = pd.read_csv(M_anno_path)
+print("length of M_annotation:", len(M_annotation))
+
 
 print("...................................................")
 print("Combining M, E and T data")

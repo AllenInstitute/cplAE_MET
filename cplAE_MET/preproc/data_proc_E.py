@@ -1,7 +1,6 @@
 #########################################################
 ############ Preprocessing T and E data #################
 #########################################################
-import csv
 import h5py
 import json
 import feather
@@ -9,12 +8,10 @@ import argparse
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import scipy.io as sio
 from functools import reduce
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import cplAE_MET.utils.analysis_helpers as proc_utils
-from cplAE_TE.utils.load_helpers import get_paths, load_dataset, load_summary_files
 
 
 #Read the json file with all input args
@@ -32,6 +29,13 @@ output_path = data['output_path']
 output_file_prefix = data['output_file_prefix']
 pca_comp_threshold = data['pca_comp_threshold']
 T_anno_path = data['input_path'] + data['T_annotation_file']
+specimen_path = data['input_path'] + data['specimen_ids_file']
+
+ids = pd.read_csv(specimen_path, header=None)
+ids.rename(columns = {0:'specimen_id'}, inplace = True)
+print("...................................................")
+print("There are", ids.shape[0], "sample_ids in the locked dataset")
+
 
 print("...................................................")
 print("Loading E data")
@@ -40,10 +44,19 @@ hf = h5py.File(E_timeseries_path, 'r')
 h5_ids = np.array(hf.get("ids"))
 print("Number of cells in h5(time series file):", len(h5_ids))
 
-#Read time series into a dictionary
+print("...................................................")
+print(len([i for i in ids['specimen_id'].tolist() if i not in h5_ids]), "cells do not have time series data!")
+
+print("...................................................")
+print("keeping only ids that are inside the lockdown dataset")
+mask_h5_ids = [True if i in ids['specimen_id'].tolist() else False for i in h5_ids]
+h5_ids = h5_ids[mask_h5_ids]
+print("In total remains this amount of cells:", sum(mask_h5_ids))
+
+#Read time series into a dictionary and masking them for only the ids that exist in the locked dataset
 time_series = {}
 for k in hf.keys():
-    time_series[k] = np.array(hf.get(k))
+    time_series[k] = np.array(hf.get(k))[mask_h5_ids]
 
 print("...................................................")
 print("removing nan values from individual experiments")
@@ -51,7 +64,7 @@ print("removing nan values from individual experiments")
 expt_with_nans = []
 for sub_expt in time_series.keys():
     if sub_expt != "ids":
-        if proc_utils.check_for_nan(time_series[sub_expt]):
+        if np.isnan(time_series[sub_expt]).any():
             print("nan values were detected in this experiment:", sub_expt)
             expt_with_nans.append(sub_expt)
 

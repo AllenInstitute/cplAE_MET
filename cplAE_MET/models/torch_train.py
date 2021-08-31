@@ -16,8 +16,8 @@ parser.add_argument("--alpha_E",           default=1.0,             type=float, 
 parser.add_argument("--alpha_M",           default=1.0,             type=float,  help="Morphology reconstruction loss weight")
 parser.add_argument("--alpha_soma_depth",  default=1.0,             type=float,  help="Soma depth reconstruction loss weight")
 parser.add_argument("--lambda_TE",         default=1.0,             type=float,  help="T and E coupling loss weight")
-parser.add_argument("--lambda_ME",         default=0.1,             type=float,  help="M and E coupling loss weight")
-parser.add_argument("--lambda_MT",         default=0.1,             type=float,  help="M and T coupling loss weight")
+parser.add_argument("--lambda_ME",         default=0,             type=float,  help="M and E coupling loss weight")
+parser.add_argument("--lambda_MT",         default=1.0,             type=float,  help="M and T coupling loss weight")
 parser.add_argument("--augment_decoders",  default=1,               type=int,    help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",        default=3,               type=int,    help="Number of latent dims")
 parser.add_argument("--n_epochs",          default=5000,            type=int,    help="Number of epochs to train")
@@ -25,7 +25,7 @@ parser.add_argument("--n_fold",            default=0,               type=int,   
 parser.add_argument("--config_file",       default='config_exc_MET.toml', type=str, help="config file with data paths")
 parser.add_argument("--run_iter",          default=0,               type=int,    help="Run-specific id")
 parser.add_argument("--model_id",          default='MET',           type=str,    help="Model-specific id")
-parser.add_argument("--exp_name",          default='MET_torch_not_normalM',     type=str,    help="Experiment set")
+parser.add_argument("--exp_name",          default='MET_torch',     type=str,    help="Experiment set")
 parser.add_argument("--input_mat_filename",          default='inh_MET_model_input_mat.mat',     type=str,    help="name of the .mat file of input")
 
 
@@ -152,15 +152,17 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
         return mask_T_by_E, mask_E_by_T, mask_T_by_M, mask_M_by_T, mask_E_by_M, mask_M_by_E
 
     def save_results(model, data, fname, n_fold, splits=splits):
-
+        #Mask the data for the nan values
         XT = data['XT'][data['mask_T']]
         XE = data['XE'][data['mask_E']]
         XM = data['XM'][data['mask_M']]
         X_soma_depth = data['X_soma_depth'][data['mask_M']]
 
+        #Find the paired data between each two arms
         mask_T_by_E, mask_E_by_T, mask_T_by_M, mask_M_by_T, mask_E_by_M, mask_M_by_E = get_pairs_mask(
             data['mask_T'], data['mask_E'], data['mask_M'])
 
+        #Run the model in the evaluation mode
         model.eval()
         zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth = model((tensor_(XT),
                                                                        tensor_(XE),
@@ -173,11 +175,29 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
                                                                        booltensor_(mask_E_by_M),
                                                                        booltensor_(mask_M_by_E)))
 
+        #Get the crossmodal reconstructions
+        XrE_from_zM = model.dE(zM_z_soma_depth)
+        XrE_from_zT = model.dE(zT)
+        XrT_from_zM = model.dT(zM_z_soma_depth)
+        XrT_from_zE = model.dT(zE)
+        XrM_from_zT, Xr_soma_depth_from_zT = model.dM(zT)
+        XrM_from_zE, Xr_soma_depth_from_zE = model.dM(zE)
+
+        #Put back the nans and get the original shapes
         XrT = convert_to_original_shape(XrT, data['mask_T'])
         XrE = convert_to_original_shape(XrE, data['mask_E'])
         XrM = convert_to_original_shape(XrM, data['mask_M'])
         Xr_soma_depth = convert_to_original_shape(Xr_soma_depth, data['mask_M'])
+        XrE_from_zM = convert_to_original_shape(XrE_from_zM, data['mask_M'])
+        XrE_from_zT = convert_to_original_shape(XrE_from_zT, data['mask_T'])
+        XrT_from_zM = convert_to_original_shape(XrT_from_zM, data['mask_M'])
+        XrT_from_zE = convert_to_original_shape(XrT_from_zE, data['mask_E'])
+        XrM_from_zT = convert_to_original_shape(XrM_from_zT, data['mask_T'])
+        XrM_from_zE = convert_to_original_shape(XrM_from_zE, data['mask_E'])
+        Xr_soma_depth_from_zT = convert_to_original_shape(Xr_soma_depth_from_zT, data['mask_T'])
+        Xr_soma_depth_from_zE = convert_to_original_shape(Xr_soma_depth_from_zE, data['mask_E'])
 
+        #Save into a mat file
         savemat = {'zT': tonumpy(zT),
                    'zE': tonumpy(zE),
                    'zM_z_soma_depth': tonumpy(zM_z_soma_depth),
@@ -185,6 +205,14 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
                    'XrE': XrE,
                    'XrM': XrM,
                    'Xr_soma_depth': Xr_soma_depth,
+                   'XrE_from_zM': XrE_from_zM,
+                   'XrE_from_zT': XrE_from_zT,
+                   'XrT_from_zM': XrT_from_zM,
+                   'XrT_from_zE': XrT_from_zE,
+                   'XrM_from_zT': XrM_from_zT,
+                   'XrM_from_zE': XrM_from_zE,
+                   'Xr_soma_depth_from_zT': Xr_soma_depth_from_zT,
+                   'Xr_soma_depth_from_zE': Xr_soma_depth_from_zE,
                    'mask_T': data['mask_T'],
                    'mask_E': data['mask_E'],
                    'mask_M': data['mask_M'],
@@ -193,6 +221,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
                    'cluster_id': data['cluster_id'],
                    'cluster_color': data['cluster_color']}
 
+        #Save the train and validation indices
         savemat.update(splits[n_fold])
         sio.savemat(fname, savemat, do_compression=True)
         return
