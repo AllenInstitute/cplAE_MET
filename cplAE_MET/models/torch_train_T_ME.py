@@ -5,32 +5,30 @@ from pathlib import Path
 import numpy as np
 import scipy.io as sio
 import torch
-from cplAE_MET.models.torch_cplAE import Model_MET
+from cplAE_MET.models.torch_cplAE import Model_MET, Model_T_EM
 from cplAE_MET.utils.dataset import partitions
 from torch.utils.data import DataLoader
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--batchsize",         default=500,             type=int,    help="Batch size")
-parser.add_argument("--alpha_T",           default=1.0,             type=float,  help="Transcriptomic reconstruction loss weight")
-parser.add_argument("--alpha_E",           default=1.0,             type=float,  help="Electrophisiology reconstruction loss weight")
-parser.add_argument("--alpha_M",           default=1.0,             type=float,  help="Morphology reconstruction loss weight")
-parser.add_argument("--alpha_soma_depth",  default=1.0,             type=float,  help="Soma depth reconstruction loss weight")
-parser.add_argument("--lambda_TE",         default=1.0,             type=float,  help="T and E coupling loss weight")
-parser.add_argument("--lambda_ME",         default=1.0,             type=float,  help="M and E coupling loss weight")
-parser.add_argument("--lambda_MT",         default=1.0,             type=float,  help="M and T coupling loss weight")
-parser.add_argument("--augment_decoders",  default=1,               type=int,    help="0 or 1 : Train with cross modal reconstruction")
-parser.add_argument("--latent_dim",        default=3,               type=int,    help="Number of latent dims")
-parser.add_argument("--n_epochs",          default=10,            type=int,    help="Number of epochs to train")
-parser.add_argument("--n_fold",            default=0,               type=int,    help="Fold number in the kfold cross validation training")
-parser.add_argument("--config_file",       default='config_exc_MET.toml', type=str, help="config file with data paths")
-parser.add_argument("--run_iter",          default=0,               type=int,    help="Run-specific id")
-parser.add_argument("--model_id",          default='MET',           type=str,    help="Model-specific id")
-parser.add_argument("--exp_name",          default='MET_torch',     type=str,    help="Experiment set")
-parser.add_argument("--input_mat_filename",          default='inh_MET_model_input_mat.mat',     type=str,    help="name of the .mat file of input")
+parser.add_argument("--batchsize",          default=500,           type=int,   help="Batch size")
+parser.add_argument("--alpha_T",            default=1.0,           type=float, help="Transcriptomic reconstruction loss weight")
+parser.add_argument("--alpha_E",            default=1.0,           type=float, help="Electrophisiology reconstruction loss weight")
+parser.add_argument("--alpha_M",            default=1.0,           type=float, help="Morphology reconstruction loss weight")
+parser.add_argument("--alpha_soma_depth",   default=1.0,           type=float, help="Soma depth reconstruction loss weight")
+parser.add_argument("--lambda_T_EM",        default=1.0,           type=float, help="T and EM coupling loss weight")
+parser.add_argument("--augment_decoders",   default=1,             type=int,   help="0 or 1 : Train with cross modal reconstruction")
+parser.add_argument("--latent_dim",         default=3,             type=int,   help="Number of latent dims")
+parser.add_argument("--n_epochs",           default=1000,            type=int,   help="Number of epochs to train")
+parser.add_argument("--n_fold",             default=0,             type=int,   help="Fold number in the kfold cross validation training")
+parser.add_argument("--config_file",        default='config_exc_MET.toml',type=str, help="config file with data paths")
+parser.add_argument("--run_iter",           default=0,             type=int,   help="Run-specific id")
+parser.add_argument("--model_id",           default='T_EM',        type=str,   help="Model-specific id")
+parser.add_argument("--exp_name",           default='T_EM_torch',  type=str,   help="Experiment set")
+parser.add_argument("--input_mat_filename", default='inh_MET_model_input_mat.mat', type=str,
+                    help="name of the .mat file of input")
 
 
 def set_paths(config_file=None, exp_name='TEMP', input_mat_filename='ALSO_TEMP'):
-
     from cplAE_MET.utils.load_config import load_config
     paths = load_config(config_file=config_file, verbose=False)
     paths['input_mat'] = f'{str(paths["package_dir"] / "data/proc")}/{input_mat_filename}'
@@ -42,7 +40,6 @@ def set_paths(config_file=None, exp_name='TEMP', input_mat_filename='ALSO_TEMP')
 
 class MET_Dataset(torch.utils.data.Dataset):
     def __init__(self, T_dat, E_dat, M_dat, soma_depth, ):
-
         super(MET_Dataset).__init__()
         self.T_dat = T_dat
         self.E_dat = E_dat
@@ -61,26 +58,24 @@ class MET_Dataset(torch.utils.data.Dataset):
         return self.n_samples
 
 
-def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=1.0, lambda_ME=1.0,
-         lambda_MT=1.0, augment_decoders=1.0, batchsize=500, latent_dim=3,
-         n_epochs=5000, n_fold=0, run_iter=0, config_file='config_exc_MET.toml', model_id='MET',
-         exp_name='MET_torch', input_mat_filename="inh_MET_model_input_mat.mat"):
-
-
+def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_T_EM=1.0,
+         augment_decoders=1.0, batchsize=500, latent_dim=3,
+         n_epochs=5000, n_fold=0, run_iter=0, config_file='config_exc_MET.toml', model_id='T_EM',
+         exp_name='T_EM_torch', input_mat_filename="inh_MET_model_input_mat.mat"):
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name, input_mat_filename=input_mat_filename)
 
     fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_soma_depth)}_' +
-              f'csTE_{str(lambda_TE)}_csME_{str(lambda_ME)}_csMT_{str(lambda_MT)}_' +
+              f'csTE_M_{str(lambda_T_EM)}_' +
               f'ad_{str(augment_decoders)}_ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}').replace('.', '-')
 
-    #Convert int to boolean
+    # Convert int to boolean
     augment_decoders = augment_decoders > 0
 
-    #Data selection===================
+    # Data selection===================
     data = sio.loadmat(dir_pth['input_mat'], squeeze_me=True)
 
-    D={}
+    D = {}
     D["XT"] = data['T_dat']
     D["XE"] = data['E_dat']
     D["XM"] = data['M_dat']
@@ -90,86 +85,85 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
     D['cluster_color'] = data['cluster_color']
     D['sample_id'] = data['sample_id']
 
-    #assert np.all(np.equal(D['mask_soma_depth'], D['mask_M']))
+    # assert np.all(np.equal(D['mask_soma_depth'], D['mask_M']))
     n_genes = D["XT"].shape[1]
     n_E_features = D["XE"].shape[1]
 
     splits = partitions(celltype=D['cluster'], n_partitions=10, seed=0)
 
-    #Helpers ==========================
+    # Helpers ==========================
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    def tensor(x): return torch.tensor(x).to(dtype=torch.float32).to(device)
-    def tensor_(x): return torch.as_tensor(x).to(dtype=torch.float32).to(device)
-    def booltensor_(x): return torch.as_tensor(x).to(dtype=torch.bool).to(device)
-    def tonumpy(x): return x.cpu().detach().numpy()
+
+    def tensor(x):
+        return torch.tensor(x).to(dtype=torch.float32).to(device)
+
+    def tensor_(x):
+        return torch.as_tensor(x).to(dtype=torch.float32).to(device)
+
+    def booltensor_(x):
+        return torch.as_tensor(x).to(dtype=torch.bool).to(device)
+
+    def tonumpy(x):
+        return x.cpu().detach().numpy()
 
     def report_losses(loss_dict, partition):
         for key in loss_dict.keys():
-            if key!='steps':
-                loss_dict[key] = loss_dict[key]/loss_dict['steps']
+            if key != 'steps':
+                loss_dict[key] = loss_dict[key] / loss_dict['steps']
         return '   '.join([f'{partition}_{key} : {loss_dict[key]:0.5f}' for key in loss_dict])
 
     def collect_losses(model_loss, tracked_loss):
-        #Init if keys dont exist
+        # Init if keys dont exist
         if not tracked_loss:
-            tracked_loss = {key:0 for key in model_loss}
+            tracked_loss = {key: 0 for key in model_loss}
             tracked_loss['steps'] = 0.0
 
-        #Add info
+        # Add info
         tracked_loss['steps'] += 1
         for key in model_loss:
             tracked_loss[key] += tonumpy(model_loss[key])
         return tracked_loss
 
     def save_results(model, data, fname, n_fold, splits=splits):
-        #Mask the data for the nan values
+        # Mask the data for the nan values
         XT = data['XT']
         XE = data['XE']
         XM = data['XM']
         X_soma_depth = data['X_soma_depth']
 
-        #Run the model in the evaluation mode
+        # Run the model in the evaluation mode
         model.eval()
-        zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth = model((tensor_(XT),
-                                                                       tensor_(XE),
-                                                                       tensor_(XM),
-                                                                       tensor_(X_soma_depth)))
+        zT, zEM, XrT, XrE, XrM, Xr_soma_depth = model((tensor_(XT),
+                                                       tensor_(XE),
+                                                       tensor_(XM),
+                                                       tensor_(X_soma_depth)))
 
-        #Get the crossmodal reconstructions
-        XrE_from_zM = model.dE(zM_z_soma_depth)
-        XrE_from_zT = model.dE(zT)
-        XrT_from_zM = model.dT(zM_z_soma_depth)
-        XrT_from_zE = model.dT(zE)
-        XrM_from_zT, Xr_soma_depth_from_zT = model.dM(zT)
-        XrM_from_zE, Xr_soma_depth_from_zE = model.dM(zE)
+        # Get the crossmodal reconstructions
+        XrT_from_zEM = model.dT(zEM)
+        XrE_from_zT, XrM_from_zT, Xr_soma_depth_from_zT = model.dEM(zT)
 
-        #Save into a mat file
+        # Save into a mat file
         savemat = {'zT': tonumpy(zT),
-                   'zE': tonumpy(zE),
-                   'zM_z_soma_depth': tonumpy(zM_z_soma_depth),
+                   'zEM': tonumpy(zEM),
                    'XrT': XrT,
                    'XrE': XrE,
                    'XrM': XrM,
                    'Xr_soma_depth': Xr_soma_depth,
-                   'XrE_from_zM': XrE_from_zM,
+                   'XrT_from_zEM': XrT_from_zEM,
                    'XrE_from_zT': XrE_from_zT,
-                   'XrT_from_zM': XrT_from_zM,
-                   'XrT_from_zE': XrT_from_zE,
                    'XrM_from_zT': XrM_from_zT,
-                   'XrM_from_zE': XrM_from_zE,
                    'Xr_soma_depth_from_zT': Xr_soma_depth_from_zT,
-                   'Xr_soma_depth_from_zE': Xr_soma_depth_from_zE,
                    'sample_id': data['sample_id'],
                    'cluster_label': data['cluster'],
                    'cluster_id': data['cluster_id'],
                    'cluster_color': data['cluster_color']}
 
-        #Save the train and validation indices
+        # Save the train and validation indices
         savemat.update(splits[n_fold])
         sio.savemat(fname, savemat, do_compression=True)
         return
 
-    #Training data
+    # Training data
     fold_fileid = fileid + "_fold_" + str(n_fold)
     train_ind = splits[n_fold]['train']
     val_ind = splits[n_fold]['val']
@@ -179,21 +173,19 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
                                 soma_depth=D['X_soma_depth'][train_ind])
     train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
     train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False,
-                              sampler=train_sampler, drop_last=True, pin_memory=True)
+                                  sampler=train_sampler, drop_last=True, pin_memory=True)
 
-    #Model ============================
-    model = Model_MET(T_dim=n_genes, T_int_dim=50, T_dropout=0.2,
-                      E_dim=n_E_features, E_int_dim=50, E_dropout=0.2,
-                      E_noise_sd=0.1 * np.nanstd(train_dataset.E_dat, axis=0),
-                      latent_dim=latent_dim, alpha_T=alpha_T, alpha_E=alpha_E, alpha_M=alpha_M,
-                      alpha_soma_depth=alpha_soma_depth, lambda_TE=lambda_TE, lambda_ME=lambda_ME,
-                      lambda_MT=lambda_MT, augment_decoders=augment_decoders)
+    # Model ============================
+    model = Model_T_EM(T_dim=n_genes, T_int_dim=50, T_dropout=0.2,
+                       E_dim=n_E_features, E_int_dim=50, E_dropout=0.2,
+                       E_noise_sd=0.1 * np.nanstd(train_dataset.E_dat, axis=0),
+                       latent_dim=latent_dim, alpha_T=alpha_T, alpha_E=alpha_E, alpha_M=alpha_M,
+                       alpha_soma_depth=alpha_soma_depth, lambda_T_EM=lambda_T_EM, augment_decoders=augment_decoders)
     optimizer = torch.optim.Adam(model.parameters())
 
     model.to(device)
 
-
-    #Training loop ====================
+    # Training loop ====================
     best_loss = np.inf
     monitor_loss = []
 
@@ -203,13 +195,13 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
         for _ in range(len(train_dataloader)):
             batch = next(train_datagen)
 
-            #T, E and M for each batch
+            # T, E and M for each batch
             XT = batch['XT']
             XE = batch['XE']
             XM = batch['XM']
             X_soma_depth = batch['X_soma_depth']
 
-            #zero + forward + backward + udpate
+            # zero + forward + backward + udpate
             optimizer.zero_grad()
             _ = model((tensor_(XT),
                        tensor_(XE),
@@ -219,10 +211,10 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
             model.loss.backward()
             optimizer.step()
 
-            #track loss over batches:
+            # track loss over batches:
             train_loss_dict = collect_losses(model_loss=model.loss_dict, tracked_loss=train_loss_dict)
 
-        #Validation: train mode -> eval mode + no_grad + eval mode -> train mode
+        # Validation: train mode -> eval mode + no_grad + eval mode -> train mode
         XT = D['XT'][val_ind, :]
         XE = D['XE'][val_ind, :]
         XM = D['XM'][val_ind, :]
@@ -243,33 +235,30 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_TE=
         print(f'epoch {epoch:04d} Train {train_loss}')
         print(f'epoch {epoch:04d} ----- Val {val_loss}')
 
-        #Logging ==============
+        # Logging ==============
         with open(dir_pth['logs'] + f'{fold_fileid}.csv', "a") as f:
             writer = csv.writer(f, delimiter=',')
             if epoch == 0:
                 writer.writerow(['epoch', *train_loss_dict.keys(), *val_loss_dict.keys()])
-            writer.writerow([epoch+1, *train_loss_dict.values(), *val_loss_dict.values()])
+            writer.writerow([epoch + 1, *train_loss_dict.values(), *val_loss_dict.values()])
 
         monitor_loss.append(val_loss_dict['recon_T'] +
                             val_loss_dict['recon_E'] +
                             val_loss_dict['recon_M'] +
                             val_loss_dict['recon_soma_depth'] +
-                            val_loss_dict['cpl_TE'] +
-                            val_loss_dict['cpl_MT'] +
-                            val_loss_dict['cpl_ME'])
+                            val_loss_dict['cpl_T_EM'])
 
-        #Checkpoint ===========
+        # Checkpoint ===========
         if (monitor_loss[-1] < best_loss) and (epoch > 2500):
             best_loss = monitor_loss[-1]
             torch.save({'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': best_loss, }, dir_pth['result'] + f'{fold_fileid}-best_loss_weights.pt')
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': best_loss, }, dir_pth['result'] + f'{fold_fileid}-best_loss_weights.pt')
     print('\nTraining completed for fold:', n_fold)
     print()
 
-
-    #Save model weights on exit
+    # Save model weights on exit
     torch.save({'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),

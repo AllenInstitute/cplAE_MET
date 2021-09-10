@@ -278,6 +278,246 @@ class Decoder_M(nn.Module):
         return x, soma_depth
 
 
+class Encoder_EM(nn.Module):
+    """
+    Encoder for EM data.
+
+    Args:
+        out_dim: representation dimenionality
+        std_dev: gaussian noise std dev
+    """
+
+    def __init__(self, E_dim=0 ,std_dev=0.1,  out_dim=3, noise_sd=None, dropout_p=0.1):
+
+        super(Encoder_EM, self).__init__()
+
+        if noise_sd is not None:
+            self.noise_sd = tensor_(noise_sd)
+        else:
+            self.noise_sd = None
+
+        self.drp = nn.Dropout(p=dropout_p)
+
+        self.gaussian_noise_std_dev = std_dev
+        self.conv1_ax = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
+        self.conv1_de = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
+
+        self.conv2_ax = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
+        self.conv2_de = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
+
+        self.flat = nn.Flatten()
+        self.fc1 = nn.Linear(301+E_dim, 20)
+        self.fc2 = nn.Linear(20, 20)
+        self.fc3 = nn.Linear(20, out_dim)
+        self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
+                                 momentum=0.05, track_running_stats=True)
+        self.elu = nn.ELU()
+        return
+
+    def addnoise(self, x):
+        if (self.training) and (self.noise_sd is not None):
+            # batch dim is inferred from shapes of x and self.noise_sd
+            x = torch.normal(mean=x, std=self.noise_sd)
+        return x
+
+    def forward(self, xe, xm, soma_depth):
+
+        xe = self.addnoise(xe)
+        xe = self.drp(xe)
+
+        if self.training:
+            xm = xm + (torch.randn(xm.shape) * self.gaussian_noise_std_dev)
+        ax, de = torch.tensor_split(xm, 2, dim=1)
+        ax = self.elu(self.conv1_ax(ax))
+        de = self.elu(self.conv1_de(de))
+        ax = self.elu(self.conv2_ax(ax))
+        de = self.elu(self.conv2_de(de))
+
+        xm = torch.cat(tensors=(self.flat(ax), self.flat(de)), dim=1)
+
+        soma_depth = soma_depth.view(-1, 1)
+
+        x = torch.cat(tensors=(xm, soma_depth, xe), dim=1)
+
+        x = self.elu(self.fc1(x))
+        x = self.elu(self.fc2(x))
+        x = self.fc3(x)
+        x = self.bn(x)
+        return x
+
+
+class Decoder_EM(nn.Module):
+    """
+    Decoder for EM data.
+
+    Args:
+        in_dim: representation dimensionality
+    """
+
+    def __init__(self, E_dim=0, in_dim=3):
+
+        super(Decoder_EM, self).__init__()
+        self.fc1_dec = nn.Linear(in_dim, 20)
+        self.fc2_dec = nn.Linear(20, 20)
+        self.fc3_dec = nn.Linear(20, 301+E_dim)
+
+        self.convT1_ax = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
+        self.convT1_de = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
+
+        self.convT2_ax = nn.ConvTranspose2d(10, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
+        self.convT2_de = nn.ConvTranspose2d(10, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
+
+        self.elu = nn.ELU()
+        return
+
+    def forward(self, x):
+        x = self.elu(self.fc1_dec(x))
+        x = self.elu(self.fc2_dec(x))
+        x = self.elu(self.fc3_dec(x))
+
+        ax_de = x[:, 0:300]
+        soma_depth = x[:, 300]
+        xe = x[:, 301:]
+
+        ax, de = torch.tensor_split(ax_de, 2, dim=1)
+        ax = ax.view(-1, 10, 15, 1)
+        de = de.view(-1, 10, 15, 1)
+
+        ax = self.convT1_ax(ax)
+        de = self.convT1_de(de)
+
+        ax = self.convT2_ax(ax)
+        de = self.convT2_de(de)
+
+        xm = torch.cat(tensors=(ax, de), dim=1)
+        return xe, xm, soma_depth
+
+class Model_T_EM(nn.Module):
+    """Coupled autoencoder model for Transcriptomics(T) and EM(Electrophisiology and Morphology)
+
+    Args:
+        T_dim: Number of genes in T data
+        E_dim: Number of features in E data
+        T_int_dim: hidden layer dims for T model
+        E_int_dim: hidden layer dims for E model
+        T_dropout: dropout for T data
+        E_dropout: dropout for E data
+        E_noise_sd: per-feature gaussian noise
+        latent_dim: dim for representations
+        alpha_T: loss weight for T reconstruction
+        alpha_E: loss weight for E reconstruction
+        alpha_M: loss weight for M reconstruction
+        lambda_T_EM: loss weight coupling loss between T and EM
+        std_dev: gaussian noise std dev
+        augment_decoders (bool): augment decoder with cross modal representation if True
+    """
+
+    def __init__(self,
+                 T_dim=1000, T_int_dim=50, T_dropout=0.5,
+                 E_dim=1000, E_int_dim=50, E_dropout=0.5, E_noise_sd=None,
+                 latent_dim=3, alpha_T=1.0, alpha_E=1.0, alpha_soma_depth=1.0,
+                 alpha_M=1.0, lambda_T_EM=1.0, std_dev=1.0, augment_decoders=True):
+
+        super(Model_T_EM, self).__init__()
+        self.alpha_T = alpha_T
+        self.alpha_E = alpha_E
+        self.alpha_M = alpha_M
+        self.alpha_soma_depth = alpha_soma_depth
+        self.lambda_T_EM = lambda_T_EM
+        self.augment_decoders = augment_decoders
+
+        self.eT = Encoder_T(dropout_p=T_dropout, in_dim=T_dim, out_dim=latent_dim, int_dim=T_int_dim)
+        self.eEM = Encoder_EM(E_dim=E_dim, std_dev=std_dev,  out_dim=latent_dim, dropout_p=E_dropout, noise_sd=E_noise_sd)
+
+        self.dT = Decoder_T(in_dim=latent_dim, out_dim=T_dim, int_dim=T_int_dim)
+        self.dEM = Decoder_EM(E_dim=E_dim, in_dim=latent_dim)
+        return
+
+    @staticmethod
+    def min_var_loss(zi, zj):
+        #SVD calculated over all entries in the batch
+        batch_size = zj.shape[0]
+        zj_centered = zj - torch.mean(zj, 0, True)
+        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
+        min_var_zj = torch.square(min_eig)/(batch_size-1)
+
+        zi_centered = zi - torch.mean(zi, 0, True)
+        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
+        min_var_zi = torch.square(min_eig)/(batch_size-1)
+
+        #Wij_paired is the weight of matched pairs
+        zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
+        loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
+        return loss_ij
+
+    @staticmethod
+    def mean_sq_diff(x, y):
+        return torch.mean(torch.square(x-y))
+
+    @staticmethod
+    def get_1D_mask(mask):
+        mask = mask.reshape(mask.shape[0], -1)
+        return torch.all(mask, dim=1)
+
+    def get_pairs(self, mask1, mask2):
+        return torch.logical_and(mask1, mask2)
+
+    def forward(self, inputs):
+        #inputs
+        XT = inputs[0]
+        XE = inputs[1]
+        XM = inputs[2]
+        X_soma_depth = inputs[3]
+
+        #Saving the masks for nans
+        masks={}
+        masks['T'] = ~torch.isnan(XT)
+        masks['E'] = ~torch.isnan(XE)
+        masks['M'] = ~torch.isnan(XM)
+        masks['soma_depth'] = ~torch.isnan(X_soma_depth)
+
+        #replacing nans with zeros
+        XT = torch.nan_to_num(XT, nan=0.)
+        XE = torch.nan_to_num(XE, nan=0.)
+        XM = torch.nan_to_num(XM, nan=0.)
+        X_soma_depth = torch.nan_to_num(X_soma_depth, nan=0.)
+
+        #T arm forward pass
+        zT = self.eT(XT)
+        XrT = self.dT(zT)
+
+        #EM arm forward pass
+        zEM = self.eEM(XE, XM, X_soma_depth)
+        XrE, XrM, Xr_soma_depth = self.dEM(zEM)
+
+        pairs = {}
+        pairs['EM'] = self.get_pairs(self.get_1D_mask(masks['E']), self.get_1D_mask(masks['M']))
+        pairs['T_EM'] = self.get_pairs(self.get_1D_mask(masks['T']), pairs['EM'])
+
+        #Loss calculations
+        self.loss_dict = {}
+        self.loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT[masks['T']])
+        self.loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE[masks['E']])
+        self.loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM[masks['M']])
+        self.loss_dict['recon_soma_depth'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth[masks['soma_depth']],
+                                                                                       Xr_soma_depth[masks['soma_depth']])
+
+        self.loss_dict['cpl_T_EM'] = self.lambda_T_EM * self.min_var_loss(zT[pairs['T_EM']], zEM[pairs['T_EM']])
+
+        if self.augment_decoders:
+            XrT_aug = self.dT(zT.detach())
+            XrE_aug, XrM_aug, Xr_soma_depth_aug = self.dEM(zEM.detach())
+            self.loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT_aug[masks['T']])
+            self.loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE_aug[masks['E']])
+            self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM_aug[masks['M']])
+            self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(
+                X_soma_depth[masks['soma_depth']],
+                Xr_soma_depth_aug[masks['soma_depth']])
+
+        self.loss = sum(self.loss_dict.values())
+        return zT, zEM, XrT, XrE, XrM, Xr_soma_depth
+
+
 class Model_TE(nn.Module):
     """Coupled autoencoder model
 
@@ -432,58 +672,73 @@ class Model_MET(nn.Module):
     def mean_sq_diff(x, y):
         return torch.mean(torch.square(x-y))
 
+    @staticmethod
+    def get_pairs(mask1, mask2):
+        mask1 = mask1.reshape(mask1.shape[0], -1)
+        mask2 = mask2.reshape(mask2.shape[0], -1)
+        mask1 = torch.all(mask1, dim=1)
+        mask2 = torch.all(mask2, dim=1)
+        return torch.logical_and(mask1, mask2)
+
     def forward(self, inputs):
-        #T arm forward pass
+        #inputs
         XT = inputs[0]
+        XE = inputs[1]
+        XM = inputs[2]
+        X_soma_depth = inputs[3]
+
+        #Saving the masks for nans
+        masks={}
+        masks['T'] = ~torch.isnan(XT)
+        masks['E'] = ~torch.isnan(XE)
+        masks['M'] = ~torch.isnan(XM)
+        masks['soma_depth'] = ~torch.isnan(X_soma_depth)
+
+        #replacing nans with zeros
+        XT = torch.nan_to_num(XT, nan=0.)
+        XE = torch.nan_to_num(XE, nan=0.)
+        XM = torch.nan_to_num(XM, nan=0.)
+        X_soma_depth = torch.nan_to_num(X_soma_depth, nan=0.)
+
+        #T arm forward pass
         zT = self.eT(XT)
         XrT = self.dT(zT)
 
-        #E arm forward pass
-        XE = inputs[1]
+        # E arm forward pass
         zE = self.eE(XE)
         XrE = self.dE(zE)
 
         # M arm forward pass
-        XM = inputs[2]
-        X_soma_depth = inputs[3]
         zM_z_soma_depth = self.eM(XM, X_soma_depth)
         XrM, Xr_soma_depth = self.dM(zM_z_soma_depth)
 
-        #masks
-        mask_T_by_E = inputs[4]
-        mask_E_by_T = inputs[5]
-        mask_T_by_M = inputs[6]
-        mask_M_by_T = inputs[7]
-        mask_E_by_M = inputs[8]
-        mask_M_by_E = inputs[9]
-
-        #Matching pairs
-        masked_zT_by_E = zT[mask_E_by_T]
-        masked_zE_by_T = zE[mask_T_by_E]
-        masked_zM_by_E = zM_z_soma_depth[mask_E_by_M]
-        masked_zE_by_M = zE[mask_M_by_E]
-        masked_zM_by_T = zM_z_soma_depth[mask_T_by_M]
-        masked_zT_by_M = zT[mask_M_by_T]
-
+        pairs = {}
+        pairs['ET'] = self.get_pairs(masks['T'], masks['E'])
+        pairs['TM'] = self.get_pairs(masks['T'], masks['M'])
+        pairs['EM'] = self.get_pairs(masks['E'], masks['M'])
 
         #Loss calculations
         self.loss_dict = {}
-        self.loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT, XrT)
-        self.loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE, XrE)
-        self.loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM, XrM)
-        self.loss_dict['recon_soma_depth'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth, Xr_soma_depth)
-        self.loss_dict['cpl_TE'] = self.lambda_TE * self.min_var_loss(masked_zT_by_E, masked_zE_by_T)
-        self.loss_dict['cpl_ME'] = self.lambda_ME * self.min_var_loss(masked_zM_by_E, masked_zE_by_M)
-        self.loss_dict['cpl_MT'] = self.lambda_MT * self.min_var_loss(masked_zM_by_T, masked_zT_by_M)
+        self.loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT[masks['T']])
+        self.loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE[masks['E']])
+        self.loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM[masks['M']])
+        self.loss_dict['recon_soma_depth'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth[masks['soma_depth']],
+                                                                                       Xr_soma_depth[masks['soma_depth']])
+
+        self.loss_dict['cpl_TE'] = self.lambda_TE * self.min_var_loss(zT[pairs['ET']], zE[pairs['ET']])
+        self.loss_dict['cpl_ME'] = self.lambda_ME * self.min_var_loss(zM_z_soma_depth[pairs['EM']], zE[pairs['EM']])
+        self.loss_dict['cpl_MT'] = self.lambda_MT * self.min_var_loss(zM_z_soma_depth[pairs['TM']], zT[pairs['TM']])
 
         if self.augment_decoders:
             XrT_aug = self.dT(zT.detach())
             XrE_aug = self.dE(zE.detach())
             XrM_aug, Xr_soma_depth_aug = self.dM(zM_z_soma_depth.detach())
-            self.loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT, XrT_aug)
-            self.loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE, XrE_aug)
-            self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM, XrM_aug)
-            self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth, Xr_soma_depth_aug)
+            self.loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT_aug[masks['T']])
+            self.loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE_aug[masks['E']])
+            self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM_aug[masks['M']])
+            self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(
+                X_soma_depth[masks['soma_depth']],
+                Xr_soma_depth_aug[masks['soma_depth']])
 
         self.loss = sum(self.loss_dict.values())
         return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth

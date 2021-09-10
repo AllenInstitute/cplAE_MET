@@ -94,8 +94,7 @@ def get_PCA_explained_variance_ratio_at_thr(nparray, threshold, show_plots=True)
 
 def remove_nan_observations(x):
     """takes a np.array assuming that first dimension is the batch size or number of observations and remove
-    any observation that has nan features. Even if one of the features amon N features is nan, that observation
-    will be fropped
+    any observation that has ALL nan features (cells with few nans and few non nans are kept).
 
         Args:
         x: a numpy array
@@ -106,8 +105,8 @@ def remove_nan_observations(x):
         """
     shape = x.shape
     x_reshaped = x.reshape(shape[0], -1)
-    # Drop all rows containing any nan:
-    mask = np.isnan(x_reshaped).any(axis=1)
+    # Drop all rows containing all nan:
+    mask = np.isnan(x_reshaped).all(axis=1)
     x_reshaped = x_reshaped[~mask]
     # Reshape back:
     x = x_reshaped.reshape(x_reshaped.shape[0], *shape[1:])

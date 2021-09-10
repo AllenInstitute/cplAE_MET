@@ -10,12 +10,30 @@ from functools import reduce
 import cplAE_MET.utils.analysis_helpers as analysis
 
 #Read the json file with all input args
-parser = argparse.ArgumentParser()
-parser.add_argument("-f", "--input", required=True, type=str)
-args = parser.parse_args()
+# parser = argparse.ArgumentParser()
+# parser.add_argument("-f", "--input", required=True, type=str)
+# args = parser.parse_args()
+#
+# with open(args.input) as json_data:
+#     data = json.load(json_data)
 
-with open(args.input) as json_data:
-    data = json.load(json_data)
+data = {"input_path": "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/",
+ "output_path": "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/",
+ "T_data_file": "data.feather",
+ "T_annotation_file": "anno.feather",
+ "gene_file": "good_genes_beta_score.csv",
+ "specimen_ids_file": "revised_manuscript_specimen_ids.txt",
+ "E_timeseries_file": "inh_fv_Ephys_run_all_20July2021.h5",
+ "ipfx_features_file": "inh_ipfx_features_20July2021.csv",
+ "M_output_data_file": "M_data_25Aug2021.mat",
+ "M_output_anno_file": "M_anno_25Aug2021.csv",
+ "M_input_anno_file": "manual_auto823.csv",
+ "M_autotrace_anno_file":  "auto280.csv",
+ "beta_threshold": 0.4,
+ "pca_comp_threshold": 0.97,
+ "output_file_prefix": "inh",
+ "hist2d_120x4_folder": "hist2d_120x4"
+}
 
 
 #Input vars
@@ -34,7 +52,7 @@ print("Loading E, T and M data")
 E_data = pd.read_csv(E_data_path)
 print("shape of E data:", E_data.shape)
 T_data = pd.read_csv(T_data_path)
-print("shape of T data:", E_data.shape)
+print("shape of T data:", T_data.shape)
 M_dat = sio.loadmat(M_data_path)
 print("shape of hist_ax_de data:", M_dat['hist_ax_de'].shape)
 T_annotation = pd.read_csv(T_anno_path)
@@ -69,14 +87,18 @@ model_input_mat["T_dat"] = np.array(MET[[c for c in T_data.columns if c!="sample
 model_input_mat["M_dat"]= np.array(M_dat["hist_ax_de"])
 model_input_mat["soma_depth"] = np.array(M_dat["soma_depth"])
 
-#masking M, E and T data for the nans 
+#masking M, E and T data for the nans
+# mask_T = ~np.isnan(model_input_mat["T_dat"])
+# mask_E = ~np.isnan(model_input_mat["E_dat"])
+# mask_M = ~np.isnan(model_input_mat["M_dat"])
+# mask_soma_depth = ~np.isnan(model_input_mat["soma_depth"])
 _, mask_M = analysis.remove_nan_observations(model_input_mat["M_dat"])
 _, mask_E = analysis.remove_nan_observations(model_input_mat["E_dat"])
 _, mask_T = analysis.remove_nan_observations(model_input_mat["T_dat"])
 _, mask_soma_depth = analysis.remove_nan_observations(model_input_mat["soma_depth"][0])
 
 #Make sure that M mask and soma_depth mask are equal
-assert np.all(np.equal(mask_soma_depth, mask_M))
+# assert np.all(np.equal(mask_soma_depth, mask_M))
 
 #writing the sample_ids and the masks and some meta data
 model_input_mat["sample_id"] = np.array(MET['sample_id'])
