@@ -283,11 +283,23 @@ class Encoder_EM(nn.Module):
     Encoder for EM data.
 
     Args:
-        out_dim: representation dimenionality
+        E_dim: number of E features
+        E_int_dim: intermediate linear layer dimension for E
+        sd_int_dim: intermediate linear layer dimension for soma depth
         std_dev: gaussian noise std dev
+        out_dim: representation dimenionality
+        noise_sd: per-feature gaussian noise for E data
+        dropout_p: dropout probability for E features
     """
 
-    def __init__(self, E_dim=0 ,std_dev=0.1,  out_dim=3, noise_sd=None, dropout_p=0.1):
+    def __init__(self,
+                 E_dim=0,
+                 E_int_dim=40,
+                 sd_int_dim=10,
+                 std_dev=0.1,
+                 out_dim=3,
+                 noise_sd=None,
+                 dropout_p=0.1):
 
         super(Encoder_EM, self).__init__()
 
@@ -306,12 +318,18 @@ class Encoder_EM(nn.Module):
         self.conv2_de = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
 
         self.flat = nn.Flatten()
-        self.fc1 = nn.Linear(301+E_dim, 20)
-        self.fc2 = nn.Linear(20, 20)
-        self.fc3 = nn.Linear(20, out_dim)
+        self.fcsd = nn.Linear(1, sd_int_dim)
+        self.fce0 = nn.Linear(E_dim, E_int_dim)
+        self.fce1 = nn.Linear(E_int_dim, E_int_dim)
+        self.fce2 = nn.Linear(E_int_dim, E_int_dim)
+        self.fce3 = nn.Linear(E_int_dim, 20)
+        self.fcm1 = nn.Linear(300+sd_int_dim, 20)
+        self.fcm2 = nn.Linear(20, 20)
+        self.fcm3 = nn.Linear(20, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
+        self.relu = nn.ReLU()
         return
 
     def addnoise(self, x):
@@ -320,11 +338,17 @@ class Encoder_EM(nn.Module):
             x = torch.normal(mean=x, std=self.noise_sd)
         return x
 
-    def forward(self, xe, xm, soma_depth):
+    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m):
 
+        #Passing xe through some layers
         xe = self.addnoise(xe)
         xe = self.drp(xe)
+        xe = self.elu(self.fce0(xe))
+        xe = self.relu(self.fce1(xe))
+        xe = self.relu(self.fce2(xe))
+        xe = self.relu(self.fce3(xe))
 
+        #Passing xm through some layers
         if self.training:
             xm = xm + (torch.randn(xm.shape) * self.gaussian_noise_std_dev)
         ax, de = torch.tensor_split(xm, 2, dim=1)
@@ -332,16 +356,28 @@ class Encoder_EM(nn.Module):
         de = self.elu(self.conv1_de(de))
         ax = self.elu(self.conv2_ax(ax))
         de = self.elu(self.conv2_de(de))
-
         xm = torch.cat(tensors=(self.flat(ax), self.flat(de)), dim=1)
 
+        #passing soma depth through some layers
         soma_depth = soma_depth.view(-1, 1)
+        soma_depth = self.elu(self.fcsd(soma_depth))
 
-        x = torch.cat(tensors=(xm, soma_depth, xe), dim=1)
+        #concat soma depth with morpho
+        xm = torch.cat(tensors=(xm, soma_depth), dim=1)
+        xm = self.elu(self.fcm1(xm))
+        xm = self.elu(self.fcm2(xm))
 
-        x = self.elu(self.fc1(x))
-        x = self.elu(self.fc2(x))
-        x = self.fc3(x)
+        #if both e and m data exist, then x is the average of the two
+        #if only m or only e exist then x is that one otherwise it is zero
+        xm[~mask1D_m] = 0. #set lines with no data equal to zero in xm
+        xe[~mask1D_e] = 0. #set the lines with no data equal to zero in xe
+        mask = mask1D_e.long() + mask1D_m.long() #if both are true then the sum is 2 if one is true, sum is 1 and if both false it is zero
+        mask[mask == 0] = 1 #this is to avoid dividing by zero, already in the next step x is going to be zero
+        x = xm + xe #add the two values and then divide to get the average
+        x = torch.div(x, mask.view(-1, 1))
+
+        #run the final representation through more layers
+        x = self.fcm3(x)
         x = self.bn(x)
         return x
 
@@ -414,7 +450,7 @@ class Model_T_EM(nn.Module):
 
     def __init__(self,
                  T_dim=1000, T_int_dim=50, T_dropout=0.5,
-                 E_dim=1000, E_int_dim=50, E_dropout=0.5, E_noise_sd=None,
+                 E_dim=1000,  E_int_dim=40, E_dropout=0.5, E_noise_sd=None,
                  latent_dim=3, alpha_T=1.0, alpha_E=1.0, alpha_soma_depth=1.0,
                  alpha_M=1.0, lambda_T_EM=1.0, std_dev=1.0, augment_decoders=True):
 
@@ -427,7 +463,8 @@ class Model_T_EM(nn.Module):
         self.augment_decoders = augment_decoders
 
         self.eT = Encoder_T(dropout_p=T_dropout, in_dim=T_dim, out_dim=latent_dim, int_dim=T_int_dim)
-        self.eEM = Encoder_EM(E_dim=E_dim, std_dev=std_dev,  out_dim=latent_dim, dropout_p=E_dropout, noise_sd=E_noise_sd)
+        self.eEM = Encoder_EM(E_dim=E_dim, E_int_dim=E_int_dim, std_dev=std_dev,  out_dim=latent_dim,
+                              dropout_p=E_dropout, noise_sd=E_noise_sd)
 
         self.dT = Decoder_T(in_dim=latent_dim, out_dim=T_dim, int_dim=T_int_dim)
         self.dEM = Decoder_EM(E_dim=E_dim, in_dim=latent_dim)
@@ -487,7 +524,7 @@ class Model_T_EM(nn.Module):
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_soma_depth)
+        zEM = self.eEM(XE, XM, X_soma_depth, self.get_1D_mask(masks['E']), self.get_1D_mask(masks['M']))
         XrE, XrM, Xr_soma_depth = self.dEM(zEM)
 
         pairs = {}

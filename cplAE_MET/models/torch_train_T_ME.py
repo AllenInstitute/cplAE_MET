@@ -65,7 +65,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_T_E
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name, input_mat_filename=input_mat_filename)
 
     fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_soma_depth)}_' +
-              f'csTE_M_{str(lambda_T_EM)}_' +
+              f'csT_EM_{str(lambda_T_EM)}_' +
               f'ad_{str(augment_decoders)}_ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}').replace('.', '-')
 
