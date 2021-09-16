@@ -18,7 +18,7 @@ parser.add_argument("--alpha_soma_depth",   default=1.0,           type=float, h
 parser.add_argument("--lambda_T_EM",        default=1.0,           type=float, help="T and EM coupling loss weight")
 parser.add_argument("--augment_decoders",   default=1,             type=int,   help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument("--latent_dim",         default=3,             type=int,   help="Number of latent dims")
-parser.add_argument("--n_epochs",           default=1000,            type=int,   help="Number of epochs to train")
+parser.add_argument("--n_epochs",           default=5,            type=int,   help="Number of epochs to train")
 parser.add_argument("--n_fold",             default=0,             type=int,   help="Fold number in the kfold cross validation training")
 parser.add_argument("--config_file",        default='config_exc_MET.toml',type=str, help="config file with data paths")
 parser.add_argument("--run_iter",           default=0,             type=int,   help="Run-specific id")
@@ -39,7 +39,7 @@ def set_paths(config_file=None, exp_name='TEMP', input_mat_filename='ALSO_TEMP')
 
 
 class MET_Dataset(torch.utils.data.Dataset):
-    def __init__(self, T_dat, E_dat, M_dat, soma_depth, ):
+    def __init__(self, T_dat, E_dat, M_dat, soma_depth):
         super(MET_Dataset).__init__()
         self.T_dat = T_dat
         self.E_dat = E_dat
@@ -145,14 +145,14 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_T_E
         # Save into a mat file
         savemat = {'zT': tonumpy(zT),
                    'zEM': tonumpy(zEM),
-                   'XrT': XrT,
-                   'XrE': XrE,
-                   'XrM': XrM,
-                   'Xr_soma_depth': Xr_soma_depth,
-                   'XrT_from_zEM': XrT_from_zEM,
-                   'XrE_from_zT': XrE_from_zT,
-                   'XrM_from_zT': XrM_from_zT,
-                   'Xr_soma_depth_from_zT': Xr_soma_depth_from_zT,
+                   'XrT': tonumpy(XrT),
+                   'XrE': tonumpy(XrE),
+                   'XrM': tonumpy(XrM),
+                   'Xr_soma_depth': tonumpy(Xr_soma_depth),
+                   'XrT_from_zEM': tonumpy(XrT_from_zEM),
+                   'XrE_from_zT': tonumpy(XrE_from_zT),
+                   'XrM_from_zT': tonumpy(XrM_from_zT),
+                   'Xr_soma_depth_from_zT': tonumpy(Xr_soma_depth_from_zT),
                    'sample_id': data['sample_id'],
                    'cluster_label': data['cluster'],
                    'cluster_id': data['cluster_id'],
@@ -239,7 +239,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_soma_depth=1.0, lambda_T_E
         with open(dir_pth['logs'] + f'{fold_fileid}.csv', "a") as f:
             writer = csv.writer(f, delimiter=',')
             if epoch == 0:
-                writer.writerow(['epoch', *train_loss_dict.keys(), *val_loss_dict.keys()])
+                writer.writerow(['epoch'] + ['train_'+ k for k in train_loss_dict] + ['val_'+ k for k in val_loss_dict])
             writer.writerow([epoch + 1, *train_loss_dict.values(), *val_loss_dict.values()])
 
         monitor_loss.append(val_loss_dict['recon_T'] +

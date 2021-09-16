@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 def tensor(x): return torch.tensor(x).to(dtype=torch.float32).to(device)
@@ -325,7 +326,7 @@ class Encoder_EM(nn.Module):
         self.fce3 = nn.Linear(E_int_dim, 20)
         self.fcm1 = nn.Linear(300+sd_int_dim, 20)
         self.fcm2 = nn.Linear(20, 20)
-        self.fcm3 = nn.Linear(20, out_dim)
+        self.fc = nn.Linear(20, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
@@ -367,17 +368,17 @@ class Encoder_EM(nn.Module):
         xm = self.elu(self.fcm1(xm))
         xm = self.elu(self.fcm2(xm))
 
-        #if both e and m data exist, then x is the average of the two
-        #if only m or only e exist then x is that one otherwise it is zero
-        xm[~mask1D_m] = 0. #set lines with no data equal to zero in xm
-        xe[~mask1D_e] = 0. #set the lines with no data equal to zero in xe
-        mask = mask1D_e.long() + mask1D_m.long() #if both are true then the sum is 2 if one is true, sum is 1 and if both false it is zero
-        mask[mask == 0] = 1 #this is to avoid dividing by zero, already in the next step x is going to be zero
-        x = xm + xe #add the two values and then divide to get the average
-        x = torch.div(x, mask.view(-1, 1))
+        mask1D_only_e = torch.logical_and(mask1D_e, ~mask1D_m) #True if only e is True AND m is False
+        mask1D_only_m = torch.logical_and(mask1D_m, ~mask1D_e) #True if only m is True AND e is False
+        mask1D_both_e_and_m = torch.logical_and(mask1D_e, mask1D_m) #True if only both e and m are True
+
+        y = torch.zeros_like(xm)
+        y = torch.where(mask1D_only_e.view(-1, 1), xe, y)
+        y = torch.where(mask1D_only_m.view(-1, 1), xm, y)
+        y = torch.where(mask1D_both_e_and_m.view(-1, 1), torch.mean(torch.stack((xm, xe)), dim=0), y)
 
         #run the final representation through more layers
-        x = self.fcm3(x)
+        x = self.fc(y)
         x = self.bn(x)
         return x
 
@@ -390,12 +391,20 @@ class Decoder_EM(nn.Module):
         in_dim: representation dimensionality
     """
 
-    def __init__(self, E_dim=0, in_dim=3):
+    def __init__(self,
+                 E_dim=0,
+                 E_int_dim=40,
+                 in_dim=3,
+                 sd_int_dim=10):
 
         super(Decoder_EM, self).__init__()
-        self.fc1_dec = nn.Linear(in_dim, 20)
-        self.fc2_dec = nn.Linear(20, 20)
-        self.fc3_dec = nn.Linear(20, 301+E_dim)
+        self.fc_dec = nn.Linear(in_dim, 20)
+        self.fcm0_dec = nn.Linear(20, 20)
+        self.fcm1_dec = nn.Linear(20, 300+sd_int_dim)
+        self.fcsd_dec = nn.Linear(sd_int_dim, 1)
+        self.fce0_dec = nn.Linear(20, E_int_dim)
+        self.fce1_dec = nn.Linear(E_int_dim, E_int_dim)
+        self.fce2_dec = nn.Linear(E_int_dim, E_dim)
 
         self.convT1_ax = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
         self.convT1_de = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
@@ -407,25 +416,33 @@ class Decoder_EM(nn.Module):
         return
 
     def forward(self, x):
-        x = self.elu(self.fc1_dec(x))
-        x = self.elu(self.fc2_dec(x))
-        x = self.elu(self.fc3_dec(x))
 
-        ax_de = x[:, 0:300]
-        soma_depth = x[:, 300]
-        xe = x[:, 301:]
+        x = self.elu(self.fc_dec(x))
 
+        #separating xm and xe
+        xm = self.elu(self.fcm0_dec(x))
+        xe = self.elu(self.fce0_dec(x))
+
+        #passing xm through some layers
+        xm = self.elu(self.fcm1_dec(xm))
+        #separating soma_depth
+        ax_de = xm[:, 0:300]
+        soma_depth = xm[:, 300:]
+        soma_depth = self.fcsd_dec(soma_depth)
+        #separating ax and de and passing them through conv layers
         ax, de = torch.tensor_split(ax_de, 2, dim=1)
         ax = ax.view(-1, 10, 15, 1)
         de = de.view(-1, 10, 15, 1)
-
         ax = self.convT1_ax(ax)
         de = self.convT1_de(de)
-
         ax = self.convT2_ax(ax)
         de = self.convT2_de(de)
-
         xm = torch.cat(tensors=(ax, de), dim=1)
+
+        #passing xe through some layers
+        xe = self.elu(self.fce1_dec(xe))
+        xe = self.elu(self.fce2_dec(xe))
+
         return xe, xm, soma_depth
 
 class Model_T_EM(nn.Module):
@@ -467,29 +484,35 @@ class Model_T_EM(nn.Module):
                               dropout_p=E_dropout, noise_sd=E_noise_sd)
 
         self.dT = Decoder_T(in_dim=latent_dim, out_dim=T_dim, int_dim=T_int_dim)
-        self.dEM = Decoder_EM(E_dim=E_dim, in_dim=latent_dim)
+        self.dEM = Decoder_EM(E_dim=E_dim, in_dim=latent_dim, E_int_dim=E_int_dim)
         return
 
     @staticmethod
-    def min_var_loss(zi, zj):
+    def min_var_loss(zi, zj, mask_1D_zi, mask_1D_zj):
         #SVD calculated over all entries in the batch
-        batch_size = zj.shape[0]
-        zj_centered = zj - torch.mean(zj, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
-        min_var_zj = torch.square(min_eig)/(batch_size-1)
+        zj_masked = zj[mask_1D_zj]
+        zj_masked_size = zj_masked.shape[0]
+        zj_masked_centered = zj_masked - torch.mean(zj_masked, 0, True)
+        min_eig = torch.min(torch.linalg.svdvals(zj_masked_centered))
+        min_var_zj = torch.square(min_eig)/(zj_masked_size-1)
 
-        zi_centered = zi - torch.mean(zi, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
-        min_var_zi = torch.square(min_eig)/(batch_size-1)
+        zi_masked = zi[mask_1D_zi]
+        zi_masked_size = zi_masked.shape[0]
+        zi_masked_centered = zi_masked - torch.mean(zi_masked, 0, True)
+        min_eig = torch.min(torch.linalg.svdvals(zi_masked_centered))
+        min_var_zi = torch.square(min_eig)/(zi_masked_size-1)
 
         #Wij_paired is the weight of matched pairs
-        zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
+        pairs = torch.logical_and(mask_1D_zi, mask_1D_zj)
+        paired_dist = (zi-zj)[pairs]
+        zi_zj_mse = torch.mean(torch.sum(torch.square(paired_dist), 1))
         loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
         return loss_ij
 
     @staticmethod
     def mean_sq_diff(x, y):
-        return torch.mean(torch.square(x-y))
+        # return torch.mean(torch.square(x-y))
+        return F.mse_loss(y, x, reduction='mean') if (x.numel() != 0) & (y.numel() != 0) else tensor(0.)
 
     @staticmethod
     def get_1D_mask(mask):
@@ -527,9 +550,12 @@ class Model_T_EM(nn.Module):
         zEM = self.eEM(XE, XM, X_soma_depth, self.get_1D_mask(masks['E']), self.get_1D_mask(masks['M']))
         XrE, XrM, Xr_soma_depth = self.dEM(zEM)
 
-        pairs = {}
-        pairs['EM'] = self.get_pairs(self.get_1D_mask(masks['E']), self.get_1D_mask(masks['M']))
-        pairs['T_EM'] = self.get_pairs(self.get_1D_mask(masks['T']), pairs['EM'])
+        mask_1D_T = self.get_1D_mask(masks['T'])
+        mask_1D_E = self.get_1D_mask(masks['E'])
+        mask_1D_M = self.get_1D_mask(masks['M'])
+        mask_1D_EM = torch.logical_or(mask_1D_E, mask_1D_M)
+
+        #pairs_T_EM = torch.logical_and(torch.logical_or(mask_1D_E, mask_1D_M), mask_1D_T)
 
         #Loss calculations
         self.loss_dict = {}
@@ -539,7 +565,7 @@ class Model_T_EM(nn.Module):
         self.loss_dict['recon_soma_depth'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth[masks['soma_depth']],
                                                                                        Xr_soma_depth[masks['soma_depth']])
 
-        self.loss_dict['cpl_T_EM'] = self.lambda_T_EM * self.min_var_loss(zT[pairs['T_EM']], zEM[pairs['T_EM']])
+        self.loss_dict['cpl_T_EM'] = self.lambda_T_EM * self.min_var_loss(zT, zEM, mask_1D_T, mask_1D_EM)
 
         if self.augment_decoders:
             XrT_aug = self.dT(zT.detach())
