@@ -47,3 +47,8 @@ Test set: 5 cells from 14 t-types that have > 15 M samples
  - [celltype_hierarchy](https://github.com/AllenInstitute/celltype_hierarchy) - Helpers for dendrogram manipulation
  - [cplAE_TE](https://github.com/AllenInstitute/coupledAE-patchseq) - Coupled autoencoders for T and E
 
+### Config
+```toml
+package_dir = '/Local/code/cplAE_MET/'
+MET_inh_data = '/Local/data/inh_MET_model_input_mat.mat'
+```

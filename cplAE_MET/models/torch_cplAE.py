@@ -289,29 +289,29 @@ class Encoder_EM(nn.Module):
         sd_int_dim: intermediate linear layer dimension for soma depth
         std_dev: gaussian noise std dev
         out_dim: representation dimenionality
-        noise_sd: per-feature gaussian noise for E data
-        dropout_p: dropout probability for E features
+        E_noise_sd: per-feature gaussian noise for E data
+        E_dropout: dropout probability for E features
     """
 
     def __init__(self,
-                 E_dim=0,
+                 E_dim=100,
                  E_int_dim=40,
-                 sd_int_dim=10,
-                 std_dev=0.1,
+                 EM_int_dim=20,
+                 M_noise=0.1,
                  out_dim=3,
-                 noise_sd=None,
-                 dropout_p=0.1):
+                 E_noise=None,
+                 E_dropout=0.1):
 
         super(Encoder_EM, self).__init__()
 
-        if noise_sd is not None:
-            self.noise_sd = tensor_(noise_sd)
+        if E_noise is not None:
+            self.E_noise = tensor_(E_noise)
         else:
-            self.noise_sd = None
+            self.E_noise = None
 
-        self.drp = nn.Dropout(p=dropout_p)
+        self.drp = nn.Dropout(p=E_dropout)
 
-        self.gaussian_noise_std_dev = std_dev
+        self.M_noise = M_noise
         self.conv1_ax = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
         self.conv1_de = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
 
@@ -319,39 +319,43 @@ class Encoder_EM(nn.Module):
         self.conv2_de = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
 
         self.flat = nn.Flatten()
-        self.fcsd = nn.Linear(1, sd_int_dim)
+        self.fcsd = nn.Linear(1, 1)
         self.fce0 = nn.Linear(E_dim, E_int_dim)
         self.fce1 = nn.Linear(E_int_dim, E_int_dim)
         self.fce2 = nn.Linear(E_int_dim, E_int_dim)
-        self.fce3 = nn.Linear(E_int_dim, 20)
-        self.fcm1 = nn.Linear(300+sd_int_dim, 20)
-        self.fcm2 = nn.Linear(20, 20)
-        self.fc = nn.Linear(20, out_dim)
+        self.fce3 = nn.Linear(E_int_dim, EM_int_dim)
+        self.fcm1 = nn.Linear(300+1, EM_int_dim)
+        self.fcm2 = nn.Linear(EM_int_dim, EM_int_dim)
+        self.fc = nn.Linear(EM_int_dim, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         return
 
-    def addnoise(self, x):
-        if (self.training) and (self.noise_sd is not None):
-            # batch dim is inferred from shapes of x and self.noise_sd
-            x = torch.normal(mean=x, std=self.noise_sd)
+    def add_noise_E(self, x):
+        if (self.training) and (self.E_noise is not None):
+            # batch dim is inferred from shapes of x and self.E_noise
+            x = torch.normal(mean=x, std=self.E_noise)
+        return x
+
+    def add_noise_M(self, x):
+        if self.training:
+            x = x + (torch.randn(x.shape) * self.M_noise)
         return x
 
     def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m):
 
         #Passing xe through some layers
-        xe = self.addnoise(xe)
+        xe = self.add_noise_E(xe)
         xe = self.drp(xe)
-        xe = self.elu(self.fce0(xe))
+        xe = self.relu(self.fce0(xe))
         xe = self.relu(self.fce1(xe))
         xe = self.relu(self.fce2(xe))
         xe = self.relu(self.fce3(xe))
 
         #Passing xm through some layers
-        if self.training:
-            xm = xm + (torch.randn(xm.shape) * self.gaussian_noise_std_dev)
+        xm = self.add_noise_M(xm)
         ax, de = torch.tensor_split(xm, 2, dim=1)
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
@@ -361,9 +365,9 @@ class Encoder_EM(nn.Module):
 
         #passing soma depth through some layers
         soma_depth = soma_depth.view(-1, 1)
-        soma_depth = self.elu(self.fcsd(soma_depth))
+        soma_depth = self.relu(self.fcsd(soma_depth))
 
-        #concat soma depth with morpho
+        #concat soma depth with M
         xm = torch.cat(tensors=(xm, soma_depth), dim=1)
         xm = self.elu(self.fcm1(xm))
         xm = self.elu(self.fcm2(xm))
@@ -371,40 +375,47 @@ class Encoder_EM(nn.Module):
         mask1D_only_e = torch.logical_and(mask1D_e, ~mask1D_m) #True if only e is True AND m is False
         mask1D_only_m = torch.logical_and(mask1D_m, ~mask1D_e) #True if only m is True AND e is False
         mask1D_both_e_and_m = torch.logical_and(mask1D_e, mask1D_m) #True if only both e and m are True
+        mask1D_both_e_or_m = torch.logical_or(mask1D_e, mask1D_m)
 
         y = torch.zeros_like(xm)
         y = torch.where(mask1D_only_e.view(-1, 1), xe, y)
         y = torch.where(mask1D_only_m.view(-1, 1), xm, y)
+        #<--------- Instead of averaging, potentially select E or M stochastically
         y = torch.where(mask1D_both_e_and_m.view(-1, 1), torch.mean(torch.stack((xm, xe)), dim=0), y)
 
         #run the final representation through more layers
         x = self.fc(y)
-        x = self.bn(x)
+        x = torch.where(mask1D_both_e_or_m.view(-1, 1), self.bn(x), x)
         return x
 
 
 class Decoder_EM(nn.Module):
     """
-    Decoder for EM data.
+    Decoder for EM data. M dimensions are hard coded. 
 
     Args:
         in_dim: representation dimensionality
+        EM_int_dim: joint E and M representation dimensionality
+        E_int_dim: intermediate layer dims for E
+        E_dim: output dim for E
     """
 
     def __init__(self,
-                 E_dim=0,
-                 E_int_dim=40,
                  in_dim=3,
-                 sd_int_dim=10):
+                 EM_int_dim=20,
+                 E_int_dim=40,
+                 E_dim=100,
+                 ):
 
         super(Decoder_EM, self).__init__()
-        self.fc_dec = nn.Linear(in_dim, 20)
-        self.fcm0_dec = nn.Linear(20, 20)
-        self.fcm1_dec = nn.Linear(20, 300+sd_int_dim)
-        self.fcsd_dec = nn.Linear(sd_int_dim, 1)
-        self.fce0_dec = nn.Linear(20, E_int_dim)
+        self.fc_dec = nn.Linear(in_dim, EM_int_dim)
+        self.fcm0_dec = nn.Linear(EM_int_dim, EM_int_dim)
+        self.fcm1_dec = nn.Linear(EM_int_dim, 300+1)
+        self.fcsd_dec = nn.Linear(1, 1)
+        self.fce0_dec = nn.Linear(EM_int_dim, E_int_dim)
         self.fce1_dec = nn.Linear(E_int_dim, E_int_dim)
-        self.fce2_dec = nn.Linear(E_int_dim, E_dim)
+        self.fce2_dec = nn.Linear(E_int_dim, E_int_dim)
+        self.fce3_dec = nn.Linear(E_int_dim, E_dim)
 
         self.convT1_ax = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
         self.convT1_de = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
@@ -413,22 +424,25 @@ class Decoder_EM(nn.Module):
         self.convT2_de = nn.ConvTranspose2d(10, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
 
         self.elu = nn.ELU()
+        self.relu = nn.ReLU()
         return
 
     def forward(self, x):
 
-        x = self.elu(self.fc_dec(x))
+        x = self.fc_dec(x)
 
         #separating xm and xe
-        xm = self.elu(self.fcm0_dec(x))
-        xe = self.elu(self.fce0_dec(x))
+        xm = self.relu(self.fcm0_dec(x))
+        xe = self.relu(self.fce0_dec(x))
 
         #passing xm through some layers
-        xm = self.elu(self.fcm1_dec(xm))
+        xm = self.relu(self.fcm1_dec(xm))
+
         #separating soma_depth
         ax_de = xm[:, 0:300]
         soma_depth = xm[:, 300:]
         soma_depth = self.fcsd_dec(soma_depth)
+
         #separating ax and de and passing them through conv layers
         ax, de = torch.tensor_split(ax_de, 2, dim=1)
         ax = ax.view(-1, 10, 15, 1)
@@ -440,8 +454,9 @@ class Decoder_EM(nn.Module):
         xm = torch.cat(tensors=(ax, de), dim=1)
 
         #passing xe through some layers
-        xe = self.elu(self.fce1_dec(xe))
-        xe = self.elu(self.fce2_dec(xe))
+        xe = self.relu(self.fce1_dec(xe))
+        xe = self.relu(self.fce2_dec(xe))
+        xe = self.fce3_dec(xe)
 
         return xe, xm, soma_depth
 
@@ -453,60 +468,113 @@ class Model_T_EM(nn.Module):
         E_dim: Number of features in E data
         T_int_dim: hidden layer dims for T model
         E_int_dim: hidden layer dims for E model
+        EM_int_dim: common dim for E and M
         T_dropout: dropout for T data
         E_dropout: dropout for E data
-        E_noise_sd: per-feature gaussian noise
+        E_noise: per-feature gaussian noise
+        M_noise: gaussian noise with same variance on all pixels
         latent_dim: dim for representations
         alpha_T: loss weight for T reconstruction
         alpha_E: loss weight for E reconstruction
         alpha_M: loss weight for M reconstruction
+        alpha_sd: loss weight for soma depth reconstruction
         lambda_T_EM: loss weight coupling loss between T and EM
-        std_dev: gaussian noise std dev
         augment_decoders (bool): augment decoder with cross modal representation if True
     """
 
     def __init__(self,
                  T_dim=1000, T_int_dim=50, T_dropout=0.5,
-                 E_dim=1000,  E_int_dim=40, E_dropout=0.5, E_noise_sd=None,
-                 latent_dim=3, alpha_T=1.0, alpha_E=1.0, alpha_soma_depth=1.0,
-                 alpha_M=1.0, lambda_T_EM=1.0, std_dev=1.0, augment_decoders=True):
+                 E_dim=100,  E_int_dim=40, EM_int_dim=20,
+                 E_dropout=0.5, E_noise=None, M_noise=1.0,
+                 latent_dim=3,
+                 alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0,
+                 lambda_T_EM=1.0, augment_decoders=True):
 
         super(Model_T_EM, self).__init__()
+
+        self.T_dim = T_dim
+        self.T_int_dim = T_int_dim
+        self.T_dropout = T_dropout
+        self.E_dim = E_dim
+        self.E_int_dim = E_int_dim
+        self.EM_int_dim = EM_int_dim
+        self.latent_dim = latent_dim
+
+        self.E_dropout = E_dropout
+        self.E_noise = E_noise
+        self.M_noise = M_noise
+        self.augment_decoders = augment_decoders
+
         self.alpha_T = alpha_T
         self.alpha_E = alpha_E
         self.alpha_M = alpha_M
-        self.alpha_soma_depth = alpha_soma_depth
+        self.alpha_sd = alpha_sd
         self.lambda_T_EM = lambda_T_EM
-        self.augment_decoders = augment_decoders
 
-        self.eT = Encoder_T(dropout_p=T_dropout, in_dim=T_dim, out_dim=latent_dim, int_dim=T_int_dim)
-        self.eEM = Encoder_EM(E_dim=E_dim, E_int_dim=E_int_dim, std_dev=std_dev,  out_dim=latent_dim,
-                              dropout_p=E_dropout, noise_sd=E_noise_sd)
+        self.eT = Encoder_T(dropout_p=T_dropout,
+                            in_dim=T_dim,
+                            out_dim=latent_dim,
+                            int_dim=T_int_dim)
 
-        self.dT = Decoder_T(in_dim=latent_dim, out_dim=T_dim, int_dim=T_int_dim)
-        self.dEM = Decoder_EM(E_dim=E_dim, in_dim=latent_dim, E_int_dim=E_int_dim)
+        self.eEM = Encoder_EM(E_dim=E_dim,
+                              E_int_dim=E_int_dim,
+                              EM_int_dim=EM_int_dim,
+                              out_dim=latent_dim,
+                              E_noise=E_noise,
+                              E_dropout=E_dropout,
+                              M_noise=M_noise,
+                              )
+
+        self.dT = Decoder_T(in_dim=latent_dim,
+                            out_dim=T_dim,
+                            int_dim=T_int_dim)
+        
+        self.dEM = Decoder_EM(in_dim=latent_dim,
+                              EM_int_dim=EM_int_dim,
+                              E_int_dim=E_int_dim,
+                              E_dim=E_dim)
         return
 
+    def get_hparams(self):
+        hparam_dict = {}
+        hparam_dict['T_dim'] = self.T_dim
+        hparam_dict['T_int_dim'] = self.T_int_dim
+        hparam_dict['T_dropout'] = self.T_dropout
+        hparam_dict['E_dim'] = self.E_dim
+        hparam_dict['E_int_dim'] = self.E_int_dim
+        hparam_dict['EM_int_dim'] = self.EM_int_dim
+        hparam_dict['E_dropout'] = self.E_dropout
+        hparam_dict['E_noise'] = self.E_noise
+        hparam_dict['M_noise'] = self.M_noise
+        hparam_dict['latent_dim'] = self.latent_dim
+        hparam_dict['alpha_T'] = self.alpha_T
+        hparam_dict['alpha_E'] = self.alpha_E
+        hparam_dict['alpha_M'] = self.alpha_M
+        hparam_dict['alpha_sd'] = self.alpha_sd
+        hparam_dict['lambda_T_EM'] = self.lambda_T_EM
+        hparam_dict['augment_decoders'] = self.augment_decoders
+
+        
+
     @staticmethod
-    def min_var_loss(zi, zj, mask_1D_zi, mask_1D_zj):
+    def min_var_loss(zi, zj, valid_zi, valid_zj):
         #SVD calculated over all entries in the batch
-        zj_masked = zj[mask_1D_zj]
+        zj_masked = zj[valid_zj]
         zj_masked_size = zj_masked.shape[0]
         zj_masked_centered = zj_masked - torch.mean(zj_masked, 0, True)
         min_eig = torch.min(torch.linalg.svdvals(zj_masked_centered))
         min_var_zj = torch.square(min_eig)/(zj_masked_size-1)
 
-        zi_masked = zi[mask_1D_zi]
+        zi_masked = zi[valid_zi]
         zi_masked_size = zi_masked.shape[0]
         zi_masked_centered = zi_masked - torch.mean(zi_masked, 0, True)
         min_eig = torch.min(torch.linalg.svdvals(zi_masked_centered))
         min_var_zi = torch.square(min_eig)/(zi_masked_size-1)
 
         #Wij_paired is the weight of matched pairs
-        pairs = torch.logical_and(mask_1D_zi, mask_1D_zj)
-        paired_dist = (zi-zj)[pairs]
-        zi_zj_mse = torch.mean(torch.sum(torch.square(paired_dist), 1))
-        loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
+        both_valid = torch.logical_and(valid_zi, valid_zj)
+        zi_zj_sq_dist = torch.sum(torch.square((zi-zj)[both_valid]), axis=1)
+        loss_ij = torch.mean(zi_zj_sq_dist/torch.squeeze(torch.minimum(min_var_zi, min_var_zj)))
         return loss_ij
 
     @staticmethod
@@ -517,7 +585,7 @@ class Model_T_EM(nn.Module):
     @staticmethod
     def get_1D_mask(mask):
         mask = mask.reshape(mask.shape[0], -1)
-        return torch.all(mask, dim=1)
+        return torch.any(mask, dim=1)
 
     def get_pairs(self, mask1, mask2):
         return torch.logical_and(mask1, mask2)
@@ -527,58 +595,53 @@ class Model_T_EM(nn.Module):
         XT = inputs[0]
         XE = inputs[1]
         XM = inputs[2]
-        X_soma_depth = inputs[3]
+        X_sd = inputs[3]
 
-        #Saving the masks for nans
+        #define element-wise nan masks: 0 if nan
         masks={}
         masks['T'] = ~torch.isnan(XT)
         masks['E'] = ~torch.isnan(XE)
         masks['M'] = ~torch.isnan(XM)
-        masks['soma_depth'] = ~torch.isnan(X_soma_depth)
+        masks['sd'] = ~torch.isnan(X_sd)
 
-        #replacing nans with zeros
+        valid_E = self.get_1D_mask(masks['E'])
+        valid_M = self.get_1D_mask(masks['M'])
+        valid_T = self.get_1D_mask(masks['T'])
+        valid_EM = torch.logical_or(valid_E, valid_M)
+
+        #replacing nans in input with zeros
         XT = torch.nan_to_num(XT, nan=0.)
         XE = torch.nan_to_num(XE, nan=0.)
         XM = torch.nan_to_num(XM, nan=0.)
-        X_soma_depth = torch.nan_to_num(X_soma_depth, nan=0.)
+        X_sd = torch.nan_to_num(X_sd, nan=0.)
 
         #T arm forward pass
         zT = self.eT(XT)
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_soma_depth, self.get_1D_mask(masks['E']), self.get_1D_mask(masks['M']))
-        XrE, XrM, Xr_soma_depth = self.dEM(zEM)
-
-        mask_1D_T = self.get_1D_mask(masks['T'])
-        mask_1D_E = self.get_1D_mask(masks['E'])
-        mask_1D_M = self.get_1D_mask(masks['M'])
-        mask_1D_EM = torch.logical_or(mask_1D_E, mask_1D_M)
-
-        #pairs_T_EM = torch.logical_and(torch.logical_or(mask_1D_E, mask_1D_M), mask_1D_T)
+        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M)
+        XrE, XrM, Xr_sd = self.dEM(zEM)
 
         #Loss calculations
-        self.loss_dict = {}
-        self.loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT[masks['T']])
-        self.loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE[masks['E']])
-        self.loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM[masks['M']])
-        self.loss_dict['recon_soma_depth'] = self.alpha_soma_depth * self.mean_sq_diff(X_soma_depth[masks['soma_depth']],
-                                                                                       Xr_soma_depth[masks['soma_depth']])
+        loss_dict = {}
+        loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT[masks['T']])
+        loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE[masks['E']])
+        loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM[masks['M']])
+        loss_dict['recon_sd'] = self.alpha_sd * self.mean_sq_diff(X_sd[masks['sd']], Xr_sd[masks['sd']])
 
-        self.loss_dict['cpl_T_EM'] = self.lambda_T_EM * self.min_var_loss(zT, zEM, mask_1D_T, mask_1D_EM)
+        loss_dict['cpl_T_EM'] = self.lambda_T_EM * self.min_var_loss(zT, zEM, valid_T, valid_EM)
 
         if self.augment_decoders:
             XrT_aug = self.dT(zT.detach())
-            XrE_aug, XrM_aug, Xr_soma_depth_aug = self.dEM(zEM.detach())
-            self.loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT_aug[masks['T']])
-            self.loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE_aug[masks['E']])
-            self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM_aug[masks['M']])
-            self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(
-                X_soma_depth[masks['soma_depth']],
-                Xr_soma_depth_aug[masks['soma_depth']])
+            XrE_aug, XrM_aug, Xr_sd_aug = self.dEM(zEM.detach())
+            loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT_aug[masks['T']])
+            loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE_aug[masks['E']])
+            loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM_aug[masks['M']])
+            loss_dict['recon_M_sd_aug'] = self.alpha_sd * self.mean_sq_diff(X_sd[masks['sd']],Xr_sd_aug[masks['sd']])
 
-        self.loss = sum(self.loss_dict.values())
-        return zT, zEM, XrT, XrE, XrM, Xr_soma_depth
+        self.loss = sum(loss_dict.values())
+        return zT, zEM, XrT, XrE, XrM, Xr_sd, loss_dict
 
 
 class Model_TE(nn.Module):
@@ -799,9 +862,9 @@ class Model_MET(nn.Module):
             self.loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT_aug[masks['T']])
             self.loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE_aug[masks['E']])
             self.loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM_aug[masks['M']])
-            self.loss_dict['recon_M_soma_depth_aug'] = self.alpha_soma_depth * self.mean_sq_diff(
-                X_soma_depth[masks['soma_depth']],
-                Xr_soma_depth_aug[masks['soma_depth']])
+            self.loss_dict['recon_sd_aug'] = self.alpha_soma_depth * self.mean_sq_diff(
+                X_soma_depth[masks['sd']],
+                Xr_soma_depth_aug[masks['sd']])
 
         self.loss = sum(self.loss_dict.values())
-        return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_soma_depth
+        return zT, zE, zM_z_soma_depth, XrT, XrE, XrM, Xr_sd
