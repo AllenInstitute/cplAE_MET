@@ -554,27 +554,29 @@ class Model_T_EM(nn.Module):
         hparam_dict['lambda_T_EM'] = self.lambda_T_EM
         hparam_dict['augment_decoders'] = self.augment_decoders
 
-        
+    def min_var_loss(self, zi, zj, valid_zi, valid_zj):
+        if self.training:
+            #SVD calculated over all entries in the batch
+            zj_masked = zj[valid_zj]
+            zj_masked_size = zj_masked.shape[0]
+            zj_masked_centered = zj_masked - torch.mean(zj_masked, 0, True)
+            min_eig = torch.min(torch.linalg.svdvals(zj_masked_centered))
+            min_var_zj = torch.square(min_eig)/(zj_masked_size-1)
 
-    @staticmethod
-    def min_var_loss(zi, zj, valid_zi, valid_zj):
-        #SVD calculated over all entries in the batch
-        zj_masked = zj[valid_zj]
-        zj_masked_size = zj_masked.shape[0]
-        zj_masked_centered = zj_masked - torch.mean(zj_masked, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zj_masked_centered))
-        min_var_zj = torch.square(min_eig)/(zj_masked_size-1)
+            zi_masked = zi[valid_zi]
+            zi_masked_size = zi_masked.shape[0]
+            zi_masked_centered = zi_masked - torch.mean(zi_masked, 0, True)
+            min_eig = torch.min(torch.linalg.svdvals(zi_masked_centered))
+            min_var_zi = torch.square(min_eig)/(zi_masked_size-1)
 
-        zi_masked = zi[valid_zi]
-        zi_masked_size = zi_masked.shape[0]
-        zi_masked_centered = zi_masked - torch.mean(zi_masked, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zi_masked_centered))
-        min_var_zi = torch.square(min_eig)/(zi_masked_size-1)
-
-        #Wij_paired is the weight of matched pairs
-        both_valid = torch.logical_and(valid_zi, valid_zj)
-        zi_zj_sq_dist = torch.sum(torch.square((zi-zj)[both_valid]), axis=1)
-        loss_ij = torch.mean(zi_zj_sq_dist/torch.squeeze(torch.minimum(min_var_zi, min_var_zj)))
+            #Wij_paired is the weight of matched pairs
+            both_valid = torch.logical_and(valid_zi, valid_zj)
+            zi_zj_sq_dist = torch.sum(torch.square((zi-zj)[both_valid]), axis=1)
+            loss_ij = torch.mean(zi_zj_sq_dist/torch.squeeze(torch.minimum(min_var_zi, min_var_zj)))
+        else:
+            both_valid = torch.logical_and(valid_zi, valid_zj)
+            zi_zj_sq_dist = torch.mean(torch.sum(torch.square((zi-zj)[both_valid]), axis=1))
+            loss_ij = torch.mean(zi_zj_sq_dist)
         return loss_ij
 
     @staticmethod
