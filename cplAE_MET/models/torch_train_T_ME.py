@@ -17,17 +17,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--batchsize',        default=500,             type=int,   help='Batch size')
 parser.add_argument('--alpha_T',          default=1.0,             type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_E',          default=1.0,             type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',          default=1.0,             type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_M',          default=0.5,             type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_sd',         default=1.0,             type=float, help='Soma depth reconstruction loss weight')
 parser.add_argument('--lambda_T_EM',      default=1.0,             type=float, help='T - EM coupling loss weight')
 parser.add_argument('--augment_decoders', default=1,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
 parser.add_argument('--latent_dim',       default=3,               type=int,   help='Number of latent dims')
-parser.add_argument('--n_epochs',         default=5,               type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',         default=5000,            type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='T_EM',          type=str,   help='Model-specific id')
-parser.add_argument('--exp_name',         default='T_EM_torch',    type=str,   help='Experiment set')
+parser.add_argument('--model_id',         default='T_E',          type=str,   help='Model-specific id')
+parser.add_argument('--exp_name',         default='T_E_torch',    type=str,   help='Experiment set')
 
 
 def set_paths(config_file=None, exp_name='TEMP'):
@@ -129,11 +129,11 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0,
     # Model ============================
     model = Model_T_EM(T_dim=n_genes, T_int_dim=50, T_dropout=0.2,
                        E_dim=n_E_features, E_int_dim=50, EM_int_dim=20,
-                       E_dropout=0.2, E_noise=0.1 * np.nanstd(train_dataset.XE, axis=0), M_noise=0.02,
+                       E_dropout=0.2, E_noise=0.05 * np.nanstd(train_dataset.XE, axis=0), M_noise=0.02,
                        latent_dim=latent_dim,
                        alpha_T=alpha_T, alpha_E=alpha_E, alpha_M=alpha_M, alpha_sd=alpha_sd,
                        lambda_T_EM=lambda_T_EM, augment_decoders=augment_decoders)
-    optimizer = torch.optim.AdamW(model.parameters(), weight_decay=0.2)
+    optimizer = torch.optim.Adam(model.parameters())
 
     model.to(device)
 
