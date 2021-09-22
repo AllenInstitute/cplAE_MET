@@ -1,3 +1,4 @@
+import os
 import json
 from pathlib import Path
 from typing import Dict
@@ -230,3 +231,46 @@ def taxonomy_assignments(inputmat_fileid, initial_labels, datadict: Dict, n_requ
     return updated_labels, n_remain_classes
 
 
+def get_fileid(model_id, alpha_T, alpha_E, alpha_M, alpha_sd, lambda_T_EM,
+               augment_decoders, latent_dim, batchsize, n_epochs, run_iter, n_fold):
+    '''
+    returns the fileid based on the run parameters
+
+    Args:
+        model_id: Model-specific id
+        alpha_T: T reconstruction loss weight
+        alpha_E: E reconstruction loss weight
+        alpha_M: M reconstruction loss weight
+        alpha_sd: soma depth reconstruction loss weight
+        lambda_T_EM: T - EM coupling loss weight
+        augment_decoders: 0 or 1 - Train with cross modal reconstruction
+        latent_dim: Number of latent dims
+        batchsize: Batch size
+        n_epochs: Number of epochs to train
+        run_iter: Run-specific id
+        n_fold: Fold id in the kfold cross validation training
+    '''
+    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
+              f'csT_EM_{str(lambda_T_EM)}_ad_{str(augment_decoders)}_' +
+              f'ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
+              f'ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
+    return fileid
+
+
+def get_io_path(package_dir, exp_name, input_fileid=None, output_fileid=None):
+    ''' Returns a dict with all output and input paths
+
+    Args:
+         package_dir: path to the package
+    '''
+    path = {}
+
+    path['input_dir_path'] = os.path.join(package_dir, "data/proc/")
+    path['output_dir_path'] = os.path.join(package_dir, "data/results/", exp_name)
+    path['logs'] = os.path.join(package_dir, "data/results/", exp_name, "logs/")
+    if input_fileid:
+        path['input_path'] = os.path.join(path['input_dir_path'], input_fileid)
+    if output_fileid:
+        path['output_path'] = os.path.join(path['output_dir_path'], (output_fileid + "_exit-summary.pkl"))
+        path['log_path'] = os.path.join(path['output_dir_path'], "logs/", (output_fileid + ".csv"))
+    return path

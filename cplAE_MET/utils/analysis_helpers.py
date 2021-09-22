@@ -21,8 +21,7 @@ def compute_r2score(X, Xr, which_cols, which_rows=None):
     if which_rows is not None:
         X = X[which_rows, :]
         Xr = Xr[which_rows, :]
-    return [r2_score(X[:, i], Xr[:, i]) for i in which_cols]
-
+    return [r2_score(X[:, i][~np.isnan(X[:, i])], Xr[:, i][~np.isnan(X[:, i])]) for i in which_cols]
 
 def check_for_nan(nparray):
     """Takes a nparray and check if there is any nan values in it.
