@@ -22,12 +22,12 @@ parser.add_argument('--alpha_sd',         default=1.0,             type=float, h
 parser.add_argument('--lambda_T_EM',      default=1.0,             type=float, help='T - EM coupling loss weight')
 parser.add_argument('--augment_decoders', default=1,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
 parser.add_argument('--latent_dim',       default=3,               type=int,   help='Number of latent dims')
-parser.add_argument('--n_epochs',         default=5000,            type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',         default=5,               type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='T_E',          type=str,   help='Model-specific id')
-parser.add_argument('--exp_name',         default='T_E_torch',    type=str,   help='Experiment set')
+parser.add_argument('--model_id',         default='T_E',           type=str,   help='Model-specific id')
+parser.add_argument('--exp_name',         default='T_E_torch',     type=str,   help='Experiment set')
 
 
 def set_paths(config_file=None, exp_name='TEMP'):
@@ -104,10 +104,10 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0,
                    'XrE_from_zT': tonumpy(XrE_from_zT),
                    'XrM_from_zT': tonumpy(XrM_from_zT),
                    'Xr_sd_from_zT': tonumpy(Xr_sd_from_zT),
-                   'XT': data['T_dat'],
-                   'XE': data['E_dat'],
-                   'XM': data['M_dat'],
-                   'Xsd': data['soma_depth'],
+                   'XT': data['XT'],
+                   'XE': data['XE'],
+                   'XM': data['XM'],
+                   'X_sd': data['X_sd'],
                    'sample_id': data['sample_id'],
                    'cluster_label': data['cluster'],
                    'cluster_id': data['cluster_id'],
