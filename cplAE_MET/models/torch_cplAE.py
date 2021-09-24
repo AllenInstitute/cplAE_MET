@@ -344,7 +344,7 @@ class Encoder_EM(nn.Module):
             x = x + (torch.randn(x.shape) * self.M_noise)
         return x
 
-    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m):
+    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, alpha_E, alpha_M):
 
         #Passing xe through some layers
         xe = self.add_noise_E(xe)
@@ -377,15 +377,24 @@ class Encoder_EM(nn.Module):
         mask1D_both_e_and_m = torch.logical_and(mask1D_e, mask1D_m) #True if only both e and m are True
         mask1D_both_e_or_m = torch.logical_or(mask1D_e, mask1D_m)
 
-        y = torch.zeros_like(xm)
-        y = torch.where(mask1D_only_e.view(-1, 1), xe, y)
-        y = torch.where(mask1D_only_m.view(-1, 1), xm, y)
-        #<--------- Instead of averaging, potentially select E or M stochastically
-        y = torch.where(mask1D_both_e_and_m.view(-1, 1), torch.mean(torch.stack((xm, xe)), dim=0), y)
 
-        #run the final representation through more layers
-        x = self.fc(y)
-        x = torch.where(mask1D_both_e_or_m.view(-1, 1), self.bn(x), x)
+        y = torch.zeros_like(xm)
+        if (alpha_M == 0.0) & (alpha_E != 0.0):
+            y = torch.where(mask1D_e.view(-1, 1), xe, y)
+            x = self.fc(y)
+            x = torch.where(mask1D_e.view(-1, 1), self.bn(x), x)
+        elif (alpha_M != 0.0) & (alpha_E == 0.0):
+            y = torch.where(mask1D_m.view(-1, 1), xm, y)
+            x = self.fc(y)
+            x = torch.where(mask1D_m.view(-1, 1), self.bn(x), x)
+        else:
+            y = torch.where(mask1D_only_e.view(-1, 1), xe, y)
+            y = torch.where(mask1D_only_m.view(-1, 1), xm, y)
+            #<--------- Instead of averaging, potentially select E or M stochastically
+            y = torch.where(mask1D_both_e_and_m.view(-1, 1), torch.mean(torch.stack((xm, xe)), dim=0), y)
+            #run the final representation through more layers
+            x = self.fc(y)
+            x = torch.where(mask1D_both_e_or_m.view(-1, 1), self.bn(x), x)
         return x
 
 
@@ -622,7 +631,7 @@ class Model_T_EM(nn.Module):
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M)
+        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, self.alpha_E, self.alpha_M)
         XrE, XrM, Xr_sd = self.dEM(zEM)
 
         #Loss calculations
