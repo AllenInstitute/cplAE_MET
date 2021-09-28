@@ -312,11 +312,11 @@ class Encoder_EM(nn.Module):
         self.drp = nn.Dropout(p=E_dropout)
 
         self.M_noise = M_noise
-        self.conv1_ax = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
-        self.conv1_de = nn.Conv2d(1, 10, kernel_size=(4, 3), stride=(4, 1), padding='valid')
+        self.conv1_ax = nn.Conv2d(1, 5, kernel_size=(4, 3), stride=(4, 1), padding='valid')
+        self.conv1_de = nn.Conv2d(1, 5, kernel_size=(4, 3), stride=(4, 1), padding='valid')
 
-        self.conv2_ax = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
-        self.conv2_de = nn.Conv2d(10, 10, kernel_size=(2, 2), stride=(2, 1), padding='valid')
+        self.conv2_ax = nn.Conv2d(5, 5, kernel_size=(2, 2), stride=(2, 1), padding='valid')
+        self.conv2_de = nn.Conv2d(5, 5, kernel_size=(2, 2), stride=(2, 1), padding='valid')
 
         self.flat = nn.Flatten()
         self.fcsd = nn.Linear(1, 1)
@@ -324,7 +324,7 @@ class Encoder_EM(nn.Module):
         self.fce1 = nn.Linear(E_int_dim, E_int_dim)
         self.fce2 = nn.Linear(E_int_dim, E_int_dim)
         self.fce3 = nn.Linear(E_int_dim, EM_int_dim)
-        self.fcm1 = nn.Linear(300+1, EM_int_dim)
+        self.fcm1 = nn.Linear(150+1, EM_int_dim)
         self.fcm2 = nn.Linear(EM_int_dim, EM_int_dim)
         self.fc = nn.Linear(EM_int_dim, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
@@ -344,6 +344,12 @@ class Encoder_EM(nn.Module):
             x = x + (torch.randn(x.shape) * self.M_noise)
         return x
 
+    def fix_negative_noise(self, x):
+        x[x < 0] = 0
+        x = x * 1e2 / torch.sum(x)
+        return x
+
+
     def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, alpha_E, alpha_M):
 
         #Passing xe through some layers
@@ -357,6 +363,8 @@ class Encoder_EM(nn.Module):
         #Passing xm through some layers
         xm = self.add_noise_M(xm)
         ax, de = torch.tensor_split(xm, 2, dim=1)
+        ax = self.fix_negative_noise(ax)
+        de = self.fix_negative_noise(de)
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
         ax = self.elu(self.conv2_ax(ax))
@@ -419,18 +427,18 @@ class Decoder_EM(nn.Module):
         super(Decoder_EM, self).__init__()
         self.fc_dec = nn.Linear(in_dim, EM_int_dim)
         self.fcm0_dec = nn.Linear(EM_int_dim, EM_int_dim)
-        self.fcm1_dec = nn.Linear(EM_int_dim, 300+1)
+        self.fcm1_dec = nn.Linear(EM_int_dim, 150+1)
         self.fcsd_dec = nn.Linear(1, 1)
         self.fce0_dec = nn.Linear(EM_int_dim, E_int_dim)
         self.fce1_dec = nn.Linear(E_int_dim, E_int_dim)
         self.fce2_dec = nn.Linear(E_int_dim, E_int_dim)
         self.fce3_dec = nn.Linear(E_int_dim, E_dim)
 
-        self.convT1_ax = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
-        self.convT1_de = nn.ConvTranspose2d(10, 10, kernel_size=(2, 2), stride=(2, 2), padding=0)
+        self.convT1_ax = nn.ConvTranspose2d(5, 5, kernel_size=(2, 2), stride=(2, 2), padding=0)
+        self.convT1_de = nn.ConvTranspose2d(5, 5, kernel_size=(2, 2), stride=(2, 2), padding=0)
 
-        self.convT2_ax = nn.ConvTranspose2d(10, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
-        self.convT2_de = nn.ConvTranspose2d(10, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
+        self.convT2_ax = nn.ConvTranspose2d(5, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
+        self.convT2_de = nn.ConvTranspose2d(5, 1, kernel_size=(4, 3), stride=(4, 1), padding=0)
 
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
@@ -448,14 +456,14 @@ class Decoder_EM(nn.Module):
         xm = self.relu(self.fcm1_dec(xm))
 
         #separating soma_depth
-        ax_de = xm[:, 0:300]
-        soma_depth = xm[:, 300:]
+        ax_de = xm[:, 0:150]
+        soma_depth = xm[:, 150:]
         soma_depth = self.fcsd_dec(soma_depth)
 
         #separating ax and de and passing them through conv layers
         ax, de = torch.tensor_split(ax_de, 2, dim=1)
-        ax = ax.view(-1, 10, 15, 1)
-        de = de.view(-1, 10, 15, 1)
+        ax = ax.view(-1, 5, 15, 1)
+        de = de.view(-1, 5, 15, 1)
         ax = self.convT1_ax(ax)
         de = self.convT1_de(de)
         ax = self.convT2_ax(ax)

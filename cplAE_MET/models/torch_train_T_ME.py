@@ -4,6 +4,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import shutil
+import inspect
 from torch.utils.data import DataLoader
 from cplAE_MET.models.torch_cplAE import Model_T_EM
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
@@ -15,19 +17,21 @@ from functools import partial
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchsize',        default=500,             type=int,   help='Batch size')
-parser.add_argument('--alpha_T',          default=1.0,             type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_E',          default=1.0,             type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',          default=0.5,             type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_sd',         default=1.0,             type=float, help='Soma depth reconstruction loss weight')
-parser.add_argument('--lambda_T_EM',      default=1.0,             type=float, help='T - EM coupling loss weight')
-parser.add_argument('--augment_decoders', default=1,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
+parser.add_argument('--alpha_T',          default=0.0,             type=float, help='T reconstruction loss weight')
+parser.add_argument('--alpha_E',          default=0.0,             type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_M',          default=1.0,             type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_sd',         default=0.0,             type=float, help='Soma depth reconstruction loss weight')
+parser.add_argument('--lambda_T_EM',      default=0.0,             type=float, help='T - EM coupling loss weight')
+parser.add_argument('--M_noise',          default=0.1,             type=float, help='std of the gaussian noise added to M data')
+parser.add_argument('--E_noise',          default=0.05,            type=float, help='std of the gaussian noise added to E data')
+parser.add_argument('--augment_decoders', default=0,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
 parser.add_argument('--latent_dim',       default=3,               type=int,   help='Number of latent dims')
-parser.add_argument('--n_epochs',         default=5,               type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',         default=5000,               type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='T_E',           type=str,   help='Model-specific id')
-parser.add_argument('--exp_name',         default='T_E_torch',     type=str,   help='Experiment set')
+parser.add_argument('--model_id',         default='AE_M',           type=str,   help='Model-specific id')
+parser.add_argument('--exp_name',         default='AE_M',     type=str,   help='Experiment set')
 
 
 def set_paths(config_file=None, exp_name='TEMP'):
@@ -38,8 +42,9 @@ def set_paths(config_file=None, exp_name='TEMP'):
     return paths
 
 
-def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0,
-         lambda_T_EM=1.0, augment_decoders=1, batchsize=500, latent_dim=3,
+def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
+         augment_decoders=1, M_noise=0.02, E_noise=0.05,
+         batchsize=500, latent_dim=3,
          n_epochs=5000, n_fold=0, run_iter=0,
          config_file='config_exc_MET.toml',
          model_id='T_EM', exp_name='T_EM_torch'):
@@ -47,6 +52,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0,
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
               f'csT_EM_{str(lambda_T_EM)}_ad_{str(augment_decoders)}_' +
+              f'Mnoi{str(M_noise)}_Enoi_{str(E_noise)}_' +
               f'ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}').replace('.', '-')
 
@@ -132,8 +138,8 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0,
 
     # Model ============================
     model = Model_T_EM(T_dim=n_genes, T_int_dim=50, T_dropout=0.2,
-                       E_dim=n_E_features, E_int_dim=50, EM_int_dim=20,
-                       E_dropout=0.2, E_noise=0.05 * np.nanstd(train_dataset.XE, axis=0), M_noise=0.02,
+                       E_dim=n_E_features, E_int_dim=50, EM_int_dim=5,
+                       E_dropout=0.2, E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0), M_noise=M_noise,
                        latent_dim=latent_dim,
                        alpha_T=alpha_T, alpha_E=alpha_E, alpha_M=alpha_M, alpha_sd=alpha_sd,
                        lambda_T_EM=lambda_T_EM, augment_decoders=augment_decoders)
@@ -220,6 +226,10 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0,
                  data=D.copy(),
                  fname=f'{save_fname}-summary.pkl',
                  n_fold=n_fold, splits=splits)
+
+    #copy this file and the file that contains the model class into the result folder
+    shutil.copyfile(__file__, dir_pth['result']+"trainer_code.py")
+    shutil.copyfile(inspect.getfile(Model_T_EM), dir_pth['result'] + "model.py")
     return
 
 
