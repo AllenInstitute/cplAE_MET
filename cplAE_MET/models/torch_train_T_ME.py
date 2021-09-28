@@ -52,7 +52,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
               f'csT_EM_{str(lambda_T_EM)}_ad_{str(augment_decoders)}_' +
-              f'Mnoi{str(M_noise)}_Enoi_{str(E_noise)}_' +
+              f'Mnoi_{str(M_noise)}_Enoi_{str(E_noise)}_' +
               f'ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}').replace('.', '-')
 
