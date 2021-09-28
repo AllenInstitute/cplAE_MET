@@ -345,8 +345,11 @@ class Encoder_EM(nn.Module):
         return x
 
     def fix_negative_noise(self, x):
+        shape = x.shape
         x[x < 0] = 0
-        x = x * 1e2 / torch.sum(x)
+        x = x.reshape(shape[0], -1)
+        x = torch.div(x * 1e2, torch.sum(x, 1).view(-1, 1))
+        x = x.reshape(shape)
         return x
 
 
