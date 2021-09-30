@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import shutil
 import inspect
+import scipy
 from torch.utils.data import DataLoader
 from cplAE_MET.models.torch_cplAE import Model_T_EM
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
@@ -24,13 +25,14 @@ parser.add_argument('--alpha_sd',         default=0.0,             type=float, h
 parser.add_argument('--lambda_T_EM',      default=0.0,             type=float, help='T - EM coupling loss weight')
 parser.add_argument('--M_noise',          default=0.1,             type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',          default=0.05,            type=float, help='std of the gaussian noise added to E data')
+parser.add_argument('--dilate_M',         default=1,               type=int,   help='dilating M images')
 parser.add_argument('--augment_decoders', default=0,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
 parser.add_argument('--latent_dim',       default=3,               type=int,   help='Number of latent dims')
-parser.add_argument('--n_epochs',         default=5000,               type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',         default=5000,            type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='AE_M',           type=str,   help='Model-specific id')
+parser.add_argument('--model_id',         default='AE_M',          type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',         default='AE_M',     type=str,   help='Experiment set')
 
 
@@ -43,7 +45,7 @@ def set_paths(config_file=None, exp_name='TEMP'):
 
 
 def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
-         augment_decoders=1, M_noise=0.02, E_noise=0.05,
+         augment_decoders=1, dilate_M =0, M_noise=0.02, E_noise=0.05,
          batchsize=500, latent_dim=3,
          n_epochs=5000, n_fold=0, run_iter=0,
          config_file='config_exc_MET.toml',
@@ -62,6 +64,18 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
     D = load_MET_inh_dataset(dir_pth['MET_inh_data'])
     n_genes = D['XT'].shape[1]
     n_E_features = D['XE'].shape[1]
+
+    def Binary_dilate_M(x):
+        x = np.nan_to_num(x, nan=0.0) #set all nans to zero otherwise nans will be considered as real values
+        x_dil = np.full(x.shape, np.nan) #initiate images with all nans
+        for i, x_i in enumerate(x):  #spply binary dilation on the 2d arrays
+            for j, x_j in enumerate(x_i):
+                x_dil[i][j] = scipy.ndimage.binary_dilation(x_j)
+        return np.where(x_dil, x, np.nan)
+
+    if dilate_M:
+        D['XM'] = Binary_dilate_M(D['XM'])
+
     splits = partitions(celltype=D['cluster'], n_partitions=10, seed=0)
 
     # Helpers ==========================

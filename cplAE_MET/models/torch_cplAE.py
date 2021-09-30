@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
+import numpy as np
 import torch.nn.functional as F
+import scipy
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 def tensor(x): return torch.tensor(x).to(dtype=torch.float32).to(device)
@@ -309,9 +311,13 @@ class Encoder_EM(nn.Module):
         else:
             self.E_noise = None
 
+        if M_noise is not None:
+            self.M_noise = tensor_(M_noise)
+        else:
+            self.M_noise = None
+
         self.drp = nn.Dropout(p=E_dropout)
 
-        self.M_noise = M_noise
         self.conv1_ax = nn.Conv2d(1, 5, kernel_size=(4, 3), stride=(4, 1), padding='valid')
         self.conv1_de = nn.Conv2d(1, 5, kernel_size=(4, 3), stride=(4, 1), padding='valid')
 
@@ -339,21 +345,22 @@ class Encoder_EM(nn.Module):
             x = torch.normal(mean=x, std=self.E_noise)
         return x
 
-    def add_noise_M(self, x):
+    def add_noise_M(self, x, mask4D_x):
         if self.training:
-            x = x + (torch.randn(x.shape) * self.M_noise)
+            x = torch.where(mask4D_x, x + (torch.randn(x.shape) * self.M_noise), x)
+            # x = x + (torch.randn(x.shape) * self.M_noise)
         return x
 
-    def fix_negative_noise(self, x):
+    def fix_negative_noise(self, x, mask1D_m):
         shape = x.shape
         x[x < 0] = 0
         x = x.reshape(shape[0], -1)
-        x = torch.div(x * 1e2, torch.sum(x, 1).view(-1, 1))
+        x = torch.where(mask1D_m.view(-1, 1), torch.div(x * 1e2, torch.sum(x, 1).view(-1, 1)), x)
         x = x.reshape(shape)
         return x
 
 
-    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, alpha_E, alpha_M):
+    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, mask4D_m, alpha_E, alpha_M):
 
         #Passing xe through some layers
         xe = self.add_noise_E(xe)
@@ -364,10 +371,10 @@ class Encoder_EM(nn.Module):
         xe = self.relu(self.fce3(xe))
 
         #Passing xm through some layers
-        xm = self.add_noise_M(xm)
+        xm = self.add_noise_M(xm, mask4D_m)
         ax, de = torch.tensor_split(xm, 2, dim=1)
-        ax = self.fix_negative_noise(ax)
-        de = self.fix_negative_noise(de)
+        ax = self.fix_negative_noise(ax, mask1D_m)
+        de = self.fix_negative_noise(de, mask1D_m)
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
         ax = self.elu(self.conv2_ax(ax))
@@ -642,7 +649,7 @@ class Model_T_EM(nn.Module):
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, self.alpha_E, self.alpha_M)
+        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, masks['M'], self.alpha_E, self.alpha_M)
         XrE, XrM, Xr_sd = self.dEM(zEM)
 
         #Loss calculations
