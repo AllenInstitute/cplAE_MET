@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from typing import List, Optional
 import torch.nn.functional as F
 import scipy
 
@@ -8,7 +9,6 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 def tensor(x): return torch.tensor(x).to(dtype=torch.float32).to(device)
 def tensor_(x): return torch.as_tensor(x).to(dtype=torch.float32).to(device)
 def tonumpy(x): return x.cpu().detach().numpy()
-
 
 class Encoder_T(nn.Module):
     """
@@ -345,22 +345,26 @@ class Encoder_EM(nn.Module):
             x = torch.normal(mean=x, std=self.E_noise)
         return x
 
-    def add_noise_M(self, x, mask4D_x):
-        if self.training:
-            x = torch.where(mask4D_x, x + (torch.randn(x.shape) * self.M_noise), x)
-            # x = x + (torch.randn(x.shape) * self.M_noise)
-        return x
-
-    def fix_negative_noise(self, x, mask1D_m):
+    def fix_negative_noise_M(self, x):
         shape = x.shape
         x[x < 0] = 0
         x = x.reshape(shape[0], -1)
-        x = torch.where(mask1D_m.view(-1, 1), torch.div(x * 1e2, torch.sum(x, 1).view(-1, 1)), x)
+        pixel_sums = torch.sum(x, 1)
+        pixel_sums[pixel_sums == 0] = 1.
+        x = torch.div(x * 1e2, pixel_sums.view(-1, 1))
         x = x.reshape(shape)
         return x
 
+    def add_noise_M(self, x, dilated_mask_M):
+        if self.training:
+            x = torch.where(dilated_mask_M, x + (torch.randn(x.shape) * self.M_noise), x)
+            ax, de = torch.tensor_split(x, 2, dim=1)
+            ax = self.fix_negative_noise_M(ax)
+            de = self.fix_negative_noise_M(de)
+            x = torch.cat(tensors=(ax, de), dim=1)
+        return x
 
-    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, mask4D_m, alpha_E, alpha_M):
+    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, dilated_mask_M, alpha_E, alpha_M):
 
         #Passing xe through some layers
         xe = self.add_noise_E(xe)
@@ -371,10 +375,8 @@ class Encoder_EM(nn.Module):
         xe = self.relu(self.fce3(xe))
 
         #Passing xm through some layers
-        xm = self.add_noise_M(xm, mask4D_m)
+        xm = self.add_noise_M(xm, dilated_mask_M)
         ax, de = torch.tensor_split(xm, 2, dim=1)
-        ax = self.fix_negative_noise(ax, mask1D_m)
-        de = self.fix_negative_noise(de, mask1D_m)
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
         ax = self.elu(self.conv2_ax(ax))
@@ -619,6 +621,18 @@ class Model_T_EM(nn.Module):
     def get_pairs(self, mask1, mask2):
         return torch.logical_and(mask1, mask2)
 
+    @staticmethod
+    def get_dilation_mask(x):
+        ax, de = torch.tensor_split(x, 2, dim=1)
+        kernel_tensor = torch.tensor(
+            [[[[0., 1., 0.],
+               [1., 1., 1.],
+               [0., 1., 0.]]]])
+        dilated_mask_ax = torch.clamp(torch.nn.functional.conv2d(ax, kernel_tensor, padding=(1, 1)), 0, 1)
+        dilated_mask_de = torch.clamp(torch.nn.functional.conv2d(de, kernel_tensor, padding=(1, 1)), 0, 1)
+        dilated_mask_M = torch.cat(tensors=(dilated_mask_ax, dilated_mask_de), dim=1).bool()
+        return dilated_mask_M
+
     def forward(self, inputs):
         #inputs
         XT = inputs[0]
@@ -644,12 +658,15 @@ class Model_T_EM(nn.Module):
         XM = torch.nan_to_num(XM, nan=0.)
         X_sd = torch.nan_to_num(X_sd, nan=0.)
 
+        #creat the dilation mask for M data
+        dilated_mask_M = self.get_dilation_mask(XM)
+
         #T arm forward pass
         zT = self.eT(XT)
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, masks['M'], self.alpha_E, self.alpha_M)
+        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, dilated_mask_M, self.alpha_E, self.alpha_M)
         XrE, XrM, Xr_sd = self.dEM(zEM)
 
         #Loss calculations

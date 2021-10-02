@@ -54,7 +54,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
               f'csT_EM_{str(lambda_T_EM)}_Mnoi_{str(M_noise)}_Enoi_{str(E_noise)}_' +
-              f'_dil_M_{str(dilate_M)}_ad_{str(augment_decoders)}_' +
+              f'dil_M_{str(dilate_M)}_ad_{str(augment_decoders)}_' +
               f'ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}').replace('.', '-')
 
@@ -64,17 +64,6 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
     D = load_MET_inh_dataset(dir_pth['MET_inh_data'])
     n_genes = D['XT'].shape[1]
     n_E_features = D['XE'].shape[1]
-
-    def Binary_dilate_M(x):
-        x = np.nan_to_num(x, nan=0.0) #set all nans to zero otherwise nans will be considered as real values
-        x_dil = np.full(x.shape, np.nan) #initiate images with all nans
-        for i, x_i in enumerate(x):  #spply binary dilation on the 2d arrays
-            for j, x_j in enumerate(x_i):
-                x_dil[i][j] = scipy.ndimage.binary_dilation(x_j)
-        return np.where(x_dil, x, np.nan)
-
-    if dilate_M:
-        D['XM'] = Binary_dilate_M(D['XM'])
 
     splits = partitions(celltype=D['cluster'], n_partitions=10, seed=0)
 
