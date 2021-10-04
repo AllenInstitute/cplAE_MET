@@ -625,9 +625,9 @@ class Model_T_EM(nn.Module):
     def get_dilation_mask(x):
         ax, de = torch.tensor_split(x, 2, dim=1)
         kernel_tensor = torch.tensor(
-            [[[[0., 1., 0.],
+            [[[[1., 1., 1.],
                [1., 1., 1.],
-               [0., 1., 0.]]]])
+               [1., 1., 1.]]]])
         dilated_mask_ax = torch.clamp(torch.nn.functional.conv2d(ax, kernel_tensor, padding=(1, 1)), 0, 1)
         dilated_mask_de = torch.clamp(torch.nn.functional.conv2d(de, kernel_tensor, padding=(1, 1)), 0, 1)
         dilated_mask_M = torch.cat(tensors=(dilated_mask_ax, dilated_mask_de), dim=1).bool()
@@ -658,8 +658,8 @@ class Model_T_EM(nn.Module):
         XM = torch.nan_to_num(XM, nan=0.)
         X_sd = torch.nan_to_num(X_sd, nan=0.)
 
-        #creat the dilation mask for M data
-        dilated_mask_M = self.get_dilation_mask(XM)
+        #create the dilation mask for M data
+        dilated_mask_M = self.get_dilation_mask((XM>0).float())
 
         #T arm forward pass
         zT = self.eT(XT)
