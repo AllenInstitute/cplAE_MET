@@ -330,9 +330,15 @@ class Encoder_EM(nn.Module):
         self.fce1 = nn.Linear(E_int_dim, E_int_dim)
         self.fce2 = nn.Linear(E_int_dim, E_int_dim)
         self.fce3 = nn.Linear(E_int_dim, EM_int_dim)
+        self.bne = nn.BatchNorm1d(EM_int_dim, affine=False, eps=1e-10,
+                                  momentum=0.05, track_running_stats=True)
         self.fcm1 = nn.Linear(150+1, EM_int_dim)
         self.fcm2 = nn.Linear(EM_int_dim, EM_int_dim)
-        self.fc = nn.Linear(EM_int_dim, out_dim)
+        self.bnm = nn.BatchNorm1d(EM_int_dim, affine=False, eps=1e-10,
+                                 momentum=0.05, track_running_stats=True)
+        self.fc1 = nn.Linear(EM_int_dim + EM_int_dim, EM_int_dim)
+        self.fc2 = nn.Linear(EM_int_dim, out_dim)
+        # self.fc = nn.Linear(EM_int_dim, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
@@ -364,7 +370,7 @@ class Encoder_EM(nn.Module):
             x = torch.cat(tensors=(ax, de), dim=1)
         return x
 
-    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, dilated_mask_M, alpha_E, alpha_M):
+    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, dilated_mask_M):
 
         #Passing xe through some layers
         xe = self.add_noise_E(xe)
@@ -373,6 +379,7 @@ class Encoder_EM(nn.Module):
         xe = self.relu(self.fce1(xe))
         xe = self.relu(self.fce2(xe))
         xe = self.relu(self.fce3(xe))
+        xe = self.bne(xe)
 
         #Passing xm through some layers
         xm = self.add_noise_M(xm, dilated_mask_M)
@@ -391,30 +398,26 @@ class Encoder_EM(nn.Module):
         xm = torch.cat(tensors=(xm, soma_depth), dim=1)
         xm = self.elu(self.fcm1(xm))
         xm = self.elu(self.fcm2(xm))
+        xm = self.bnm(xm)
 
-        mask1D_only_e = torch.logical_and(mask1D_e, ~mask1D_m) #True if only e is True AND m is False
-        mask1D_only_m = torch.logical_and(mask1D_m, ~mask1D_e) #True if only m is True AND e is False
-        mask1D_both_e_and_m = torch.logical_and(mask1D_e, mask1D_m) #True if only both e and m are True
-        mask1D_both_e_or_m = torch.logical_or(mask1D_e, mask1D_m)
+        x = torch.cat(tensors=(xm, xe), dim=1)
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.bn(x)
 
-
-        y = torch.zeros_like(xm)
-        if (alpha_M == 0.0) & (alpha_E != 0.0):
-            y = torch.where(mask1D_e.view(-1, 1), xe, y)
-            x = self.fc(y)
-            x = torch.where(mask1D_e.view(-1, 1), self.bn(x), x)
-        elif (alpha_M != 0.0) & (alpha_E == 0.0):
-            y = torch.where(mask1D_m.view(-1, 1), xm, y)
-            x = self.fc(y)
-            x = torch.where(mask1D_m.view(-1, 1), self.bn(x), x)
-        else:
-            y = torch.where(mask1D_only_e.view(-1, 1), xe, y)
-            y = torch.where(mask1D_only_m.view(-1, 1), xm, y)
-            #<--------- Instead of averaging, potentially select E or M stochastically
-            y = torch.where(mask1D_both_e_and_m.view(-1, 1), torch.mean(torch.stack((xm, xe)), dim=0), y)
-            #run the final representation through more layers
-            x = self.fc(y)
-            x = torch.where(mask1D_both_e_or_m.view(-1, 1), self.bn(x), x)
+        # mask1D_only_e = torch.logical_and(mask1D_e, ~mask1D_m) #True if only e is True AND m is False
+        # mask1D_only_m = torch.logical_and(mask1D_m, ~mask1D_e) #True if only m is True AND e is False
+        # mask1D_both_e_and_m = torch.logical_and(mask1D_e, mask1D_m) #True if only both e and m are True
+        # mask1D_both_e_or_m = torch.logical_or(mask1D_e, mask1D_m)
+        #
+        # y = torch.zeros_like(xm)
+        # y = torch.where(mask1D_only_e.view(-1, 1), xe, y)
+        # y = torch.where(mask1D_only_m.view(-1, 1), xm, y)
+        # #<--------- Instead of averaging, potentially select E or M stochastically
+        # y = torch.where(mask1D_both_e_and_m.view(-1, 1), torch.mean(torch.stack((xm, xe)), dim=0), y)
+        # #run the final representation through more layers
+        # x = self.fc(y)
+        # x = torch.where(mask1D_both_e_or_m.view(-1, 1), self.bn(x), x)
         return x
 
 
@@ -437,7 +440,8 @@ class Decoder_EM(nn.Module):
                  ):
 
         super(Decoder_EM, self).__init__()
-        self.fc_dec = nn.Linear(in_dim, EM_int_dim)
+        self.fc0_dec = nn.Linear(in_dim, EM_int_dim)
+        self.fc1_dec = nn.Linear(EM_int_dim, EM_int_dim)
         self.fcm0_dec = nn.Linear(EM_int_dim, EM_int_dim)
         self.fcm1_dec = nn.Linear(EM_int_dim, 150+1)
         self.fcsd_dec = nn.Linear(1, 1)
@@ -458,7 +462,8 @@ class Decoder_EM(nn.Module):
 
     def forward(self, x):
 
-        x = self.fc_dec(x)
+        x = self.relu(self.fc0_dec(x))
+        x = self.relu(self.fc1_dec(x))
 
         #separating xm and xe
         xm = self.relu(self.fcm0_dec(x))
@@ -666,7 +671,7 @@ class Model_T_EM(nn.Module):
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, dilated_mask_M, self.alpha_E, self.alpha_M)
+        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, dilated_mask_M)
         XrE, XrM, Xr_sd = self.dEM(zEM)
 
         #Loss calculations
