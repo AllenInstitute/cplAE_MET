@@ -343,6 +343,7 @@ class Encoder_EM(nn.Module):
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
         return
 
     def add_noise_E(self, x):
@@ -379,7 +380,7 @@ class Encoder_EM(nn.Module):
         xe = self.relu(self.fce1(xe))
         xe = self.relu(self.fce2(xe))
         xe = self.relu(self.fce3(xe))
-        xe = self.bne(xe)
+        xe = self.sigmoid(xe)
 
         #Passing xm through some layers
         xm = self.add_noise_M(xm, dilated_mask_M)
@@ -398,11 +399,11 @@ class Encoder_EM(nn.Module):
         xm = torch.cat(tensors=(xm, soma_depth), dim=1)
         xm = self.elu(self.fcm1(xm))
         xm = self.elu(self.fcm2(xm))
-        xm = self.bnm(xm)
+        xm = self.sigmoid(xm)
 
         x = torch.cat(tensors=(xm, xe), dim=1)
-        x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
+        x = self.elu(self.fc1(x))
+        x = self.elu(self.fc2(x))
         x = self.bn(x)
 
         # mask1D_only_e = torch.logical_and(mask1D_e, ~mask1D_m) #True if only e is True AND m is False
@@ -462,8 +463,8 @@ class Decoder_EM(nn.Module):
 
     def forward(self, x):
 
-        x = self.relu(self.fc0_dec(x))
-        x = self.relu(self.fc1_dec(x))
+        x = self.elu(self.fc0_dec(x))
+        x = self.elu(self.fc1_dec(x))
 
         #separating xm and xe
         xm = self.relu(self.fcm0_dec(x))

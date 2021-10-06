@@ -32,7 +32,7 @@ parser.add_argument('--n_epochs',         default=5000,            type=int,   h
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='TE_M',          type=str,   help='Model-specific id')
+parser.add_argument('--model_id',         default='TE_Mzero',          type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',         default='TE_M_Oct4',     type=str,   help='Experiment set')
 
 
@@ -62,6 +62,7 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
 
     # Data selection===================
     D = load_MET_inh_dataset(dir_pth['MET_inh_data'])
+    D['XM'] = np.full(D['XM'].shape, 0.)
     n_genes = D['XT'].shape[1]
     n_E_features = D['XE'].shape[1]
 
