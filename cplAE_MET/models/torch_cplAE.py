@@ -371,7 +371,7 @@ class Encoder_EM(nn.Module):
             x = torch.cat(tensors=(ax, de), dim=1)
         return x
 
-    def forward(self, xe, xm, soma_depth, mask1D_e, mask1D_m, dilated_mask_M):
+    def forward(self, xe, xm, soma_depth, dilated_mask_M):
 
         #Passing xe through some layers
         xe = self.add_noise_E(xe)
@@ -379,8 +379,7 @@ class Encoder_EM(nn.Module):
         xe = self.relu(self.fce0(xe))
         xe = self.relu(self.fce1(xe))
         xe = self.relu(self.fce2(xe))
-        xe = self.relu(self.fce3(xe))
-        xe = self.sigmoid(xe)
+        xe = self.sigmoid(self.fce3(xe))
 
         #Passing xm through some layers
         xm = self.add_noise_M(xm, dilated_mask_M)
@@ -398,8 +397,7 @@ class Encoder_EM(nn.Module):
         #concat soma depth with M
         xm = torch.cat(tensors=(xm, soma_depth), dim=1)
         xm = self.elu(self.fcm1(xm))
-        xm = self.elu(self.fcm2(xm))
-        xm = self.sigmoid(xm)
+        xm = self.sigmoid(self.fcm2(xm))
 
         x = torch.cat(tensors=(xm, xe), dim=1)
         x = self.elu(self.fc1(x))
@@ -466,19 +464,19 @@ class Decoder_EM(nn.Module):
         x = self.elu(self.fc0_dec(x))
         x = self.elu(self.fc1_dec(x))
 
-        #separating xm and xe
+        # separating xm and xe
         xm = self.relu(self.fcm0_dec(x))
         xe = self.relu(self.fce0_dec(x))
 
-        #passing xm through some layers
+        # passing xm through some layers
         xm = self.relu(self.fcm1_dec(xm))
 
-        #separating soma_depth
+        # separating soma_depth
         ax_de = xm[:, 0:150]
         soma_depth = xm[:, 150:]
         soma_depth = self.fcsd_dec(soma_depth)
 
-        #separating ax and de and passing them through conv layers
+        # separating ax and de and passing them through conv layers
         ax, de = torch.tensor_split(ax_de, 2, dim=1)
         ax = ax.view(-1, 5, 15, 1)
         de = de.view(-1, 5, 15, 1)
@@ -488,7 +486,7 @@ class Decoder_EM(nn.Module):
         de = self.convT2_de(de)
         xm = torch.cat(tensors=(ax, de), dim=1)
 
-        #passing xe through some layers
+        # passing xe through some layers
         xe = self.relu(self.fce1_dec(xe))
         xe = self.relu(self.fce2_dec(xe))
         xe = self.fce3_dec(xe)
@@ -672,7 +670,7 @@ class Model_T_EM(nn.Module):
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_sd, valid_E, valid_M, dilated_mask_M)
+        zEM = self.eEM(XE, XM, X_sd, dilated_mask_M)
         XrE, XrM, Xr_sd = self.dEM(zEM)
 
         #Loss calculations
