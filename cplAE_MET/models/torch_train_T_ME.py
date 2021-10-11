@@ -18,11 +18,11 @@ from functools import partial
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchsize',        default=500,             type=int,   help='Batch size')
-parser.add_argument('--alpha_T',          default=1.0,             type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_E',          default=1.0,             type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',          default=0.0,             type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_sd',         default=0.0,             type=float, help='Soma depth reconstruction loss weight')
-parser.add_argument('--lambda_T_EM',      default=1.0,             type=float, help='T - EM coupling loss weight')
+parser.add_argument('--alpha_T',          default=0.0,             type=float, help='T reconstruction loss weight')
+parser.add_argument('--alpha_E',          default=0.0,             type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_M',          default=1.0,             type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_sd',         default=1.0,             type=float, help='Soma depth reconstruction loss weight')
+parser.add_argument('--lambda_T_EM',      default=0.0,             type=float, help='T - EM coupling loss weight')
 parser.add_argument('--M_noise',          default=0.5,             type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',          default=0.05,            type=float, help='std of the gaussian noise added to E data')
 parser.add_argument('--dilate_M',         default=1,               type=int,   help='dilating M images')
@@ -32,8 +32,8 @@ parser.add_argument('--n_epochs',         default=5000,            type=int,   h
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='TE_Mzero',          type=str,   help='Model-specific id')
-parser.add_argument('--exp_name',         default='TE_M_Oct4',     type=str,   help='Experiment set')
+parser.add_argument('--model_id',         default='sd',          type=str,   help='Model-specific id')
+parser.add_argument('--exp_name',         default='aT_0-0_aE_0-0_aM_1-0_asd_1-0_lambda_0-0',     type=str,   help='Experiment set')
 
 
 def set_paths(config_file=None, exp_name='TEMP'):
@@ -62,7 +62,6 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
 
     # Data selection===================
     D = load_MET_inh_dataset(dir_pth['MET_inh_data'])
-    D['XM'] = np.full(D['XM'].shape, 0.)
     n_genes = D['XT'].shape[1]
     n_E_features = D['XE'].shape[1]
 

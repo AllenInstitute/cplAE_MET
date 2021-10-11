@@ -442,8 +442,10 @@ class Decoder_EM(nn.Module):
         self.fc0_dec = nn.Linear(in_dim, EM_int_dim)
         self.fc1_dec = nn.Linear(EM_int_dim, EM_int_dim)
         self.fcm0_dec = nn.Linear(EM_int_dim, EM_int_dim)
-        self.fcm1_dec = nn.Linear(EM_int_dim, 150+1)
-        self.fcsd_dec = nn.Linear(1, 1)
+        self.fcm1_dec = nn.Linear(EM_int_dim, 150)
+        self.fcsd0_dec = nn.Linear(10, 5)
+        self.fcsd1_dec = nn.Linear(5, 5)
+        self.fcsd2_dec = nn.Linear(5, 1)
         self.fce0_dec = nn.Linear(EM_int_dim, E_int_dim)
         self.fce1_dec = nn.Linear(E_int_dim, E_int_dim)
         self.fce2_dec = nn.Linear(E_int_dim, E_int_dim)
@@ -460,24 +462,22 @@ class Decoder_EM(nn.Module):
         return
 
     def forward(self, x):
+        x = self.relu(self.fc0_dec(x))
+        x = self.relu(self.fc1_dec(x))
 
-        x = self.elu(self.fc0_dec(x))
-        x = self.elu(self.fc1_dec(x))
-
-        # separating xm and xe
+        #separating xe, xm and xsd
         xm = self.relu(self.fcm0_dec(x))
         xe = self.relu(self.fce0_dec(x))
+        soma_depth = self.elu(self.fcsd0_dec(x))
+
+        # passing soma_depth through some layers
+        soma_depth = self.elu(self.fcsd1_dec(soma_depth))
+        soma_depth = self.elu(self.fcsd2_dec(soma_depth))
+        soma_depth = soma_depth.view(soma_depth.shape[0])
 
         # passing xm through some layers
         xm = self.relu(self.fcm1_dec(xm))
-
-        # separating soma_depth
-        ax_de = xm[:, 0:150]
-        soma_depth = xm[:, 150:]
-        soma_depth = self.fcsd_dec(soma_depth)
-
-        # separating ax and de and passing them through conv layers
-        ax, de = torch.tensor_split(ax_de, 2, dim=1)
+        ax, de = torch.tensor_split(xm, 2, dim=1)
         ax = ax.view(-1, 5, 15, 1)
         de = de.view(-1, 5, 15, 1)
         ax = self.convT1_ax(ax)
