@@ -371,6 +371,38 @@ class Encoder_EM(nn.Module):
             x = torch.cat(tensors=(ax, de), dim=1)
         return x
 
+    def shift3d(self, arr, shift):
+        result = torch.full(arr.shape, 0.)
+        if shift < 0:
+            result[:, -shift:, :] = arr[:, :shift, :]
+        elif shift > 0:
+            result[:, :-shift, :] = arr[:, shift:, :]
+        else:
+            result = arr
+        return result
+
+    def aug_shift(self, im, sd):
+        last_row = im.shape[2] - 1
+        # cell_shifts = []
+        if self.training:
+            shift = 7
+            for i in range(im.shape[0]):
+                select = torch.nonzero(im[i, :, :, :])
+
+                if torch.numel(select) > 0:
+                    zrange = torch.min(select[:, 1]).item(), torch.max(select[:, 1]).item()
+                    shift_upper_bound = np.minimum(zrange[0], shift)
+                    shift_lower_bound = -np.minimum(last_row - zrange[1], shift)
+                    rand_shift = np.random.randint(shift_lower_bound, shift_upper_bound + 1)
+                else:
+                    rand_shift = 0.
+
+                im[i, :, :, :] = self.shift3d(im[i, :, :, :], rand_shift)
+                sd[i] = sd[i] + rand_shift/120.
+                # cell_shifts.append(rand_shift)
+        return im, sd
+
+
     def forward(self, xe, xm, soma_depth, dilated_mask_M):
 
         #Passing xe through some layers
@@ -382,7 +414,8 @@ class Encoder_EM(nn.Module):
         xe = self.sigmoid(self.fce3(xe))
 
         #Passing xm through some layers
-        xm = self.add_noise_M(xm, dilated_mask_M)
+        # xm = self.add_noise_M(xm, dilated_mask_M)
+        xm, soma_depth = self.aug_shift(xm, soma_depth)
         ax, de = torch.tensor_split(xm, 2, dim=1)
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
@@ -614,8 +647,8 @@ class Model_T_EM(nn.Module):
 
     @staticmethod
     def mean_sq_diff(x, y):
-        # return torch.mean(torch.square(x-y))
-        return F.mse_loss(y, x, reduction='mean') if (x.numel() != 0) & (y.numel() != 0) else tensor(0.)
+        return torch.mean(torch.square(x-y))
+        # return F.mse_loss(y, x, reduction='mean') if (x.numel() != 0) & (y.numel() != 0) else tensor(0.)
 
     @staticmethod
     def get_1D_mask(mask):
@@ -688,7 +721,7 @@ class Model_T_EM(nn.Module):
             loss_dict['recon_T_aug'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT_aug[masks['T']])
             loss_dict['recon_E_aug'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE_aug[masks['E']])
             loss_dict['recon_M_aug'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM_aug[masks['M']])
-            loss_dict['recon_M_sd_aug'] = self.alpha_sd * self.mean_sq_diff(X_sd[masks['sd']],Xr_sd_aug[masks['sd']])
+            loss_dict['recon_M_sd_aug'] = self.alpha_sd * self.mean_sq_diff(X_sd[masks['sd']], Xr_sd_aug[masks['sd']])
 
         self.loss = sum(loss_dict.values())
         return zT, zEM, XrT, XrE, XrM, Xr_sd, loss_dict
