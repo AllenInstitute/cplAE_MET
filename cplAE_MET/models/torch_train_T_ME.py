@@ -32,8 +32,8 @@ parser.add_argument('--n_epochs',         default=5000,            type=int,   h
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='sd',          type=str,   help='Model-specific id')
-parser.add_argument('--exp_name',         default='aT_0-0_aE_0-0_aM_1-0_asd_1-0_lambda_0-0',     type=str,   help='Experiment set')
+parser.add_argument('--model_id',         default='M_AE',          type=str,   help='Model-specific id')
+parser.add_argument('--exp_name',         default='aT_0-0_aE_1-0_aM_1-0_asd_10-0_lambda_0-0_Mnoise_0-5_shiftM_1-0',     type=str,   help='Experiment set')
 
 
 def set_paths(config_file=None, exp_name='TEMP'):
@@ -126,6 +126,10 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
         savedict.update(splits[n_fold])
         savepkl(savedict, fname)
         return
+
+    # copy this file and the file that contains the model class into the result folder
+    shutil.copyfile(__file__, dir_pth['result'] + "trainer_code.py")
+    shutil.copyfile(inspect.getfile(Model_T_EM), dir_pth['result'] + "model.py")
 
     # Training data
     fold_fileid = fileid + '_fold_' + str(n_fold)
@@ -231,8 +235,8 @@ def main(alpha_T=1.0, alpha_E=1.0, alpha_M=1.0, alpha_sd=1.0, lambda_T_EM=1.0,
                  n_fold=n_fold, splits=splits)
 
     #copy this file and the file that contains the model class into the result folder
-    shutil.copyfile(__file__, dir_pth['result']+"trainer_code.py")
-    shutil.copyfile(inspect.getfile(Model_T_EM), dir_pth['result'] + "model.py")
+    #shutil.copyfile(__file__, dir_pth['result']+"trainer_code.py")
+    #shutil.copyfile(inspect.getfile(Model_T_EM), dir_pth['result'] + "model.py")
     return
 
 

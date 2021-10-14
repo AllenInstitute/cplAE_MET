@@ -381,7 +381,9 @@ class Encoder_EM(nn.Module):
             result = arr
         return result
 
-    def aug_shift(self, im, sd):
+    def aug_shift(self, im, sd, mask_4D_im):
+        shifted_im = im.clone()
+        shifted_mask = mask_4D_im.clone()
         last_row = im.shape[2] - 1
         # cell_shifts = []
         if self.training:
@@ -397,13 +399,14 @@ class Encoder_EM(nn.Module):
                 else:
                     rand_shift = 0.
 
-                im[i, :, :, :] = self.shift3d(im[i, :, :, :], rand_shift)
+                shifted_im[i, :, :, :] = self.shift3d(im[i, :, :, :], rand_shift)
+                shifted_mask[i, :, :, :] = self.shift3d(mask_4D_im[i, :, :, :], rand_shift)
                 sd[i] = sd[i] + rand_shift/120.
                 # cell_shifts.append(rand_shift)
-        return im, sd
+        return shifted_im, sd, shifted_mask.bool()
 
 
-    def forward(self, xe, xm, soma_depth, dilated_mask_M):
+    def forward(self, xe, xm, soma_depth, dilated_mask_M, mask_4D_M):
 
         #Passing xe through some layers
         xe = self.add_noise_E(xe)
@@ -414,9 +417,9 @@ class Encoder_EM(nn.Module):
         xe = self.sigmoid(self.fce3(xe))
 
         #Passing xm through some layers
-        # xm = self.add_noise_M(xm, dilated_mask_M)
-        xm, soma_depth = self.aug_shift(xm, soma_depth)
-        ax, de = torch.tensor_split(xm, 2, dim=1)
+        # aug_xm = self.add_noise_M(xm, dilated_mask_M)
+        aug_xm, soma_depth, aug_mask_M_4D = self.aug_shift(xm, soma_depth, mask_4D_M)
+        ax, de = torch.tensor_split(aug_xm, 2, dim=1)
         ax = self.elu(self.conv1_ax(ax))
         de = self.elu(self.conv1_de(de))
         ax = self.elu(self.conv2_ax(ax))
@@ -450,7 +453,7 @@ class Encoder_EM(nn.Module):
         # #run the final representation through more layers
         # x = self.fc(y)
         # x = torch.where(mask1D_both_e_or_m.view(-1, 1), self.bn(x), x)
-        return x
+        return x, aug_xm, aug_mask_M_4D
 
 
 class Decoder_EM(nn.Module):
@@ -703,14 +706,14 @@ class Model_T_EM(nn.Module):
         XrT = self.dT(zT)
 
         #EM arm forward pass
-        zEM = self.eEM(XE, XM, X_sd, dilated_mask_M)
+        zEM, aug_XM, aug_masks_M = self.eEM(XE, XM, X_sd, dilated_mask_M, masks['M'])
         XrE, XrM, Xr_sd = self.dEM(zEM)
 
         #Loss calculations
         loss_dict = {}
         loss_dict['recon_T'] = self.alpha_T * self.mean_sq_diff(XT[masks['T']], XrT[masks['T']])
         loss_dict['recon_E'] = self.alpha_E * self.mean_sq_diff(XE[masks['E']], XrE[masks['E']])
-        loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(XM[masks['M']], XrM[masks['M']])
+        loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(aug_XM[aug_masks_M], XrM[aug_masks_M])
         loss_dict['recon_sd'] = self.alpha_sd * self.mean_sq_diff(X_sd[masks['sd']], Xr_sd[masks['sd']])
 
         loss_dict['cpl_T_EM'] = self.lambda_T_EM * self.min_var_loss(zT, zEM, valid_T, valid_EM)
