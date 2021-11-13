@@ -23,6 +23,26 @@ def load_bioarxiv_dataset(data_path):
     data['pcipfx_names'] = np.array(temp)
     return data
 
+def load_M_inh_dataset(data_path):
+    """Loads processed MET data for inhibitory cells.
+
+    Args:
+        data_path (str): path to data file
+
+    Returns:
+        data (dict)
+    """
+    data = sio.loadmat(data_path, squeeze_me=True)
+
+    D = {}
+    D['XM'] = data['hist_ax_de']
+    D['X_sd'] = data['soma_depth']
+    D['cluster_label'] = data['cluster_label']
+    D['cluster_color'] = data['cluster_color']
+    D['cluster_id'] = data['cluster_id']
+    D['specimen_id'] = data['specimen_id']
+    return D
+
 
 def load_MET_inh_dataset(data_path, verbose=False):
     """Loads processed MET data for inhibitory cells.
@@ -47,6 +67,8 @@ def load_MET_inh_dataset(data_path, verbose=False):
     D['cluster_color'] = data['cluster_color']
     D['sample_id'] = data['sample_id']
     return D
+
+
 
 
 def MET_inh_data_summary(data):
@@ -105,7 +127,7 @@ def partitions(celltype, n_partitions, seed=0):
         ind_dict: list with `n_partitions` dict elements. 
     """
     import warnings
-    warnings.filterwarnings("ignore",category=UserWarning)
+    warnings.filterwarnings("ignore", category=UserWarning)
 
     #Safe to ignore warning - there are celltypes with a low sample number that are not crucial for the analysis.
     with warnings.catch_warnings():    
@@ -145,3 +167,54 @@ class MET_Dataset(torch.utils.data.Dataset):
         return self.n_samples
 
 
+class M_Dataset(torch.utils.data.Dataset):
+    """Create a torch dataset from inputs XM, sd.
+
+    Args:
+        XM: np.array
+        sd: np.array
+        target: np.array
+    """
+    def __init__(self, XM, sd, target, shifts):
+        super(M_Dataset).__init__()
+        self.XM = XM
+        self.sd = sd
+        self.target = target
+        self.shifts = shifts
+        self.n_samples = sd.shape[0]
+
+    def __getitem__(self, idx):
+        sample = {"XM": self.XM[idx, :, :, :],
+                  "X_sd": self.sd[idx, :],
+                  "M_target": self.target[idx],
+                  "shifts": self.shifts[idx, :]}
+        # return sample
+        return self.XM[idx, :],self.sd[idx, :],self.target[idx],self.shifts[idx, :]
+
+    def __len__(self):
+        return self.n_samples
+
+
+class M_AE_Dataset(torch.utils.data.Dataset):
+    """Create a torch dataset from inputs XM, sd.
+
+    Args:
+        XM: np.array
+        sd: np.array
+        target: np.array
+    """
+    def __init__(self, XM, sd, shifts):
+        super(M_AE_Dataset).__init__()
+        self.XM = XM
+        self.sd = sd
+        self.shifts = shifts
+        self.n_samples = sd.shape[0]
+
+    def __getitem__(self, idx):
+        sample = {"XM": self.XM[idx, ...],
+                  "X_sd": self.sd[idx, :],
+                  "shifts": self.shifts[idx, :]}
+        return sample
+
+    def __len__(self):
+        return self.n_samples
