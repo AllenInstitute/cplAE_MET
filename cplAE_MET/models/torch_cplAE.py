@@ -332,8 +332,12 @@ class Encoder_EM(nn.Module):
         self.fce3 = nn.Linear(E_int_dim, EM_int_dim)
         self.bne = nn.BatchNorm1d(EM_int_dim, affine=False, eps=1e-10,
                                   momentum=0.05, track_running_stats=True)
-        self.fcm1 = nn.Linear(150+1, EM_int_dim)
-        self.fcm2 = nn.Linear(EM_int_dim, EM_int_dim)
+        # self.fcm1 = nn.Linear(150+1, EM_int_dim)
+        self.fcm1 = nn.Linear(960, 100)
+        # self.fcm2 = nn.Linear(EM_int_dim, EM_int_dim)
+        self.fcm2 = nn.Linear(100, 100)
+        self.fcm3 = nn.Linear(100, 100)
+        self.fcm4 = nn.Linear(101, 10)
         self.bnm = nn.BatchNorm1d(EM_int_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.fc1 = nn.Linear(EM_int_dim + EM_int_dim, EM_int_dim)
@@ -418,12 +422,13 @@ class Encoder_EM(nn.Module):
 
         #Passing xm through some layers
         # aug_xm = self.add_noise_M(xm, dilated_mask_M)
+        # aug_mask_M_4D = mask_4D_M
         aug_xm, soma_depth, aug_mask_M_4D = self.aug_shift(xm, soma_depth, mask_4D_M)
         ax, de = torch.tensor_split(aug_xm, 2, dim=1)
-        ax = self.elu(self.conv1_ax(ax))
-        de = self.elu(self.conv1_de(de))
-        ax = self.elu(self.conv2_ax(ax))
-        de = self.elu(self.conv2_de(de))
+        # ax = self.elu(self.conv1_ax(ax))
+        # de = self.elu(self.conv1_de(de))
+        # ax = self.elu(self.conv2_ax(ax))
+        # de = self.elu(self.conv2_de(de))
         xm = torch.cat(tensors=(self.flat(ax), self.flat(de)), dim=1)
 
         #passing soma depth through some layers
@@ -431,9 +436,12 @@ class Encoder_EM(nn.Module):
         soma_depth = self.relu(self.fcsd(soma_depth))
 
         #concat soma depth with M
-        xm = torch.cat(tensors=(xm, soma_depth), dim=1)
+        # xm = torch.cat(tensors=(xm, soma_depth), dim=1)
         xm = self.elu(self.fcm1(xm))
-        xm = self.sigmoid(self.fcm2(xm))
+        xm = self.elu(self.fcm2(xm))
+        xm = self.elu(self.fcm3(xm))
+        xm = torch.cat(tensors=(xm, soma_depth), dim=1)
+        xm = self.sigmoid(self.fcm4(xm))
 
         x = torch.cat(tensors=(xm, xe), dim=1)
         x = self.elu(self.fc1(x))
@@ -477,8 +485,12 @@ class Decoder_EM(nn.Module):
         super(Decoder_EM, self).__init__()
         self.fc0_dec = nn.Linear(in_dim, EM_int_dim)
         self.fc1_dec = nn.Linear(EM_int_dim, EM_int_dim)
-        self.fcm0_dec = nn.Linear(EM_int_dim, EM_int_dim)
-        self.fcm1_dec = nn.Linear(EM_int_dim, 150)
+        # self.fcm0_dec = nn.Linear(EM_int_dim, EM_int_dim)
+        # self.fcm1_dec = nn.Linear(EM_int_dim, 150)
+        self.fcm0_dec = nn.Linear(10, 100)
+        self.fcm1_dec = nn.Linear(100, 100)
+        self.fcm2_dec = nn.Linear(100, 100)
+        self.fcm3_dec = nn.Linear(100, 960)
         self.fcsd0_dec = nn.Linear(10, 5)
         self.fcsd1_dec = nn.Linear(5, 5)
         self.fcsd2_dec = nn.Linear(5, 1)
@@ -513,13 +525,17 @@ class Decoder_EM(nn.Module):
 
         # passing xm through some layers
         xm = self.relu(self.fcm1_dec(xm))
+        xm = self.relu(self.fcm2_dec(xm))
+        xm = self.relu(self.fcm3_dec(xm))
         ax, de = torch.tensor_split(xm, 2, dim=1)
-        ax = ax.view(-1, 5, 15, 1)
-        de = de.view(-1, 5, 15, 1)
-        ax = self.convT1_ax(ax)
-        de = self.convT1_de(de)
-        ax = self.convT2_ax(ax)
-        de = self.convT2_de(de)
+        ax = ax.view(-1, 1, 120, 4)
+        de = de.view(-1, 1, 120, 4)
+        # ax = ax.view(-1, 5, 15, 1)
+        # de = de.view(-1, 5, 15, 1)
+        # ax = self.convT1_ax(ax)
+        # de = self.convT1_de(de)
+        # ax = self.convT2_ax(ax)
+        # de = self.convT2_de(de)
         xm = torch.cat(tensors=(ax, de), dim=1)
 
         # passing xe through some layers
