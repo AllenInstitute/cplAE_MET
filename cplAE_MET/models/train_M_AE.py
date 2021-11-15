@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--batchsize',        default=500,             type=int,   help='Batch size')
 parser.add_argument('--alpha_M',          default=1.0,             type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_sd',         default=1.0,             type=float, help='Soma depth reconstruction loss weight')
-parser.add_argument('--M_noise',          default=0.0,             type=float, help='std of the gaussian noise added to M data')
+parser.add_argument('--M_noise',          default=0.1,             type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--dilate_M',         default=0,               type=int,   help='dilating M images')
 parser.add_argument('--augment_decoders', default=0,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
 parser.add_argument('--latent_dim',       default=3,               type=int,   help='Number of latent dims')
@@ -30,7 +30,7 @@ parser.add_argument('--n_epochs',         default=50000,            type=int,   
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='M_AE_imnorm1_sds0_noise0_shift0_center0_run1',          type=str,   help='Model-specific id')
+parser.add_argument('--model_id',         default='M_AE_imnorm1_sds0_noise1_shift0_center0_run1',          type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',         default='M_AutoEncoder_tests',     type=str,   help='Experiment set')
 
 
@@ -61,9 +61,8 @@ def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0
         with torch.no_grad():
             XrM, Xr_sd, loss_dict = model((astensor_(data['XM']), astensor_(data['X_sd']), None))
 
-
             # Get the crossmodal reconstructions
-            z, _, _, _, _ = model.eM(astensor_(data['XM']), astensor_(data['X_sd']), None)
+            z, _, _, _, _ = model.eM(astensor_(data['XM']), astensor_(data['X_sd']), None, None)
 
         # Save into a mat file
         savedict = {'z': tonumpy(z),

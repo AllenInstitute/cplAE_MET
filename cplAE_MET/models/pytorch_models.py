@@ -81,9 +81,9 @@ class Encoder_M(nn.Module):
         return (h, rand_shifts)
 
 
-    def aug_noise(self, h):
+    def aug_noise(self, h, nonzero_mask_xm):
         if self.training:
-            return h + (torch.randn(h.shape) * self.M_noise)
+            return torch.where(nonzero_mask_xm, h + (torch.randn(h.shape) * self.M_noise), h)
         else:
             return h
 
@@ -100,10 +100,10 @@ class Encoder_M(nn.Module):
             return f
 
 
-    def forward(self, x1, x2, shifts):
+    def forward(self, x1, x2, shifts, nonzero_mask_xm):
 
         #augmentation
-        aug_xm = self.aug_noise(x1)
+        aug_xm = self.aug_noise(x1, nonzero_mask_xm)
         aug_xm, rand_shift = self.aug_shift_range(aug_xm, shifts)
 
         xm, pool1_indices = self.pool3d_1(self.relu(self.conv3d_1(aug_xm)))
@@ -242,6 +242,8 @@ class Model_M_AE(nn.Module):
         masks['M'] = ~torch.isnan(XM)
         masks['sd'] = ~torch.isnan(X_sd)
 
+        nonzero_mask_xm = XM != 0.
+
         valid_M = self.get_1D_mask(masks['M'])
 
         # replacing nans in input with zeros
@@ -252,7 +254,7 @@ class Model_M_AE(nn.Module):
         # dilated_mask_M = self.get_dilation_mask((XM > 0).float())
 
         # EM arm forward pass
-        z, aug_xm, aug_x_sd, p1_ind, p2_ind = self.eM(XM, X_sd, shifts)
+        z, aug_xm, aug_x_sd, p1_ind, p2_ind = self.eM(XM, X_sd, shifts, nonzero_mask_xm)
         XrM, Xr_sd = self.dM(z, p1_ind, p2_ind)
 
         # Loss calculations
