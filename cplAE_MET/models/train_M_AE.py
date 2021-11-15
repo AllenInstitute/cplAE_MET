@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchsize',        default=500,             type=int,   help='Batch size')
 parser.add_argument('--alpha_M',          default=1.0,             type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_sd',         default=0.0,             type=float, help='Soma depth reconstruction loss weight')
+parser.add_argument('--alpha_sd',         default=1.0,             type=float, help='Soma depth reconstruction loss weight')
 parser.add_argument('--M_noise',          default=0.0,             type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--dilate_M',         default=0,               type=int,   help='dilating M images')
 parser.add_argument('--augment_decoders', default=0,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
@@ -30,7 +30,7 @@ parser.add_argument('--n_epochs',         default=50000,            type=int,   
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='M_AE_imnorm1_sds0_noise0_shift0_center1',          type=str,   help='Model-specific id')
+parser.add_argument('--model_id',         default='M_AE_imnorm1_sds0_noise0_shift0_center0_run1',          type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',         default='M_AutoEncoder_tests',     type=str,   help='Experiment set')
 
 
@@ -113,27 +113,33 @@ def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0
     D['shifts'] = np.full(D['shifts'].shape, 0.)
 
 
-    def shift3d(arr, num, fill_value=0):
-        result = np.empty_like(arr)
-        if num > 0:  # moving down
-            result[:num, :, :] = fill_value
-            result[num:, :, :] = arr[:-num, :, :]
-        elif num < 0:  # moving up
-            result[num:, :, :] = fill_value
-            result[:num, :, :] = arr[-num:, :, :]
-        else:
-            result = arr
-        return result
+    # def shift3d(arr, num, fill_value=0):
+    #     result = np.empty_like(arr)
+    #     if num > 0:  # moving down
+    #         result[:num, :, :] = fill_value
+    #         result[num:, :, :] = arr[:-num, :, :]
+    #     elif num < 0:  # moving up
+    #         result[num:, :, :] = fill_value
+    #         result[:num, :, :] = arr[-num:, :, :]
+    #     else:
+    #         result = arr
+    #     return result
 
 
     D['X_sd'] = D['X_sd'] - np.min(D['X_sd'])
     D['X_sd'] = D['X_sd'] / np.max(D['X_sd'])
-    move = np.round(60 - D['X_sd'] * 100).astype(int)
-    #
-    for c in range(n_cells):
-        D['XM'][c, 0, :, :, :] = shift3d(D['XM'][c, 0, :, :, :], move[c].item())
+    # move = np.round(60 - D['X_sd'] * 100).astype(int)
 
 
+    # shift_up = 120.
+    # shift_down = 120.
+    # for c in range(n_cells):
+    #     select = np.nonzero(D['XM'][c, 0, :, :, :])
+    #     zrange = np.min(select[0]).item(), np.max(select[0]).item()
+    #     shift_up = np.minimum(shift_up, zrange[0])
+    #     shift_down = np.minimum(shift_down, zrange[1])
+
+    # print(shift_down, shift_up)
     # create soma depth feature
     # mean_sd = np.mean(D['X_sd'])
     # D['X_sd'] = D['X_sd'] - np.min(D['X_sd'])
