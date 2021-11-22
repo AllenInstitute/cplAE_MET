@@ -1,6 +1,8 @@
 import torch
+import skimage.io
+import skimage.filters
 import torch.nn as nn
-import numpy as np
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 class Encoder_M(nn.Module):
@@ -13,7 +15,7 @@ class Encoder_M(nn.Module):
         super(Encoder_M, self).__init__()
         self.drp = nn.Dropout(p=0.5)
         self.flat = nn.Flatten()
-        self.fcm1 = nn.Linear(80, 10)
+        self.fcm1 = nn.Linear(120, 10)
         self.fc = nn.Linear(11, latent_dim)
         self.M_noise = M_noise
 
@@ -21,7 +23,7 @@ class Encoder_M(nn.Module):
         self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
 
         self.pool3d_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-        self.pool3d_2 = nn.MaxPool3d((3, 1, 1), return_indices=True)
+        self.pool3d_2 = nn.MaxPool3d((4, 1, 1), return_indices=True)
 
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
                                  momentum=0.1, track_running_stats=True)
@@ -44,41 +46,18 @@ class Encoder_M(nn.Module):
             result = arr
         return result
 
-    def aug_shift_range(self, h, s):
-        if self.training:
-            zmax = h.shape[2]  # 120
-            rand_shifts = torch.zeros((h.shape[0],), dtype=torch.int)
-            for i in range(h.shape[0]):
-                shift_low = s[i, 0].item()
-                shift_high = s[i, 1].item()
-                select = torch.nonzero(h[i, 0, :, :, :])
-                zrange = torch.min(select[:, 0]).item(), torch.max(select[:, 0]).item()
-                low = -np.minimum(zrange[0], abs(shift_low))
-                high = np.minimum(zmax - zrange[1], shift_high)
-                rand_shifts[i] = np.random.randint(low, high + 1)
-                if rand_shifts[i] > 0: break
-                h[i, 0, :, :, :] = self.shift3d(h[i, 0, :, :, :], rand_shifts[i])
-        else:
-            rand_shifts = None
-        return (h, rand_shifts)
 
-    def aug_shift_select(self, h):
-        if self.training:
-            shift_low = -5
-            shift_high = 5
-            rand_shifts = torch.zeros((h.shape[0],), dtype=torch.int)
-            for i in range(h.shape[0]):
-                if torch.max(h[i, 0, :, :, 0:2]) > 0:  # apply shift only to aspiny cells
-                    select = torch.nonzero(h[i, 0, :, :, :])
-                    zrange = torch.min(select[:, 0]).item(), torch.max(select[:, 0]).item()
-                    low = -np.minimum(zrange[0], abs(shift_low))
-                    high = np.minimum(120 - zrange[1], shift_high)
-                    rand_shifts[i] = np.random.randint(low, high + 1)
-                    if rand_shifts[i]>0: break
-                    h[i, 0, :, :, :] = self.shift3d(h[i, 0, :, :, :], rand_shifts[i])
-        else:
-            rand_shifts = None
-        return (h, rand_shifts)
+    # def aug_shift_select(self, h):
+    #     if self.training:
+    #         rand_shifts = torch.zeros((h.shape[0],), dtype=torch.int)
+    #         for i in range(h.shape[0]):
+    #             select = torch.nonzero(h[i, 0, :, :, :])
+    #             zrange = torch.min(select[:, 0]), torch.max(select[:, 0])
+    #             low = -1 * zrange[0].item()
+    #             high = (h.shape[2] - zrange[1]).item()
+    #             rand_shifts[i] = torch.randint(low, high, (1,)).item()
+    #             h[i, 0, :, :, :] = self.shift3d(h[i, 0, :, :, :], rand_shifts[i])
+    #     return h
 
 
     def aug_noise(self, h, nonzero_mask_xm):
@@ -87,24 +66,93 @@ class Encoder_M(nn.Module):
         else:
             return h
 
-    def aug_fnoise(self, f):
-        if self.training:
-            return f + (torch.randn(f.shape) * self.M_noise)
+
+    # def aug_fnoise(self, f):
+    #     if self.training:
+    #         return f + (torch.randn(f.shape) * self.M_noise)
+    #     else:
+    #         return f
+
+
+    # def aug_soma_depth(self, f, s):
+    #     if self.training:
+    #         return f + torch.unsqueeze(s, 1)
+    #     else:
+    #         return f
+
+    # def aug_blur(self, h):
+    #     if self.training:
+    #         for c in range(h.shape[0]):
+    #             sigma = torch.rand(1).item()
+    #             h[c, 0, :, :, :] = torch.tensor(skimage.filters.gaussian(h[c, 0, :, :, :], sigma=sigma, multichannel=True))
+    #     return h
+
+    def aug_scale_im(self, im, scaling_by):
+        # scaling the cells and soma_depth
+        min_rand = 1. - scaling_by
+        max_rand = 1. + scaling_by
+        depth_scaling_factor = (torch.rand(1) * (
+                    max_rand - min_rand) + min_rand).item()  # generate random numbers between min and max
+        out = F.interpolate(im.float(), scale_factor=(depth_scaling_factor, 1, 1))  # scale the image
+        return out
+
+    def pad_or_crop_im(self, scaled_im, im):
+        out_depth = scaled_im.shape[2]
+        in_depth = im.shape[2]
+
+        # cropping or padding the image to get to the original size
+        depth_diff = out_depth - in_depth
+        patch = int(depth_diff / 2)
+        patch_correction = (depth_diff) - patch * 2
+
+        if depth_diff < 0:
+            pad = (0, 0, 0, 0, -(patch + patch_correction), -patch)
+            paded_or_croped_im = F.pad(scaled_im, pad, "constant", 0)
+            soma_depth_correction = -(patch + patch_correction)  # we are adding this amount to the top of
+            # the imgae, so we correct new soma pos with this
+
+        elif depth_diff == 1:
+            paded_or_croped_im = scaled_im[:, :, 1:, :, :]
+            soma_depth_correction = -1
+
+        elif depth_diff == 0:
+            paded_or_croped_im = scaled_im
+            soma_depth_correction = 0
+
         else:
-            return f
+            paded_or_croped_im = scaled_im[:, :, (patch + patch_correction): -patch, :, :]
+            soma_depth_correction = -(patch + patch_correction)
 
-    def aug_soma_depth(self, f, s):
+        return paded_or_croped_im, soma_depth_correction
+
+    def soma_align(self, paded_or_cropped_im, soma_depth_correction):
+        # centering the soma again
+        for i in range(paded_or_cropped_im.shape[0]):
+            paded_or_cropped_im[i, 0, :, :, :] = self.shift3d(paded_or_cropped_im[i, 0, :, :, :], soma_depth_correction)
+
+        return paded_or_cropped_im
+
+    def aug_stretch_or_squeeze(self, im, scaling_by=0.1):
+        '''
+        The asumption is that the images are already soma_aligned and we need to soma aligned them again after
+        stretch or squeeze
+        '''
         if self.training:
-            return f + torch.unsqueeze(s, 1)
+            out = self.aug_scale_im(im, scaling_by)
+            out, sd_correction = self.pad_or_crop_im(out, im)
+            out = self.soma_align(out, sd_correction)
+            return out
         else:
-            return f
+            return im
 
 
-    def forward(self, x1, x2, shifts, nonzero_mask_xm):
+    def forward(self, x1, x2, nonzero_mask_xm):
 
         #augmentation
         aug_xm = self.aug_noise(x1, nonzero_mask_xm)
-        aug_xm, rand_shift = self.aug_shift_range(aug_xm, shifts)
+        aug_xm = self.aug_stretch_or_squeeze(aug_xm, scaling_by=0.1)
+        # aug_xm = self.aug_shift_select(aug_xm)
+        # aug_xm = self.aug_blur(aug_xm)
 
         xm, pool1_indices = self.pool3d_1(self.relu(self.conv3d_1(aug_xm)))
         xm, pool2_indices = self.pool3d_2(self.relu(self.conv3d_2(xm)))
@@ -112,14 +160,13 @@ class Encoder_M(nn.Module):
         xm = self.elu(self.fcm1(xm))
 
         aug_x_sd = self.aug_fnoise(x2)
-        aug_x_sd = self.aug_soma_depth(aug_x_sd, rand_shift)
+        # aug_x_sd = self.aug_soma_depth(aug_x_sd, rand_shift)
         x_sd = self.sigmoid(aug_x_sd)
 
         #concat soma depth with M
         xm = torch.cat(tensors=(xm, x_sd), dim=1)
         z = self.bn(self.fc(xm))
         return z, aug_xm, aug_x_sd, pool1_indices, pool2_indices
-
 
 
 
@@ -136,7 +183,7 @@ class Decoder_M(nn.Module):
 
         super(Decoder_M, self).__init__()
         self.fc1_dec = nn.Linear(in_dim, 11)
-        self.fcm_dec = nn.Linear(10, 80)
+        self.fcm_dec = nn.Linear(10, 120)
 
 
 
@@ -144,7 +191,7 @@ class Decoder_M(nn.Module):
         self.convT1_2 = nn.ConvTranspose3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
 
         self.unpool3d_1 = nn.MaxUnpool3d((4, 1, 1))
-        self.unpool3d_2 = nn.MaxUnpool3d((3, 1, 1))
+        self.unpool3d_2 = nn.MaxUnpool3d((4, 1, 1))
 
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
@@ -161,7 +208,7 @@ class Decoder_M(nn.Module):
         soma_depth = self.sigmoid(soma_depth)
 
         xm = self.elu(self.fcm_dec(xm))
-        xm = xm.view(-1, 1, 10, 4, 2)
+        xm = xm.view(-1, 1, 15, 4, 2)
         xm = self.elu(self.unpool3d_2(xm, p2_ind))
         xm = self.convT1_1(xm)
         xm = self.elu(self.unpool3d_1(xm, p1_ind))
@@ -218,24 +265,10 @@ class Model_M_AE(nn.Module):
         mask = mask.reshape(mask.shape[0], -1)
         return torch.any(mask, dim=1)
 
-    @staticmethod
-    def get_dilation_mask(x):
-        ax, de = torch.tensor_split(x, 2, dim=1)
-        kernel_tensor = torch.tensor(
-            [[[[1., 1., 1.],
-               [1., 1., 1.],
-               [1., 1., 1.]]]])
-
-        dilated_mask_ax = torch.clamp(nn.conv2d(ax, kernel_tensor, padding=(1, 1)), 0, 1)
-        dilated_mask_de = torch.clamp(nn.conv2d(de, kernel_tensor, padding=(1, 1)), 0, 1)
-        dilated_mask_M = torch.cat(tensors=(dilated_mask_ax, dilated_mask_de), dim=1).bool()
-        return dilated_mask_M
-
     def forward(self, inputs):
         # inputs
         XM = inputs[0]
         X_sd = inputs[1]
-        shifts = inputs[2]
 
         # define element-wise nan masks: 0 if nan
         masks = {}
@@ -250,11 +283,8 @@ class Model_M_AE(nn.Module):
         XM = torch.nan_to_num(XM, nan=0.)
         X_sd = torch.nan_to_num(X_sd, nan=0.)
 
-        # create the dilation mask for M data
-        # dilated_mask_M = self.get_dilation_mask((XM > 0).float())
-
         # EM arm forward pass
-        z, aug_xm, aug_x_sd, p1_ind, p2_ind = self.eM(XM, X_sd, shifts, nonzero_mask_xm)
+        z, aug_xm, aug_x_sd, p1_ind, p2_ind = self.eM(XM, X_sd, nonzero_mask_xm)
         XrM, Xr_sd = self.dM(z, p1_ind, p2_ind)
 
         # Loss calculations

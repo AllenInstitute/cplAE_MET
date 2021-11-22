@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchsize',        default=500,             type=int,   help='Batch size')
 parser.add_argument('--alpha_M',          default=1.0,             type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_sd',         default=1.0,             type=float, help='Soma depth reconstruction loss weight')
+parser.add_argument('--alpha_sd',         default=5.0,             type=float, help='Soma depth reconstruction loss weight')
 parser.add_argument('--M_noise',          default=0.1,             type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--dilate_M',         default=0,               type=int,   help='dilating M images')
 parser.add_argument('--augment_decoders', default=0,               type=int,   help='0 or 1 - Train with cross modal reconstruction')
@@ -30,7 +30,7 @@ parser.add_argument('--n_epochs',         default=50000,            type=int,   
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='M_AE_imnorm1_sds0_noise1_shift0_center0_run1',          type=str,   help='Model-specific id')
+parser.add_argument('--model_id',         default='test2',          type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',         default='M_AutoEncoder_tests',     type=str,   help='Experiment set')
 
 
@@ -41,6 +41,52 @@ def set_paths(config_file=None, exp_name='TEMP'):
     Path(paths['logs']).mkdir(parents=True, exist_ok=True)
     return paths
 
+
+def get_padding_up_and_down(soma_depth, im):
+    soma_shift = np.round(60 - soma_depth).astype(int).squeeze()
+    upper_edge = np.zeros(soma_shift.shape)
+    lower_edge = np.zeros(soma_shift.shape)
+    n_cells = im.shape[0]
+    for c in range(n_cells):
+        select = np.nonzero(im[c, 0, :, :, :])
+        upper_edge[c] = np.min(select[0]).item()
+        lower_edge[c] = np.max(select[0]).item()
+    mask_to_move_up = soma_shift < 0
+    mask_to_move_down = soma_shift > 0
+    upper_pad = np.max(abs(soma_shift[mask_to_move_up]) - upper_edge[mask_to_move_up])
+    lower_pad = np.min(120 - lower_edge[mask_to_move_down] - soma_shift[mask_to_move_down])
+    pad_lower_and_upper = max(abs(upper_pad), abs(lower_pad))
+    return (np.ceil(pad_lower_and_upper/10) * 10).astype(int)
+
+
+def get_padded_im(im, pad):
+    shape = im.shape
+    padded_im = np.zeros((shape[0], shape[1], shape[2] + pad * 2, shape[3], shape[4]))
+    n_cells = im.shape[0]
+    for c in range(n_cells):
+        padded_im[c, 0, pad:-pad, :, :] = im[c, 0, ...]
+    return padded_im
+
+def shift3d(arr, num, fill_value=0):
+    result = np.empty_like(arr)
+    if num > 0:  # moving down
+        result[:num, :, :] = fill_value
+        result[num:, :, :] = arr[:-num, :, :]
+    elif num < 0:  # moving up
+        result[num:, :, :] = fill_value
+        result[:num, :, :] = arr[-num:, :, :]
+    else:
+        result = arr
+    return result
+
+def get_soma_aligned_im(padded_soma_depth, im):
+    shifted_im = np.empty_like(im)
+    center = int(im.shape[2]/2)
+    move_by = (center - padded_soma_depth).astype(int)
+    n_cells = im.shape[0]
+    for c in range(n_cells):
+        shifted_im[c, 0, ...] = shift3d(im[c, 0, ...], move_by[c].item())
+    return shifted_im
 
 def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.02, E_noise=0.05, batchsize=500,
          latent_dim=3, n_epochs=5000, n_fold=0, run_iter=0, config_file='config_exc_MET.toml', model_id='T_EM',
@@ -62,8 +108,8 @@ def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0
             XrM, Xr_sd, loss_dict = model((astensor_(data['XM']), astensor_(data['X_sd']), None))
 
             # Get the crossmodal reconstructions
-            z, _, _, _, _ = model.eM(astensor_(data['XM']), astensor_(data['X_sd']), None, None)
-
+            z, _, _, _, _ = model.eM(astensor_(data['XM']), astensor_(data['X_sd']), None)
+        model.train()
         # Save into a mat file
         savedict = {'z': tonumpy(z),
                    'XrM': tonumpy(XrM),
@@ -78,14 +124,32 @@ def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0
         # Save the train and validation indices
         savedict.update(splits[n_fold])
         savepkl(savedict, fname)
-        model.train()
         return
 
     # Data selection============================
     D = load_M_inh_dataset(dir_pth['M_inh_data'])
     D['XM'] = np.expand_dims(D['XM'], axis=1)
     D['X_sd'] = np.expand_dims(D['X_sd'], axis=1)
-    classes = np.unique(D['cluster_label'])
+
+    # Standardazing X-sd
+    # D['X_sd'] = D['X_sd'] - np.min(D['X_sd'])
+    # D['X_sd'] = D['X_sd'] / np.max(D['X_sd'])
+
+    # padding the images
+    soma_depth = D['X_sd'] * 100
+    # pad = get_padding_up_and_down(soma_depth, D['XM'])
+    pad = 60
+    D['XM'] = get_padded_im(D['XM'], pad)
+
+    # soma aligning the images
+    padded_soma_depth = soma_depth + pad
+    D['XM'] = get_soma_aligned_im(padded_soma_depth, D['XM'])
+
+
+    #setting the shift aug
+    n_cells = D['cluster_label'].shape[0]
+    D['shifts'] = np.zeros((n_cells, 2), dtype=int)
+    D['shifts'] = np.full(D['shifts'].shape, 0.)
 
     # create noise image
     # noise = np.zeros((1000, 120, 4))
@@ -107,28 +171,6 @@ def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0
     #     sd_range = np.where(classes==D['cluster_label'][i])[0].item()
     #     D['shifts'][i, :] = np.round((soma_depth_range[sd_range] - D['X_sd'][i]) * 120).astype(int)
 
-    n_cells = D['cluster_label'].shape[0]
-    D['shifts'] = np.zeros((n_cells, 2), dtype=int)
-    D['shifts'] = np.full(D['shifts'].shape, 0.)
-
-
-    # def shift3d(arr, num, fill_value=0):
-    #     result = np.empty_like(arr)
-    #     if num > 0:  # moving down
-    #         result[:num, :, :] = fill_value
-    #         result[num:, :, :] = arr[:-num, :, :]
-    #     elif num < 0:  # moving up
-    #         result[num:, :, :] = fill_value
-    #         result[:num, :, :] = arr[-num:, :, :]
-    #     else:
-    #         result = arr
-    #     return result
-
-
-    D['X_sd'] = D['X_sd'] - np.min(D['X_sd'])
-    D['X_sd'] = D['X_sd'] / np.max(D['X_sd'])
-    # move = np.round(60 - D['X_sd'] * 100).astype(int)
-
 
     # shift_up = 120.
     # shift_down = 120.
@@ -146,6 +188,7 @@ def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0
     # scaling_factor = np.mean(D['X_sd']) / mean_sd
     # scaling_factor = 1.
     # stratified kfold splits ===================
+
     splits = partitions(celltype=D['cluster_label'], n_partitions=10, seed=0)
 
    # Number of types in each validation set across folds
