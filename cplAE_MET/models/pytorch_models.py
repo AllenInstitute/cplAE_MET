@@ -1,6 +1,4 @@
 import torch
-import skimage.io
-import skimage.filters
 import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -11,13 +9,14 @@ class Encoder_M(nn.Module):
 
     Args:
     """
-    def __init__(self, latent_dim=100, M_noise=0.):
+    def __init__(self, latent_dim=100, M_noise=0., scale_im_factor=0.):
         super(Encoder_M, self).__init__()
         self.drp = nn.Dropout(p=0.5)
         self.flat = nn.Flatten()
         self.fcm1 = nn.Linear(120, 10)
         self.fc = nn.Linear(11, latent_dim)
         self.M_noise = M_noise
+        self.scale_im_factor = scale_im_factor
 
         self.conv3d_1 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
@@ -67,16 +66,16 @@ class Encoder_M(nn.Module):
             return h
 
 
-    # def aug_fnoise(self, f):
-    #     if self.training:
-    #         return f + (torch.randn(f.shape) * self.M_noise)
-    #     else:
-    #         return f
+    def aug_fnoise(self, f):
+        if self.training:
+            return f + (torch.randn(f.shape) * self.M_noise)
+        else:
+            return f
 
 
     # def aug_soma_depth(self, f, s):
     #     if self.training:
-    #         return f + torch.unsqueeze(s, 1)
+    #         return f + torch.unsqueeze(s, 1) / 120.
     #     else:
     #         return f
 
@@ -150,7 +149,7 @@ class Encoder_M(nn.Module):
 
         #augmentation
         aug_xm = self.aug_noise(x1, nonzero_mask_xm)
-        aug_xm = self.aug_stretch_or_squeeze(aug_xm, scaling_by=0.1)
+        aug_xm = self.aug_stretch_or_squeeze(aug_xm, scaling_by=self.scale_im_factor)
         # aug_xm = self.aug_shift_select(aug_xm)
         # aug_xm = self.aug_blur(aug_xm)
 
@@ -233,16 +232,18 @@ class Model_M_AE(nn.Module):
                  latent_dim=3,
                  alpha_M=1.0,
                  alpha_sd=1.0,
+                 scale_im_factor=0.,
                  augment_decoders=True):
 
         super(Model_M_AE, self).__init__()
         self.M_noise = M_noise
+        self.scale_im_factor = scale_im_factor
         self.latent_dim = latent_dim
         self.augment_decoders = augment_decoders
         self.alpha_M = alpha_M
         self.alpha_sd = alpha_sd
 
-        self.eM = Encoder_M(latent_dim=self.latent_dim, M_noise=self.M_noise)
+        self.eM = Encoder_M(latent_dim=self.latent_dim, M_noise=self.M_noise, scale_im_factor=self.scale_im_factor)
 
         self.dM = Decoder_M(in_dim=self.latent_dim)
 
@@ -251,6 +252,7 @@ class Model_M_AE(nn.Module):
     def get_hparams(self):
         hparam_dict = {}
         hparam_dict['M_noise'] = self.M_noise
+        hparam_dict['scale_im_factor'] = self.scale_im_factor
         hparam_dict['latent_dim'] = self.latent_dim
         hparam_dict['alpha_M'] = self.alpha_M
         hparam_dict['alpha_sd'] = self.alpha_sd

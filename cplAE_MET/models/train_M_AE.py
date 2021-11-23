@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import shutil
 import inspect
-import cv2
 from torch.utils.data import DataLoader
 from cplAE_MET.models.pytorch_models import Model_M_AE
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
@@ -30,8 +29,9 @@ parser.add_argument('--n_epochs',         default=50000,            type=int,   
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='test2',          type=str,   help='Model-specific id')
+parser.add_argument('--model_id',         default='run2',          type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',         default='M_AutoEncoder_tests',     type=str,   help='Experiment set')
+parser.add_argument('--scale_im_factor',  default=0.1,     type=float,   help='scaling factor for interpolation')
 
 
 def set_paths(config_file=None, exp_name='TEMP'):
@@ -88,13 +88,14 @@ def get_soma_aligned_im(padded_soma_depth, im):
         shifted_im[c, 0, ...] = shift3d(im[c, 0, ...], move_by[c].item())
     return shifted_im
 
-def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.02, E_noise=0.05, batchsize=500,
+def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0, scale_im_factor=0.0, batchsize=500,
          latent_dim=3, n_epochs=5000, n_fold=0, run_iter=0, config_file='config_exc_MET.toml', model_id='T_EM',
          exp_name='T_EM_torch'):
 
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     fileid = (model_id + f'_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
               f'Mnoi_{str(M_noise)}_dil_M_{str(dilate_M)}_' +
+              f'imscale_{str(scale_im_factor)}_' +
               f'ad_{str(augment_decoders)}_ld_{latent_dim:d}_' +
               f'bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
@@ -209,19 +210,23 @@ def main(alpha_M=1.0, alpha_sd=1.0, augment_decoders=1, dilate_M =0, M_noise=0.0
     # Dataset and dataloaders
     train_ind = splits[n_fold]['train']
     val_ind = splits[n_fold]['val']
+    batchsize = len(train_ind)
 
     train_dataset = M_AE_Dataset(XM=D['XM'][train_ind, ...],
                                  sd=D['X_sd'][train_ind],
                                  shifts=D['shifts'][train_ind])
 
-    train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
-    train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False,
-                                  sampler=train_sampler, drop_last=True, pin_memory=True)
+    # train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False)
+
+    # train_sampler = torch.utils.data.RandomSampler(train_dataset, replacement=False)
+    # train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=False,
+                                  # sampler=train_sampler, drop_last=True, pin_memory=True)
 
 
     # Model ============================
     model = Model_M_AE(M_noise=M_noise, latent_dim=latent_dim, alpha_M=alpha_M,
-                       alpha_sd=alpha_sd, augment_decoders=augment_decoders)
+                       alpha_sd=alpha_sd, augment_decoders=augment_decoders, scale_im_factor=scale_im_factor)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
