@@ -150,6 +150,10 @@ class Encoder_M(nn.Module):
         #augmentation
         aug_xm = self.aug_noise(x1, nonzero_mask_xm)
         aug_xm = self.aug_stretch_or_squeeze(aug_xm, scaling_by=self.scale_im_factor)
+
+        #normalize the sum to 100 again
+        norm = aug_xm.sum(dim=(2, 3), keepdim=True) * 0.01
+        aug_xm = aug_xm / norm
         # aug_xm = self.aug_shift_select(aug_xm)
         # aug_xm = self.aug_blur(aug_xm)
 
@@ -160,10 +164,10 @@ class Encoder_M(nn.Module):
 
         aug_x_sd = self.aug_fnoise(x2)
         # aug_x_sd = self.aug_soma_depth(aug_x_sd, rand_shift)
-        x_sd = self.sigmoid(aug_x_sd)
+        # x_sd = self.sigmoid(aug_x_sd)
 
         #concat soma depth with M
-        xm = torch.cat(tensors=(xm, x_sd), dim=1)
+        xm = torch.cat(tensors=(xm, aug_x_sd), dim=1)
         z = self.bn(self.fc(xm))
         return z, aug_xm, aug_x_sd, pool1_indices, pool2_indices
 
