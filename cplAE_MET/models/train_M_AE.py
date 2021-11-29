@@ -29,7 +29,7 @@ parser.add_argument('--n_epochs',         default=50000,            type=int,   
 parser.add_argument('--n_fold',           default=0,               type=int,   help='Fold number in the kfold cross validation training')
 parser.add_argument('--config_file',      default='config.toml',   type=str,   help='config file with data paths')
 parser.add_argument('--run_iter',         default=0,               type=int,   help='Run-specific id')
-parser.add_argument('--model_id',         default='run5',          type=str,   help='Model-specific id')
+parser.add_argument('--model_id',         default='run7',          type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',         default='M_AutoEncoder_tests',     type=str,   help='Experiment set')
 parser.add_argument('--scale_im_factor',  default=0.1,     type=float,   help='scaling factor for interpolation')
 

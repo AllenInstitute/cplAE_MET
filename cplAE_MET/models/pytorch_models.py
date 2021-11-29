@@ -14,7 +14,8 @@ class Encoder_M(nn.Module):
         self.drp = nn.Dropout(p=0.5)
         self.flat = nn.Flatten()
         self.fcm1 = nn.Linear(120, 10)
-        self.fc = nn.Linear(11, latent_dim)
+        self.fc1 = nn.Linear(11, 11)
+        self.fc2 = nn.Linear(11, latent_dim)
         self.M_noise = M_noise
         self.scale_im_factor = scale_im_factor
 
@@ -152,8 +153,8 @@ class Encoder_M(nn.Module):
         aug_xm = self.aug_stretch_or_squeeze(aug_xm, scaling_by=self.scale_im_factor)
 
         #normalize the sum to 100 again
-        norm = aug_xm.sum(dim=(2, 3), keepdim=True) * 0.01
-        aug_xm = aug_xm / norm
+        # norm = aug_xm.sum(dim=(2, 3), keepdim=True) * 0.01
+        # aug_xm = aug_xm / norm
         # aug_xm = self.aug_shift_select(aug_xm)
         # aug_xm = self.aug_blur(aug_xm)
 
@@ -168,7 +169,9 @@ class Encoder_M(nn.Module):
 
         #concat soma depth with M
         xm = torch.cat(tensors=(xm, aug_x_sd), dim=1)
-        z = self.bn(self.fc(xm))
+        xm = self.relu(self.fc1(xm))
+        z = self.bn(self.fc2(xm))
+
         return z, aug_xm, aug_x_sd, pool1_indices, pool2_indices
 
 
@@ -186,6 +189,7 @@ class Decoder_M(nn.Module):
 
         super(Decoder_M, self).__init__()
         self.fc1_dec = nn.Linear(in_dim, 11)
+        self.fc2_dec = nn.Linear(11, 11)
         self.fcm_dec = nn.Linear(10, 120)
 
 
@@ -204,6 +208,7 @@ class Decoder_M(nn.Module):
 
     def forward(self, x, p1_ind, p2_ind):
         x = self.fc1_dec(x)
+        x = self.fc2_dec(x)
 
         xm = x[:, 0:10]
         soma_depth = x[:, 10]
