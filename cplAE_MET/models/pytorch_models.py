@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class Encoder_M(nn.Module):
     """
@@ -9,22 +10,23 @@ class Encoder_M(nn.Module):
 
     Args:
     """
-    def __init__(self, latent_dim=100, M_noise=0., scale_im_factor=0.):
+    def __init__(self, latent_dim=100, M_noise=0., scale_factor=0.):
         super(Encoder_M, self).__init__()
-        self.drp = nn.Dropout(p=0.5)
-        self.flat = nn.Flatten()
+        
+        self.do_aug_scale=True
+        self.do_aug_noise=True
+        self.conv3d_1 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
+        self.pool3d_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
+        self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
+        self.pool3d_2 = nn.MaxPool3d((4, 1, 1), return_indices=True)
+        
+        
+
         self.fcm1 = nn.Linear(120, 10)
         self.fc1 = nn.Linear(11, 11)
         self.fc2 = nn.Linear(11, latent_dim)
         self.M_noise = M_noise
-        self.scale_im_factor = scale_im_factor
-
-        self.conv3d_1 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
-        self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
-
-        self.pool3d_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-        self.pool3d_2 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-
+        self.scale_factor = scale_factor
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
                                  momentum=0.1, track_running_stats=True)
 
@@ -47,29 +49,16 @@ class Encoder_M(nn.Module):
         return result
 
 
-    # def aug_shift_select(self, h):
-    #     if self.training:
-    #         rand_shifts = torch.zeros((h.shape[0],), dtype=torch.int)
-    #         for i in range(h.shape[0]):
-    #             select = torch.nonzero(h[i, 0, :, :, :])
-    #             zrange = torch.min(select[:, 0]), torch.max(select[:, 0])
-    #             low = -1 * zrange[0].item()
-    #             high = (h.shape[2] - zrange[1]).item()
-    #             rand_shifts[i] = torch.randint(low, high, (1,)).item()
-    #             h[i, 0, :, :, :] = self.shift3d(h[i, 0, :, :, :], rand_shifts[i])
-    #     return h
-
-
     def aug_noise(self, h, nonzero_mask_xm):
         if self.training:
-            return torch.where(nonzero_mask_xm, h + (torch.randn(h.shape) * self.M_noise), h)
+            return torch.where(nonzero_mask_xm, h + (torch.randn(h.shape, device=device) * self.M_noise), h)
         else:
             return h
 
 
     def aug_fnoise(self, f):
         if self.training:
-            return f + (torch.randn(f.shape) * self.M_noise)
+            return f + (torch.randn(f.shape, device=device) * self.M_noise)
         else:
             return f
 
@@ -132,7 +121,7 @@ class Encoder_M(nn.Module):
 
         return paded_or_cropped_im
 
-    def aug_stretch_or_squeeze(self, im, scaling_by=0.1):
+    def aug_scale(self, im, scaling_by=0.1):
         '''
         The asumption is that the images are already soma_aligned and we need to soma aligned them again after
         stretch or squeeze
@@ -146,33 +135,24 @@ class Encoder_M(nn.Module):
             return im
 
 
-    def forward(self, x1, x2, nonzero_mask_xm):
+    def forward(self, xm, x_sd, nonzero_mask_xm):
 
-        #augmentation
-        aug_xm = self.aug_noise(x1, nonzero_mask_xm)
-        aug_xm = self.aug_stretch_or_squeeze(aug_xm, scaling_by=self.scale_im_factor)
+        if self.do_aug_noise:
+            xm = self.aug_noise(xm, nonzero_mask_xm)
+            x_sd = self.aug_fnoise(x_sd)
+        if self.do_aug_scale:
+            xm = self.aug_scale(xm, scaling_by=self.scale_factor)
 
-        #normalize the sum to 100 again
-        # norm = aug_xm.sum(dim=(2, 3), keepdim=True) * 0.01
-        # aug_xm = aug_xm / norm
-        # aug_xm = self.aug_shift_select(aug_xm)
-        # aug_xm = self.aug_blur(aug_xm)
+        x, pool1_ind = self.pool3d_1(self.relu(self.conv3d_1(xm)))
+        x, pool2_ind = self.pool3d_2(self.relu(self.conv3d_2(x)))
+        x = x.view(x.shape[0], -1)
+        x = self.elu(self.fcm1(x))
 
-        xm, pool1_indices = self.pool3d_1(self.relu(self.conv3d_1(aug_xm)))
-        xm, pool2_indices = self.pool3d_2(self.relu(self.conv3d_2(xm)))
-        xm = xm.view(xm.shape[0], -1)
-        xm = self.elu(self.fcm1(xm))
+        x = torch.cat(tensors=(x, x_sd), dim=1)
+        x = self.relu(self.fc1(x))
+        z = self.bn(self.fc2(x))
 
-        aug_x_sd = self.aug_fnoise(x2)
-        # aug_x_sd = self.aug_soma_depth(aug_x_sd, rand_shift)
-        # x_sd = self.sigmoid(aug_x_sd)
-
-        #concat soma depth with M
-        xm = torch.cat(tensors=(xm, aug_x_sd), dim=1)
-        xm = self.relu(self.fc1(xm))
-        z = self.bn(self.fc2(xm))
-
-        return z, aug_xm, aug_x_sd, pool1_indices, pool2_indices
+        return z, xm, x_sd, pool1_ind, pool2_ind
 
 
 
@@ -192,8 +172,6 @@ class Decoder_M(nn.Module):
         self.fc2_dec = nn.Linear(11, 11)
         self.fcm_dec = nn.Linear(10, 120)
 
-
-
         self.convT1_1 = nn.ConvTranspose3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.convT1_2 = nn.ConvTranspose3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
 
@@ -207,61 +185,57 @@ class Decoder_M(nn.Module):
         return
 
     def forward(self, x, p1_ind, p2_ind):
-        x = self.fc1_dec(x)
-        x = self.fc2_dec(x)
+        x = self.elu(self.fc1_dec(x))
+        x = self.elu(self.fc2_dec(x))
 
-        xm = x[:, 0:10]
-        soma_depth = x[:, 10]
-        soma_depth = soma_depth.view(-1, 1)
-        soma_depth = self.sigmoid(soma_depth)
+        xrm = x[:, 0:10]
+        x_rsd = x[:, 10]
+        x_rsd = torch.clamp(x_rsd.view(-1, 1), min=0, max=1)
 
-        xm = self.elu(self.fcm_dec(xm))
-        xm = xm.view(-1, 1, 15, 4, 2)
-        xm = self.elu(self.unpool3d_2(xm, p2_ind))
-        xm = self.convT1_1(xm)
-        xm = self.elu(self.unpool3d_1(xm, p1_ind))
-        xm = self.convT1_2(xm)
-        # more layers
+        xrm = self.elu(self.fcm_dec(xrm))
+        xrm = xrm.view(-1, 1, 15, 4, 2)
+        xrm = self.elu(self.unpool3d_2(xrm, p2_ind))
+        xrm = self.convT1_1(xrm)
+        xrm = self.elu(self.unpool3d_1(xrm, p1_ind))
+        xrm = self.convT1_2(xrm)
 
-        return xm, soma_depth
+        return xrm, x_rsd
 
 class Model_M_AE(nn.Module):
-    """Coupled autoencoder model for Transcriptomics(T) and EM(Electrophisiology and Morphology)
+    """M autoencoder
 
     Args:
-        M_noise: gaussian noise with same variance on all pixels
+        M_noise: standard deviation of additive gaussian noise
         latent_dim: dim for representations
         alpha_M: loss weight for M reconstruction
         alpha_sd: loss weight for soma depth reconstruction
-        augment_decoders (bool): augment decoder with cross modal representation if True
     """
 
     def __init__(self,
                  M_noise=0.,
+                 scale_factor=0.,
                  latent_dim=3,
                  alpha_M=1.0,
-                 alpha_sd=1.0,
-                 scale_im_factor=0.,
-                 augment_decoders=True):
+                 alpha_sd=1.0):
 
         super(Model_M_AE, self).__init__()
         self.M_noise = M_noise
-        self.scale_im_factor = scale_im_factor
+        self.scale_factor = scale_factor
         self.latent_dim = latent_dim
-        self.augment_decoders = augment_decoders
         self.alpha_M = alpha_M
         self.alpha_sd = alpha_sd
 
-        self.eM = Encoder_M(latent_dim=self.latent_dim, M_noise=self.M_noise, scale_im_factor=self.scale_im_factor)
+        self.eM = Encoder_M(latent_dim=self.latent_dim,
+                            M_noise=self.M_noise, 
+                            scale_factor=self.scale_factor)
 
         self.dM = Decoder_M(in_dim=self.latent_dim)
-
         return
 
     def get_hparams(self):
         hparam_dict = {}
         hparam_dict['M_noise'] = self.M_noise
-        hparam_dict['scale_im_factor'] = self.scale_im_factor
+        hparam_dict['scale_factor'] = self.scale_factor
         hparam_dict['latent_dim'] = self.latent_dim
         hparam_dict['alpha_M'] = self.alpha_M
         hparam_dict['alpha_sd'] = self.alpha_sd
@@ -280,29 +254,20 @@ class Model_M_AE(nn.Module):
         # inputs
         XM = inputs[0]
         X_sd = inputs[1]
-
-        # define element-wise nan masks: 0 if nan
-        masks = {}
-        masks['M'] = ~torch.isnan(XM)
-        masks['sd'] = ~torch.isnan(X_sd)
-
-        nonzero_mask_xm = XM != 0.
-
-        valid_M = self.get_1D_mask(masks['M'])
+        mask_XM_nans = ~torch.isnan(XM)
+        mask_XM_nonzero = XM != 0.
+        valid_M = self.get_1D_mask(mask_XM_nans)
 
         # replacing nans in input with zeros
         XM = torch.nan_to_num(XM, nan=0.)
         X_sd = torch.nan_to_num(X_sd, nan=0.)
 
         # EM arm forward pass
-        z, aug_xm, aug_x_sd, p1_ind, p2_ind = self.eM(XM, X_sd, nonzero_mask_xm)
+        z, xm, x_sd, p1_ind, p2_ind = self.eM(XM, X_sd, mask_XM_nonzero)
         XrM, Xr_sd = self.dM(z, p1_ind, p2_ind)
 
         # Loss calculations
         loss_dict = {}
-        loss_dict['recon_M'] = self.alpha_M * self.mean_sq_diff(aug_xm[valid_M], XrM[valid_M])
-        loss_dict['recon_sd'] = self.alpha_sd * self.mean_sq_diff(aug_x_sd[valid_M], Xr_sd[valid_M])
-
-
-        self.loss = sum(loss_dict.values())
+        loss_dict['recon_M'] = self.mean_sq_diff(xm[valid_M,:], XrM[valid_M,:])
+        loss_dict['recon_sd'] = self.mean_sq_diff(x_sd[valid_M], Xr_sd[valid_M])
         return XrM, Xr_sd, loss_dict

@@ -17,9 +17,8 @@ Objectives:
 conda create -n cplAE_MET
 conda activate cplAE_MET
 conda install python=3.8
-pip install tensorflow scikit-learn jupyterlab
-pip install seaborn pandas 
-pip install rich tqdm timebudget
+pip install scikit-learn jupyterlab seaborn pandas rich tqdm timebudget statsmodels
+pip install tensorboard
 ```
 3. Install the development version of this repository
 ```bash

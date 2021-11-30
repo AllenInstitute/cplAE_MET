@@ -203,17 +203,16 @@ class M_AE_Dataset(torch.utils.data.Dataset):
         sd: np.array
         target: np.array
     """
-    def __init__(self, XM, sd, shifts):
+
+    def __init__(self, XM, sd):
         super(M_AE_Dataset).__init__()
         self.XM = XM
         self.sd = sd
-        self.shifts = shifts
         self.n_samples = sd.shape[0]
 
     def __getitem__(self, idx):
         sample = {"XM": self.XM[idx, ...],
-                  "X_sd": self.sd[idx, :],
-                  "shifts": self.shifts[idx, :]}
+                  "X_sd": self.sd[idx, :]}
         return sample
 
     def __len__(self):
