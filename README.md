@@ -17,6 +17,7 @@ Objectives:
 conda create -n cplAE_MET
 conda activate cplAE_MET
 conda install python=3.8
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch #see system specific instructions
 pip install scikit-learn jupyterlab seaborn pandas rich tqdm timebudget statsmodels
 pip install tensorboard
 ```
@@ -24,7 +25,6 @@ pip install tensorboard
 ```bash
 pip install -e .
 ```
-
 4. Install the `cplAE_TE` repository. Directly installing from github through pip doesn't work as expected. 
 ```bash
 # can do this within any directory on local machine
