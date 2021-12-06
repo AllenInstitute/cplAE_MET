@@ -13,8 +13,8 @@ class Encoder_M(nn.Module):
     def __init__(self, latent_dim=100, M_noise=0., scale_factor=0.):
         super(Encoder_M, self).__init__()
         
-        self.do_aug_scale=True
-        self.do_aug_noise=True
+        self.do_aug_scale = True
+        self.do_aug_noise = True
         self.conv3d_1 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.pool3d_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
         self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
@@ -36,18 +36,6 @@ class Encoder_M(nn.Module):
 
         return
 
-    def shift3d(self, arr, num, fill_value=0):
-        result = torch.empty_like(arr)
-        if num > 0:
-            result[:num, :, :] = fill_value
-            result[num:, :, :] = arr[:-num, :, :]
-        elif num < 0:
-            result[num:, :, :] = fill_value
-            result[:num, :, :] = arr[-num:, :, :]
-        else:
-            result = arr
-        return result
-
 
     def aug_noise(self, h, nonzero_mask_xm):
         if self.training:
@@ -63,21 +51,16 @@ class Encoder_M(nn.Module):
             return f
 
 
-    # def aug_soma_depth(self, f, s):
-    #     if self.training:
-    #         return f + torch.unsqueeze(s, 1) / 120.
-    #     else:
-    #         return f
-
-    # def aug_blur(self, h):
-    #     if self.training:
-    #         for c in range(h.shape[0]):
-    #             sigma = torch.rand(1).item()
-    #             h[c, 0, :, :, :] = torch.tensor(skimage.filters.gaussian(h[c, 0, :, :, :], sigma=sigma, multichannel=True))
-    #     return h
-
     def aug_scale_im(self, im, scaling_by):
-        # scaling the cells and soma_depth
+        '''
+        Scaling the image by interpolation. The original images are padded beforehand to make sure they dont go out
+        of the frame during the scaling. We padded them with H/2 along H
+        Args:
+            im: original images with the size of (N, 1, H, W, C)
+            scaling_by: scaling factor for interpolation
+
+        '''
+        # scaling the cells
         min_rand = 1. - scaling_by
         max_rand = 1. + scaling_by
         depth_scaling_factor = (torch.rand(1) * (
@@ -85,7 +68,18 @@ class Encoder_M(nn.Module):
         out = F.interpolate(im.float(), scale_factor=(depth_scaling_factor, 1, 1))  # scale the image
         return out
 
+
     def pad_or_crop_im(self, scaled_im, im):
+        '''
+        Takes the scaled image and the original image and either crop or pad the scaled image to get the original size.
+        Args:
+            scaled_im: scaled image with the size of (N, 1, h, W, C), h is the scaled image height
+            im: original image with the size of (N, 1, H, W, C)
+
+        Returns:
+            padded_or_copped_im: padded or cropped images with the size of (M, 1, H, W, C)
+
+        '''
         out_depth = scaled_im.shape[2]
         in_depth = im.shape[2]
 
@@ -97,42 +91,36 @@ class Encoder_M(nn.Module):
         if depth_diff < 0:
             pad = (0, 0, 0, 0, -(patch + patch_correction), -patch)
             paded_or_croped_im = F.pad(scaled_im, pad, "constant", 0)
-            soma_depth_correction = -(patch + patch_correction)  # we are adding this amount to the top of
-            # the imgae, so we correct new soma pos with this
 
         elif depth_diff == 1:
             paded_or_croped_im = scaled_im[:, :, 1:, :, :]
-            soma_depth_correction = -1
 
         elif depth_diff == 0:
             paded_or_croped_im = scaled_im
-            soma_depth_correction = 0
 
         else:
             paded_or_croped_im = scaled_im[:, :, (patch + patch_correction): -patch, :, :]
-            soma_depth_correction = -(patch + patch_correction)
 
-        return paded_or_croped_im, soma_depth_correction
+        return paded_or_croped_im
 
-    def soma_align(self, paded_or_cropped_im, soma_depth_correction):
-        # centering the soma again
-        for i in range(paded_or_cropped_im.shape[0]):
-            paded_or_cropped_im[i, 0, :, :, :] = self.shift3d(paded_or_cropped_im[i, 0, :, :, :], soma_depth_correction)
-
-        return paded_or_cropped_im
 
     def aug_scale(self, im, scaling_by=0.1):
         '''
-        The asumption is that the images are already soma_aligned and we need to soma aligned them again after
-        stretch or squeeze
+        Scaling the image and then getting back to the original size by cropping or padding
+        Args:
+            im: soma aligned images with the size of (N, 1, H, W, C)
+            scaling_by: scaling factor, a float between 0 and 1
+
+        Returns:
+            scaled image
         '''
+
         if self.training:
-            out = self.aug_scale_im(im, scaling_by)
-            out, sd_correction = self.pad_or_crop_im(out, im)
-            out = self.soma_align(out, sd_correction)
-            return out
+            scaled_im = self.aug_scale_im(im, scaling_by)
+            scaled_im = self.pad_or_crop_im(scaled_im, im)
         else:
-            return im
+            scaled_im = im
+        return scaled_im
 
 
     def forward(self, xm, x_sd, nonzero_mask_xm):
@@ -194,9 +182,9 @@ class Decoder_M(nn.Module):
 
         xrm = self.elu(self.fcm_dec(xrm))
         xrm = xrm.view(-1, 1, 15, 4, 2)
-        xrm = self.elu(self.unpool3d_2(xrm, p2_ind))
+        xrm = self.elu(self.unpool3d_1(xrm, p2_ind))
         xrm = self.convT1_1(xrm)
-        xrm = self.elu(self.unpool3d_1(xrm, p1_ind))
+        xrm = self.elu(self.unpool3d_2(xrm, p1_ind))
         xrm = self.convT1_2(xrm)
 
         return xrm, x_rsd

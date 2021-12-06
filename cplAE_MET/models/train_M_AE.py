@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import csv
 from cplAE_MET.models.pytorch_models import Model_M_AE
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
 from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im, get_celltype_specific_shifts
@@ -17,16 +18,16 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_M',         default=1.0,           type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_sd',        default=5.0,           type=float, help='Soma depth reconstruction loss weight')
+parser.add_argument('--alpha_sd',        default=1.0,           type=float, help='Soma depth reconstruction loss weight')
 parser.add_argument('--M_noise',         default=0.0,           type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--dilate_M',        default=0,             type=int,   help='dilating M images')
-parser.add_argument('--scale_factor',    default=0.1,           type=float, help='scaling factor for interpolation')
+parser.add_argument('--scale_factor',    default=0.2,           type=float, help='scaling factor for interpolation')
 parser.add_argument('--latent_dim',      default=3,             type=int,   help='Number of latent dims')
-parser.add_argument('--n_epochs',        default=500,           type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=50000,           type=int,   help='Number of epochs to train')
 parser.add_argument('--config_file',     default='config.toml', type=str,   help='config file with data paths')
 parser.add_argument('--n_fold',          default=0,             type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,             type=int,   help='Run-specific id')
-parser.add_argument('--model_id',        default='MAE',         type=str,   help='Model-specific id')
+parser.add_argument('--model_id',        default='MAE0',         type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',        default='DEBUG',       type=str,   help='Experiment set')
 
 
@@ -175,16 +176,34 @@ def main(alpha_M=1.0,
 
         # Logging ==============
         tb_writer.add_scalar('Train/MSE_XM', train_loss_xm, epoch)
-        tb_writer.add_scalar('Train/MSE_Xsd', train_loss_xm, epoch)
-        tb_writer.add_scalar('Validation/MSE_XM', train_loss_xsd, epoch)
+        tb_writer.add_scalar('Train/MSE_Xsd', train_loss_xsd, epoch)
+        tb_writer.add_scalar('Validation/MSE_XM', val_loss_xm, epoch)
         tb_writer.add_scalar('Validation/MSE_Xsd', val_loss_xsd, epoch)
+
+        with open(dir_pth['tb_logs'] + f'{fileid}.csv', 'a') as f:
+            writer = csv.writer(f, delimiter=',')
+            if epoch == 0:
+                writer.writerow(['epoch'] +
+                                ['train_loss_xm'] +
+                                ['train_loss_xsd'] +
+                                ['val_loss_xm'] +
+                                ['val_loss_xsd'])
+            writer.writerow([epoch + 1,
+                             train_loss_xm.item(),
+                             train_loss_xsd.item(),
+                             val_loss_xm.item(),
+                             val_loss_xsd.item()])
 
         #Save checkpoint
         if (epoch+1) % 200 == 0:
+            fname = dir_pth['result'] + fileid
+            model.save_weights(f'{fname}-weights.h5')
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
             save_results(model, D, fname, n_fold, splits)
 
     #Save final results
+    fname = dir_pth['result'] + fileid
+    model.save_weights(f'{fname}-weights.h5')
     fname = dir_pth['result'] + "exit_summary_" + fileid + ".pkl"
     save_results(model, D, fname, n_fold, splits)
     tb_writer.close()
