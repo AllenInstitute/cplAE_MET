@@ -12,15 +12,15 @@ class Encoder_M(nn.Module):
     """
     def __init__(self, latent_dim=100, M_noise=0., scale_factor=0.):
         super(Encoder_M, self).__init__()
-        
+
         self.do_aug_scale = True
         self.do_aug_noise = True
         self.conv3d_1 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.pool3d_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
         self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.pool3d_2 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-        
-        
+
+
 
         self.fcm1 = nn.Linear(120, 10)
         self.fc1 = nn.Linear(11, 11)
@@ -214,7 +214,7 @@ class Model_M_AE(nn.Module):
         self.alpha_sd = alpha_sd
 
         self.eM = Encoder_M(latent_dim=self.latent_dim,
-                            M_noise=self.M_noise, 
+                            M_noise=self.M_noise,
                             scale_factor=self.scale_factor)
 
         self.dM = Decoder_M(in_dim=self.latent_dim)
@@ -258,4 +258,4 @@ class Model_M_AE(nn.Module):
         loss_dict = {}
         loss_dict['recon_M'] = self.mean_sq_diff(xm[valid_M,:], XrM[valid_M,:])
         loss_dict['recon_sd'] = self.mean_sq_diff(x_sd[valid_M], Xr_sd[valid_M])
-        return XrM, Xr_sd, loss_dict
+        return XrM, Xr_sd, loss_dict, z

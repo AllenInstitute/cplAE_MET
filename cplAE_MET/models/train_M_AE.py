@@ -4,10 +4,9 @@ import shutil
 from functools import partial
 from pathlib import Path
 
-import numpy as np
 import torch
-import csv
 from cplAE_MET.models.pytorch_models import Model_M_AE
+from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
 from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im, get_celltype_specific_shifts
 from cplAE_MET.utils.dataset import M_AE_Dataset, load_M_inh_dataset, partitions
@@ -61,17 +60,22 @@ def main(alpha_M=1.0,
               f'ld_{latent_dim:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
 
-    def save_results(model, data, fname, n_fold, splits):
+    def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
         # Run the model in the evaluation mode
         model.eval()
         with torch.no_grad():
-            XrM, Xr_sd, _ = model((astensor_(data['XM']), 
-                                          astensor_(data['X_sd'])))
+            XrM, Xr_sd, _, z = model((astensor_(data['XM']),
+                                      astensor_(data['X_sd'])))
 
-            # Get the crossmodal reconstructions
-            z, _, _, _, _ = model.eM(astensor_(data['XM']),
-                                     astensor_(data['X_sd']),
-                                     None)
+
+            # Run classification task
+            small_types_mask = get_small_types_mask(data['cluster_label'], 7)
+            X = z[small_types_mask]
+            n_classes, y = np.unique(data['cluster_label'][small_types_mask], return_inverse=True)
+            classification_acc = run_LogisticRegression(X, y, y, 0.1)
+            tb_writer.add_scalar('Classification_acc', classification_acc, epoch)
+            print(f'epoch {epoch:04d} ----- Classification_acc {classification_acc:.2f} ----- Number of types {n_classes}')
+
         model.train()
 
         savedict = {'z': tonumpy(z),
@@ -82,7 +86,8 @@ def main(alpha_M=1.0,
                     'specimen_id': data['specimen_id'],
                     'cluster_label': data['cluster_label'],
                     'cluster_color': data['cluster_color'],
-                    'cluster_id': data['cluster_id']}
+                    'cluster_id': data['cluster_id'],
+                    'classification_acc': classification_acc}
         savedict.update(splits[n_fold])
         savepkl(savedict, fname)
         return
@@ -144,7 +149,7 @@ def main(alpha_M=1.0,
         for batch in iter(train_dataloader):
             # zero + forward + backward + udpate
             optimizer.zero_grad()
-            _, _, loss_dict = model((astensor_(batch['XM']),
+            _, _, loss_dict, _ = model((astensor_(batch['XM']),
                                     astensor_(batch['X_sd'])))
 
             loss = model.alpha_M * loss_dict['recon_M'] + model.alpha_sd*loss_dict['recon_sd']
@@ -158,7 +163,7 @@ def main(alpha_M=1.0,
         # validation
         model.eval()
         with torch.no_grad():
-            _, _, loss_dict = model((astensor_(D['XM'][val_ind, ...]),
+            _, _, loss_dict, _ = model((astensor_(D['XM'][val_ind, ...]),
                                      astensor_(D['X_sd'][val_ind])))
 
         val_loss_xm += loss_dict["recon_M"]
@@ -173,39 +178,20 @@ def main(alpha_M=1.0,
 
         print(f'epoch {epoch:04d},  Train xm {train_loss_xm:.5f} Train xsd {train_loss_xsd:.5f}')
         print(f'epoch {epoch:04d} ----- Val xm {val_loss_xm:.5f} Val xsd {val_loss_xsd:.5f}')
-
         # Logging ==============
         tb_writer.add_scalar('Train/MSE_XM', train_loss_xm, epoch)
         tb_writer.add_scalar('Train/MSE_Xsd', train_loss_xsd, epoch)
         tb_writer.add_scalar('Validation/MSE_XM', val_loss_xm, epoch)
         tb_writer.add_scalar('Validation/MSE_Xsd', val_loss_xsd, epoch)
 
-        with open(dir_pth['tb_logs'] + f'{fileid}.csv', 'a') as f:
-            writer = csv.writer(f, delimiter=',')
-            if epoch == 0:
-                writer.writerow(['epoch'] +
-                                ['train_loss_xm'] +
-                                ['train_loss_xsd'] +
-                                ['val_loss_xm'] +
-                                ['val_loss_xsd'])
-            writer.writerow([epoch + 1,
-                             train_loss_xm.item(),
-                             train_loss_xsd.item(),
-                             val_loss_xm.item(),
-                             val_loss_xsd.item()])
-
         #Save checkpoint
-        if (epoch+1) % 200 == 0:
-            fname = dir_pth['result'] + fileid
-            model.save_weights(f'{fname}-weights.h5')
+        if (epoch) % 200 == 0:
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
-            save_results(model, D, fname, n_fold, splits)
+            save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
 
     #Save final results
-    fname = dir_pth['result'] + fileid
-    model.save_weights(f'{fname}-weights.h5')
     fname = dir_pth['result'] + "exit_summary_" + fileid + ".pkl"
-    save_results(model, D, fname, n_fold, splits)
+    save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
     tb_writer.close()
     return
 
