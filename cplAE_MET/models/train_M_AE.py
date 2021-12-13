@@ -8,7 +8,7 @@ import torch
 from cplAE_MET.models.pytorch_models import Model_M_AE
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
-from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im, get_celltype_specific_shifts
+from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im, get_celltype_specific_shifts, undone_radial_correction
 from cplAE_MET.utils.dataset import M_AE_Dataset, load_M_inh_dataset, partitions
 from cplAE_MET.utils.load_config import load_config
 from cplAE_MET.utils.utils import savepkl
@@ -70,11 +70,11 @@ def main(alpha_M=1.0,
 
             # Run classification task
             small_types_mask = get_small_types_mask(data['cluster_label'], 7)
-            X = z[small_types_mask]
+            X = tonumpy(z[small_types_mask])
             n_classes, y = np.unique(data['cluster_label'][small_types_mask], return_inverse=True)
             classification_acc = run_LogisticRegression(X, y, y, 0.1)
             tb_writer.add_scalar('Classification_acc', classification_acc, epoch)
-            print(f'epoch {epoch:04d} ----- Classification_acc {classification_acc:.2f} ----- Number of types {n_classes}')
+            print(f'epoch {epoch:04d} ----- Classification_acc {classification_acc:.2f} ----- Number of types {len(n_classes)}')
 
         model.train()
 
@@ -103,6 +103,7 @@ def main(alpha_M=1.0,
     padded_soma_coord = np.squeeze(D['X_sd'] * norm2pixel_factor + pad)
     D['XM'] = get_padded_im(im=D['XM'], pad=pad)
     D['XM'] = get_soma_aligned_im(im=D['XM'], soma_H=padded_soma_coord)
+    D['XM'] = undone_radial_correction(D['XM'])
     D['shifts'] = get_celltype_specific_shifts(ctype=D['cluster_label'], dummy=True)
 
 
