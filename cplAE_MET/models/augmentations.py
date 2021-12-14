@@ -86,15 +86,13 @@ def undone_radial_correction(image):
     '''
     Takes the image and undone the radial correction. The pixels along the W axis where divided by pi*(r2^2 - r1^2)
     Args:
-        image:images with the shape of (H, W) which is (N, 1, 120, 4, 2)
+        image:images with the shape of (120, 4)
 
     '''
     raw_image = np.empty_like(image)
-    for cell in range(image.shape[0]):
-        for c in range(image.shape[3]):
-            r1 = c
-            r2 = c + 1
-            raw_image[cell, 0, :, c, 0] = image[cell, 0, :, c, 0] * np.pi * (r2 ** 2 - r1 ** 2)
-            raw_image[cell, 0, :, c, 1] = image[cell, 0, :, c, 1] * np.pi * (r2 ** 2 - r1 ** 2)
+    for c in range(image.shape[1]):
+        r1 = c
+        r2 = c + 1
+        raw_image[:, c] = image[:, c] * np.pi * (r2 ** 2 - r1 ** 2)
     return raw_image
 

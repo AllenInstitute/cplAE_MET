@@ -8,7 +8,7 @@ import torch
 from cplAE_MET.models.pytorch_models import Model_M_AE
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
-from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im, get_celltype_specific_shifts, undone_radial_correction
+from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im, get_celltype_specific_shifts
 from cplAE_MET.utils.dataset import M_AE_Dataset, load_M_inh_dataset, partitions
 from cplAE_MET.utils.load_config import load_config
 from cplAE_MET.utils.utils import savepkl
@@ -26,7 +26,7 @@ parser.add_argument('--n_epochs',        default=50000,           type=int,   he
 parser.add_argument('--config_file',     default='config.toml', type=str,   help='config file with data paths')
 parser.add_argument('--n_fold',          default=0,             type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,             type=int,   help='Run-specific id')
-parser.add_argument('--model_id',        default='MAE0',         type=str,   help='Model-specific id')
+parser.add_argument('--model_id',        default='radial',         type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',        default='DEBUG',       type=str,   help='Experiment set')
 
 
@@ -103,7 +103,6 @@ def main(alpha_M=1.0,
     padded_soma_coord = np.squeeze(D['X_sd'] * norm2pixel_factor + pad)
     D['XM'] = get_padded_im(im=D['XM'], pad=pad)
     D['XM'] = get_soma_aligned_im(im=D['XM'], soma_H=padded_soma_coord)
-    D['XM'] = undone_radial_correction(D['XM'])
     D['shifts'] = get_celltype_specific_shifts(ctype=D['cluster_label'], dummy=True)
 
 
