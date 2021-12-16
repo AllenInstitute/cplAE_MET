@@ -65,6 +65,7 @@ class Encoder_M(nn.Module):
         max_rand = 1. + scaling_by
         depth_scaling_factor = (torch.rand(1) * (
                     max_rand - min_rand) + min_rand).item()  # generate random numbers between min and max
+        print(depth_scaling_factor)
         out = F.interpolate(im.float(), scale_factor=(depth_scaling_factor, 1, 1))  # scale the image
         return out
 
@@ -126,17 +127,17 @@ class Encoder_M(nn.Module):
     def forward(self, xm, x_sd, nonzero_mask_xm):
 
         if self.do_aug_noise:
-            xm = self.aug_noise(xm, nonzero_mask_xm)
-            x_sd = self.aug_fnoise(x_sd)
+            aug_xm = self.aug_noise(xm, nonzero_mask_xm)
+            aug_x_sd = self.aug_fnoise(x_sd)
         if self.do_aug_scale:
-            xm = self.aug_scale(xm, scaling_by=self.scale_factor)
+            aug_xm = self.aug_scale(aug_xm, scaling_by=self.scale_factor)
 
-        x, pool1_ind = self.pool3d_1(self.relu(self.conv3d_1(xm)))
+        x, pool1_ind = self.pool3d_1(self.relu(self.conv3d_1(aug_xm)))
         x, pool2_ind = self.pool3d_2(self.relu(self.conv3d_2(x)))
         x = x.view(x.shape[0], -1)
         x = self.elu(self.fcm1(x))
 
-        x = torch.cat(tensors=(x, x_sd), dim=1)
+        x = torch.cat(tensors=(x, aug_x_sd), dim=1)
         x = self.relu(self.fc1(x))
         z = self.bn(self.fc2(x))
 
@@ -256,6 +257,6 @@ class Model_M_AE(nn.Module):
 
         # Loss calculations
         loss_dict = {}
-        loss_dict['recon_M'] = self.mean_sq_diff(xm[valid_M,:], XrM[valid_M,:])
+        loss_dict['recon_M'] = self.mean_sq_diff(xm[valid_M, :], XrM[valid_M, :])
         loss_dict['recon_sd'] = self.mean_sq_diff(x_sd[valid_M], Xr_sd[valid_M])
         return XrM, Xr_sd, loss_dict, z
