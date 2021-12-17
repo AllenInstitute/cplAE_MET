@@ -26,7 +26,7 @@ parser.add_argument('--n_epochs',        default=50000,           type=int,   he
 parser.add_argument('--config_file',     default='config.toml', type=str,   help='config file with data paths')
 parser.add_argument('--n_fold',          default=0,             type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,             type=int,   help='Run-specific id')
-parser.add_argument('--model_id',        default='radial',         type=str,   help='Model-specific id')
+parser.add_argument('--model_id',        default='test',         type=str,   help='Model-specific id')
 parser.add_argument('--exp_name',        default='DEBUG',       type=str,   help='Experiment set')
 
 
@@ -185,9 +185,9 @@ def main(alpha_M=1.0,
         tb_writer.add_scalar('Validation/MSE_Xsd', val_loss_xsd, epoch)
 
         #Save checkpoint
-        if (epoch) % 200 == 0:
-            fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
-            save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
+        # if (epoch) % 200 == 0:
+        #     fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
+        #     save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
 
     #Save final results
     fname = dir_pth['result'] + "exit_summary_" + fileid + ".pkl"
