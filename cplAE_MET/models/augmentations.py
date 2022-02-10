@@ -84,6 +84,21 @@ def get_celltype_specific_shifts(ctype, dummy=True):
 
 def undone_radial_correction(image):
     '''
+    Takes the image and undone the radial correction. The pixels along the W axis were divided by pi*(r2^2 - r1^2)
+    Args:
+        image:images with the shape of (120, 4)
+
+    '''
+    raw_image = np.empty_like(image)
+    for c in range(image.shape[1]):
+        r1 = c
+        r2 = c + 1
+        raw_image[:, c] = image[:, c] * (np.pi * (r2 ** 2 - r1 ** 2))
+    return raw_image
+
+
+def do_radial_correction(image):
+    '''
     Takes the image and undone the radial correction. The pixels along the W axis where divided by pi*(r2^2 - r1^2)
     Args:
         image:images with the shape of (120, 4)
@@ -93,6 +108,6 @@ def undone_radial_correction(image):
     for c in range(image.shape[1]):
         r1 = c
         r2 = c + 1
-        raw_image[:, c] = image[:, c] * np.pi * (r2 ** 2 - r1 ** 2)
+        raw_image[:, c] = image[:, c] / (np.pi * (r2 ** 2 - r1 ** 2))
     return raw_image
 

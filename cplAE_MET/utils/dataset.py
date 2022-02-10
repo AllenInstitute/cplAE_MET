@@ -23,8 +23,8 @@ def load_bioarxiv_dataset(data_path):
     data['pcipfx_names'] = np.array(temp)
     return data
 
-def load_M_inh_dataset(data_path):
-    """Loads processed MET data for inhibitory cells.
+def load_M_dataset(data_path):
+    """Loads processed MET data.
 
     Args:
         data_path (str): path to data file
@@ -35,13 +35,34 @@ def load_M_inh_dataset(data_path):
     data = sio.loadmat(data_path, squeeze_me=True)
 
     D = {}
-    D['XM'] = data['hist_ax_de']
+    D['XM'] = data['hist_ax_de_api_bas']
     D['X_sd'] = data['soma_depth']
     D['cluster_label'] = data['cluster_label']
     D['cluster_color'] = data['cluster_color']
     D['cluster_id'] = data['cluster_id']
     D['specimen_id'] = data['specimen_id']
     return D
+
+def merge_exc_inh_M_dataset(inh_m_datapath, exc_m_datapath, exc_inh_m_savedatapath):
+    """read, merge and save exc and inh M dataset.
+
+        Args:
+            inh_m_datapath (str): path to inh data file
+            exc_m_datapath (str): path to exc data file
+            exc_inh_m_savedatapath (str): path to save the combined file
+
+        Returns:
+        """
+    inh = sio.loadmat(inh_m_datapath)
+    exc = sio.loadmat(exc_m_datapath)
+    sio.savemat(exc_inh_m_savedatapath,
+                {'hist_ax_de_api_bas': np.concatenate([inh['hist_ax_de_api_bas'], exc['hist_ax_de_api_bas']], axis=0),
+                 'soma_depth': np.concatenate([inh['soma_depth'], exc['soma_depth']], axis=1),
+                 'cluster_label': np.concatenate([inh['cluster_label'], exc['cluster_label']], axis=1),
+                 'cluster_color': np.concatenate([inh['cluster_color'], exc['cluster_color']], axis=1),
+                 'cluster_id': np.concatenate([inh['cluster_id'], exc['cluster_id']], axis=1),
+                 'specimen_id': np.concatenate([inh['specimen_id'], exc['specimen_id']], axis=1)}, do_compression=True)
+    return
 
 
 def load_MET_inh_dataset(data_path, verbose=False):

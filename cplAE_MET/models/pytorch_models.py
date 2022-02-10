@@ -6,9 +6,11 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class Encoder_M(nn.Module):
     """
-    supervised classification.
-
+    Encoder for morphology arbor density data.
     Args:
+        latent_dim: dimension of the latent representation
+        M_noise: a number that is used to generate noise for the arbor density images
+        scale_factor: scale factor to stretch or squeeze the images along the H axis
     """
     def __init__(self, latent_dim=100, M_noise=0., scale_factor=0.):
         super(Encoder_M, self).__init__()
@@ -22,7 +24,7 @@ class Encoder_M(nn.Module):
 
 
 
-        self.fcm1 = nn.Linear(120, 10)
+        self.fcm1 = nn.Linear(240, 10)
         self.fc1 = nn.Linear(11, 11)
         self.fc2 = nn.Linear(11, latent_dim)
         self.M_noise = M_noise
@@ -87,7 +89,7 @@ class Encoder_M(nn.Module):
         # cropping or padding the image to get to the original size
         depth_diff = out_depth - in_depth
         patch = int(depth_diff / 2)
-        patch_correction = (depth_diff) - patch * 2
+        patch_correction = depth_diff - patch * 2
 
         if depth_diff < 0:
             pad = (0, 0, 0, 0, -(patch + patch_correction), -patch)
@@ -159,7 +161,7 @@ class Decoder_M(nn.Module):
         super(Decoder_M, self).__init__()
         self.fc1_dec = nn.Linear(in_dim, 11)
         self.fc2_dec = nn.Linear(11, 11)
-        self.fcm_dec = nn.Linear(10, 120)
+        self.fcm_dec = nn.Linear(10, 240)
 
         self.convT1_1 = nn.ConvTranspose3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.convT1_2 = nn.ConvTranspose3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
@@ -182,7 +184,7 @@ class Decoder_M(nn.Module):
         x_rsd = torch.clamp(x_rsd.view(-1, 1), min=0, max=1)
 
         xrm = self.elu(self.fcm_dec(xrm))
-        xrm = xrm.view(-1, 1, 15, 4, 2)
+        xrm = xrm.view(-1, 1, 15, 4, 4)
         xrm = self.elu(self.unpool3d_1(xrm, p2_ind))
         xrm = self.convT1_1(xrm)
         xrm = self.elu(self.unpool3d_2(xrm, p1_ind))

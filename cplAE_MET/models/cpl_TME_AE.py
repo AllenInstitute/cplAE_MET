@@ -9,7 +9,7 @@ from cplAE_MET.models.pytorch_models import Model_M_AE
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
 from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im, get_celltype_specific_shifts
-from cplAE_MET.utils.dataset import M_AE_Dataset, load_M_dataset, partitions
+from cplAE_MET.utils.dataset import M_AE_Dataset, load_M_inh_dataset, partitions
 from cplAE_MET.utils.load_config import load_config
 from cplAE_MET.utils.utils import savepkl
 from torch.utils.data import DataLoader
@@ -20,7 +20,7 @@ parser.add_argument('--alpha_M',         default=1.0,           type=float, help
 parser.add_argument('--alpha_sd',        default=1.0,           type=float, help='Soma depth reconstruction loss weight')
 parser.add_argument('--M_noise',         default=0.0,           type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--dilate_M',        default=0,             type=int,   help='dilating M images')
-parser.add_argument('--scale_factor',    default=0.3,           type=float, help='scaling factor for interpolation')
+parser.add_argument('--scale_factor',    default=0.2,           type=float, help='scaling factor for interpolation')
 parser.add_argument('--latent_dim',      default=3,             type=int,   help='Number of latent dims')
 parser.add_argument('--n_epochs',        default=50000,           type=int,   help='Number of epochs to train')
 parser.add_argument('--config_file',     default='config.toml', type=str,   help='config file with data paths')
@@ -93,7 +93,7 @@ def main(alpha_M=1.0,
         return
 
     # Data selection============================
-    D = load_M_dataset(dir_pth['M_data'])
+    D = load_M_inh_dataset(dir_pth['M_inh_data'])
     D['XM'] = np.expand_dims(D['XM'], axis=1)
     D['X_sd'] = np.expand_dims(D['X_sd'], axis=1)
 
@@ -110,6 +110,7 @@ def main(alpha_M=1.0,
 
     # Helpers ==========================
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    #device = 'cpu'
     astensor_ = partial(astensor, device=device)
 
     # copy this file and the file that contains the model class into the result folder
@@ -125,7 +126,7 @@ def main(alpha_M=1.0,
                                  sd=D['X_sd'][train_ind])
 
     train_dataloader = DataLoader(train_dataset,
-                                  batch_size=batchsize, shuffle=True)
+                                  batch_size=batchsize, shuffle=False)
 
     # Model ============================
     model = Model_M_AE(M_noise=M_noise,
