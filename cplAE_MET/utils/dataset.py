@@ -65,7 +65,7 @@ def merge_exc_inh_M_dataset(inh_m_datapath, exc_m_datapath, exc_inh_m_savedatapa
     return
 
 
-def load_MET_inh_dataset(data_path, verbose=False):
+def load_MET_dataset(data_path, verbose=False):
     """Loads processed MET data for inhibitory cells.
 
     Args:
@@ -76,32 +76,32 @@ def load_MET_inh_dataset(data_path, verbose=False):
     """
     data = sio.loadmat(data_path, squeeze_me=True)
     if verbose: 
-        MET_inh_data_summary(data)
+        MET_data_summary(data)
 
     D = {}
     D['XT'] = data['T_dat']
     D['XE'] = data['E_dat']
     D['XM'] = data['M_dat']
     D['X_sd'] = data['soma_depth']
-    D['cluster'] = data['cluster']
+    D['cluster_label'] = data['cluster_label']
     D['cluster_id'] = data['cluster_id'].astype(int)
     D['cluster_color'] = data['cluster_color']
-    D['sample_id'] = data['sample_id']
+    D['specimen_id'] = data['specimen_id']
     return D
 
 
 
 
-def MET_inh_data_summary(data):
+def MET_data_summary(data):
     """lists shapes and pairing information about the dataset
 
     Args:
         data (Dict): required keys `T_dat`,`E_dat`, `M_dat`, `soma_depth`
     """
-    print(f"T shape {data['T_dat'].shape}")
-    print(f"E shape {data['E_dat'].shape}")
-    print(f"M shape {data['M_dat'].shape}")
-    print(f"sd shape {data['soma_depth'].shape}")
+    print(f"T shape {data['XT'].shape}")
+    print(f"E shape {data['XE'].shape}")
+    print(f"M shape {data['XM'].shape}")
+    print(f"sd shape {data['X_sd'].shape}")
 
     # find all-nan samples boolean
     def allnans(x): return np.all(
@@ -111,10 +111,10 @@ def MET_inh_data_summary(data):
     def anynans(x): return np.all(
         np.isnan(x.reshape(np.shape(x)[0], -1)), axis=(1))
 
-    m_T = ~allnans(data['T_dat'])
-    m_E = ~allnans(data['E_dat'])
-    m_M = ~allnans(data['M_dat'])
-    m_sd = ~allnans(data['soma_depth'])
+    m_T = ~allnans(data['XT'])
+    m_E = ~allnans(data['XE'])
+    m_M = ~allnans(data['XM'])
+    m_sd = ~allnans(data['X_sd'])
 
     def paired(x, y): return np.sum(np.logical_and(x, y))
     print('\nPaired samples, allowing for nans in some features')
@@ -122,10 +122,10 @@ def MET_inh_data_summary(data):
     print(f'{paired(m_T,m_M)} cells paired in T and M')
     print(f'{paired(m_E,m_M)} cells paired in E and M')
 
-    m_T = ~anynans(data['T_dat'])
-    m_E = ~anynans(data['E_dat'])
-    m_M = ~anynans(data['M_dat'])
-    m_sd = ~anynans(data['soma_depth'])
+    m_T = ~anynans(data['XT'])
+    m_E = ~anynans(data['XE'])
+    m_M = ~anynans(data['XM'])
+    m_sd = ~anynans(data['X_sd'])
 
     print('\nPaired samples, without nans in any feature (strict)')
     print(f'{paired(m_T,m_E)} cells paired in T and E')
@@ -188,33 +188,6 @@ class MET_Dataset(torch.utils.data.Dataset):
         return self.n_samples
 
 
-class M_Dataset(torch.utils.data.Dataset):
-    """Create a torch dataset from inputs XM, sd.
-
-    Args:
-        XM: np.array
-        sd: np.array
-        target: np.array
-    """
-    def __init__(self, XM, sd, target, shifts):
-        super(M_Dataset).__init__()
-        self.XM = XM
-        self.sd = sd
-        self.target = target
-        self.shifts = shifts
-        self.n_samples = sd.shape[0]
-
-    def __getitem__(self, idx):
-        sample = {"XM": self.XM[idx, :, :, :],
-                  "X_sd": self.sd[idx, :],
-                  "M_target": self.target[idx],
-                  "shifts": self.shifts[idx, :]}
-        # return sample
-        return self.XM[idx, :],self.sd[idx, :],self.target[idx],self.shifts[idx, :]
-
-    def __len__(self):
-        return self.n_samples
-
 
 class M_AE_Dataset(torch.utils.data.Dataset):
     """Create a torch dataset from inputs XM, sd.
@@ -234,6 +207,25 @@ class M_AE_Dataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         sample = {"XM": self.XM[idx, ...],
                   "X_sd": self.sd[idx, :]}
+        return sample
+
+    def __len__(self):
+        return self.n_samples
+
+
+class T_AE_Dataset(torch.utils.data.Dataset):
+    """Create a torch dataset from inputs XT
+
+    Args:
+        XT: np.array
+    """
+    def __init__(self, XT):
+        super(MET_Dataset).__init__()
+        self.XT = XT
+        self.n_samples = XT.shape[0]
+
+    def __getitem__(self, idx):
+        sample = {"XT": self.XT[idx, :]}
         return sample
 
     def __len__(self):
