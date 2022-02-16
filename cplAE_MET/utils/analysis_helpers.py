@@ -1,8 +1,82 @@
+import os
+import re
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
 from sklearn.decomposition import PCA
+import cplAE_MET.utils.utils as ut
+from cplAE_MET.utils.utils import loadpkl
+from os import system, name
+from time import sleep
 
+def get_exit_summary_keys(listdir):
+    '''
+    Get list of exit_summary files in a folder and return the hyperparameters used in the run
+    Args:
+        listdir:
+
+    Returns:
+
+    '''
+    vars = []
+    for f in listdir:
+        if f.endswith(".pkl"):
+            model_id = re.search('summary_(.*)_aM_',f).group(1)
+            aM = re.search('aM_(.*)_asd_',f).group(1)
+            asd = re.search('asd_(.*)_noise_',f).group(1)
+            noise = re.search('noise_(.*)_dilate_',f).group(1)
+            scale = re.search('scale_(.*)_ld_',f).group(1)
+            ld = re.search('ld_(.*)_ne_', f).group(1)
+            fold = re.search('fold_(.*).pkl',f).group(1)
+            vars.append((model_id, aM, asd, noise, scale, ld, fold))
+    return vars
+
+
+def get_exit_summary_df(dir, file_keys):
+    '''
+    takes the path of the files and find the hyperparam values of each run and return them in a datafram format
+    Args:
+        dir:
+        file_keys:
+
+    Returns:
+
+    '''
+    output = {}
+    df = pd.DataFrame(columns=["model_id", "aM", "asd", "noise", "scale", "ld", "fold", "classification_acc"])
+    for var in file_keys:
+        fileid = "exit_summary_" + var[0] + "_aM_" + var[1] + "_asd_" + var[2] + "_noise_" + var[
+            3] + "_dilate_0_scale_" + var[4] + "_ld_" + str(var[5]) + "_ne_50000_ri_0_fold_" + str(var[6]) + ".pkl"
+
+        path = dir + fileid
+
+        output[var] = loadpkl(path)
+
+        df = df.append({'model_id': var[0],
+                        "aM": var[1].replace("-", "."),
+                        "asd": var[2].replace("-", "."),
+                        "noise": var[3].replace("-", "."),
+                        "scale": var[4].replace("-", "."),
+                        "ld": var[5],
+                        "fold": var[6],
+                        "classification_acc": output[var]['classification_acc']}, ignore_index=True)
+
+    return output, df
+
+def summarize_folder(path):
+    '''
+    Take the path and return the output of all the runs as a dict and the hyperparams as a dataframe
+    Args:
+        path:
+
+    Returns:
+
+    '''
+    files = os.listdir(path)
+    keys = get_exit_summary_keys(files)
+    output, df = get_exit_summary_df(path, keys)
+    return output, df
 
 
 def compute_r2score(X, Xr, which_cols, which_rows=None):
@@ -129,3 +203,95 @@ def convert_to_original_shape(x, mask):
     x_unmasked[mask] = x
     x_unmasked[~mask] = np.nan
     return x_unmasked
+
+
+def report_mse_validation_losses_T_EM(outdict, train=True):
+    '''
+    From the model output computes the mse loss on all data
+    Args:
+        outmat: a dict with the cplAE output and input
+    '''
+
+    def allnans(x):
+        return np.all(
+            np.isnan(x.reshape(np.shape(x)[0], -1)), axis=(1))
+
+    if train:
+        ids = outdict["train"]
+    else:
+        ids = outdict["val"]
+
+    # Masks
+    m_T = ~allnans(outdict['XT'])[ids]
+    m_E = ~allnans(outdict['XE'])[ids]
+    m_M = ~allnans(outdict['XM'])[ids]
+    m_TE_M = np.logical_and(m_T, np.logical_or(m_E, m_M))
+    m_TE = np.logical_and(m_T, m_E)
+
+    # input
+    XT = outdict['XT'][ids]
+    XE = outdict['XE'][ids]
+    XM = outdict['XM'][ids]
+
+    # within modality predictions
+    XrT = outdict["XrT"][ids]
+    XrE = outdict["XrE"][ids]
+    XrM = outdict["XrM"][ids]
+
+    # Embeddings
+    zT = outdict["zT"][ids]
+    zEM = outdict["zEM"][ids]
+
+    mse_losses = {}
+    mse_losses["XrT-XT"] = np.mean(np.square(XrT - XT))
+    mse_losses["XrE-XE"] = np.nanmean(np.square(XrE - XE))
+    mse_losses["XrM-XM"] = np.nanmean(np.square(XrM - XM))
+    mse_losses["zEM-zT_for_TEM"] = np.mean(np.square(zEM[m_TE_M, :] - zT[m_TE_M, :]))
+    mse_losses["zEM-zT_for_TE"] = np.mean(np.square(zEM[m_TE, :] - zT[m_TE, :]))
+
+    return mse_losses
+
+def summarize_model_folder(directory):
+
+    summary = pd.DataFrame(columns=["Alpha_T", "Alpha_E", "Alpha_M", "Lambda_T_EM", "M_noise", "E_noise", "n_fold",
+                                    "mse(XT-XrT)_train", "mse(XT-XrT)_val",
+                                    "mse(XE-XrE)_train", "mse(XE-XrE)_val",
+                                    "mse(XM-XrM)_train", "mse(XM-XrM)_val",
+                                    "mse(zEM-zT_for_TEM)_train", "mse(zEM-zT_for_TEM)_val",
+                                    "mse(zEM-zT_for_TE)_train", "mse(zEM-zT_for_TE)_val"])
+
+    i = 0
+    output_mat = {}
+    for f in os.listdir(directory):
+        # clear_output(wait=True)
+        # print("file number" ,i, "is being loaded")
+        if f.endswith(".pkl"):
+            fileid = re.search('(.*)_exit-summary', f).group(1)
+            alpha_T = float(re.search('aT_(.*)_aE', f).group(1).replace("-", "."))
+            alpha_E = float(re.search('aE_(.*)_aM', f).group(1).replace("-", "."))
+            alpha_M = float(re.search('aM_(.*)_asd', f).group(1).replace("-", "."))
+            lambda_T_EM = float(re.search('csT_EM_(.*)_ad', f).group(1).replace("-", "."))
+            M_noise = float(re.search('_Mnoi_(.*)_Enoi', f).group(1).replace("-", "."))
+            # E_noise = float(re.search('_Enoi_(.*)__dil_M_', f).group(1).replace("-", "."))
+            n_fold = float(re.search('_fold_(.*)_exit', f).group(1).replace("-", "."))
+
+            # print(fileid)
+
+            pth = os.path.join(directory, f)
+            # checking if it is a file
+            if os.path.isfile(pth):
+                output_mat[fileid] = ut.loadpkl(pth)
+                MSE_train = report_mse_validation_losses_T_EM(output_mat[fileid], train=True)
+                MSE_val = report_mse_validation_losses_T_EM(output_mat[fileid], train=False)
+
+                summary.loc[i] = [alpha_T, alpha_E, alpha_M, lambda_T_EM, M_noise, E_noise, n_fold,
+                                  MSE_train["XrT-XT"], MSE_val["XrT-XT"],
+                                  MSE_train["XrE-XE"], MSE_val["XrE-XE"],
+                                  MSE_train["XrM-XM"], MSE_val["XrM-XM"],
+                                  MSE_train["zEM-zT_for_TEM"], MSE_val["zEM-zT_for_TEM"],
+                                  MSE_train["zEM-zT_for_TE"], MSE_val["zEM-zT_for_TE"]]
+
+                i+=1
+    return summary
+
+
