@@ -262,3 +262,228 @@ class Model_M_AE(nn.Module):
         loss_dict['recon_M'] = self.mean_sq_diff(xm[valid_M, :], XrM[valid_M, :])
         loss_dict['recon_sd'] = self.mean_sq_diff(x_sd[valid_M], Xr_sd[valid_M])
         return XrM, Xr_sd, loss_dict, z
+
+
+
+class Encoder_T(nn.Module):
+    """
+    Encoder for transcriptomic data
+
+    Args:
+        in_dim: input size of data
+        int_dim: number of units in hidden layers
+        out_dim: set to latent space dim
+        dropout_p: dropout probability
+    """
+
+    def __init__(self,
+                 in_dim=1252,
+                 int_dim=50,
+                 latent_dim=3,
+                 dropout_p=0.5):
+
+        super(Encoder_T, self).__init__()
+        self.drp = nn.Dropout(p=dropout_p)
+        self.fc0 = nn.Linear(in_dim, int_dim)
+        self.fc1 = nn.Linear(int_dim, int_dim)
+        self.fc2 = nn.Linear(int_dim, int_dim)
+        self.fc3 = nn.Linear(int_dim, int_dim)
+        self.fc4 = nn.Linear(int_dim, latent_dim)
+        self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
+                                 momentum=0.1, track_running_stats=True)
+        self.relu = nn.ReLU()
+        self.elu = nn.ELU()
+        return
+
+    def forward(self, x):
+        x = self.drp(x)
+        x = self.elu(self.fc0(x))
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.fc4(x)
+        z = self.bn(x)
+        return z
+
+
+class Decoder_T(nn.Module):
+    """
+    Decoder for transcriptomic data
+
+    Args:
+        in_dim: set to embedding dim obtained from encoder
+        int_dim: number of units in hidden layers
+        out_dim: number of outputs
+    """
+
+    def __init__(self,
+                 latent_dim=3,
+                 int_dim=50,
+                 out_dim=1252):
+
+        super(Decoder_T, self).__init__()
+        self.fc0 = nn.Linear(latent_dim, int_dim)
+        self.fc1 = nn.Linear(int_dim, int_dim)
+        self.fc2 = nn.Linear(int_dim, int_dim)
+        self.fc3 = nn.Linear(int_dim, int_dim)
+        self.Xout = nn.Linear(int_dim, out_dim)
+        self.relu = nn.ReLU()
+        self.elu = nn.ELU()
+        return
+
+    def forward(self, x):
+        x = self.elu(self.fc0(x))
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.relu(self.Xout(x))
+        return x
+
+
+class Model_T_AE(nn.Module):
+    """T autoencoder
+
+    Args:
+        M_noise: standard deviation of additive gaussian noise
+        latent_dim: dim for representations
+        alpha_M: loss weight for M reconstruction
+        alpha_sd: loss weight for soma depth reconstruction
+    """
+
+    def __init__(self, alpha_T=1.0, latent_dim=3):
+
+        super(Model_T_AE, self).__init__()
+        self.latent_dim = latent_dim
+        self.alpha_T = alpha_T
+
+        self.eT = Encoder_T(latent_dim=self.latent_dim)
+        self.dT = Decoder_T(latent_dim=self.latent_dim)
+
+        return
+
+    def get_hparams(self):
+        hparam_dict = {}
+        hparam_dict['latent_dim'] = self.latent_dim
+        hparam_dict['alpha_T'] = self.alpha_T
+
+    @staticmethod
+    def mean_sq_diff(x, y):
+        return torch.mean(torch.square(x - y))
+
+    @staticmethod
+    def get_1D_mask(mask):
+        mask = mask.reshape(mask.shape[0], -1)
+        return torch.any(mask, dim=1)
+
+    def forward(self, inputs):
+        # inputs
+        XT = inputs
+        mask_XT_nans = ~torch.isnan(XT)  #returns a boolian which is true when the value is not nan
+        valid_T = self.get_1D_mask(mask_XT_nans) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+
+        # replacing nans in input with zeros
+        XT = torch.nan_to_num(XT, nan=0.)
+
+        # EM arm forward pass
+        z = self.eT(XT)
+        XrT = self.dT(z)
+
+        # Loss calculations
+        loss_dict = {}
+        loss_dict['recon_T'] = self.mean_sq_diff(XT[valid_T, :], XrT[valid_T, :])
+        return XrT, loss_dict, z
+
+
+class Encoder_E(nn.Module):
+    """
+    Encoder for electrophysiology data
+
+    Args:
+        per_feature_gaussian_noise_sd: std of gaussian noise injection if training=True
+        in_dim: input size of data
+        int_dim: number of units in hidden layers
+        out_dim: set to latent space dim
+        noise_sd: tensor or np.array. with shape (in_dim,) or (in_dim,1) or (1,in_dim)
+        dropout_p: dropout probability
+    """
+
+    def __init__(self,
+                 in_dim=301,
+                 int_dim=40,
+                 out_dim=3,
+                 noise_sd=None,
+                 dropout_p=0.1):
+
+
+        super(Encoder_E, self).__init__()
+        if noise_sd is not None:
+            self.noise_sd = tensor_(noise_sd)
+        else:
+            self.noise_sd = None
+        self.drp = nn.Dropout(p=dropout_p)
+        self.fc0 = nn.Linear(in_dim, int_dim)
+        self.fc1 = nn.Linear(int_dim, int_dim)
+        self.fc2 = nn.Linear(int_dim, int_dim)
+        self.fc3 = nn.Linear(int_dim, int_dim)
+        self.fc4 = nn.Linear(int_dim, out_dim)
+        self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-05,
+                                 momentum=0.1, track_running_stats=True)
+
+        self.relu = nn.ReLU()
+        self.elu = nn.ELU()
+        return
+
+    def addnoise(self, x):
+        if (self.training) and (self.noise_sd is not None):
+            # batch dim is inferred from shapes of x and self.noise_sd
+            x = torch.normal(mean=x, std=self.noise_sd)
+        return x
+
+    def forward(self, x):
+        x = self.addnoise(x)
+        x = self.drp(x)
+        x = self.elu(self.fc0(x))
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.fc4(x)
+        z = self.bn(x)
+        return z
+
+
+class Decoder_E(nn.Module):
+    """
+    Decoder for electrophysiology data
+
+    Args:
+        in_dim: set to embedding dim obtained from encoder
+        int_dim: number of units in hidden layers
+        out_dim: number of outputs
+    """
+
+    def __init__(self,
+                 in_dim=3,
+                 int_dim=40,
+                 out_dim=301,
+                 dropout_p=0.1):
+
+        super(Decoder_E, self).__init__()
+        self.fc0 = nn.Linear(in_dim, int_dim)
+        self.fc1 = nn.Linear(int_dim, int_dim)
+        self.fc2 = nn.Linear(int_dim, int_dim)
+        self.fc3 = nn.Linear(int_dim, int_dim)
+        self.drp = nn.Dropout(p=dropout_p)
+        self.Xout = nn.Linear(int_dim, out_dim)
+        self.elu = nn.ELU()
+        self.relu = nn.ReLU()
+        return
+
+
+    def forward(self, x):
+        x = self.elu(self.fc0(x))
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.drp(x)
+        x = self.Xout(x)
+        return x
