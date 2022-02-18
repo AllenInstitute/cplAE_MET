@@ -128,14 +128,14 @@ def main(alpha_E=1.0,
         model.train()
 
         # Average losses over batches
-        train_loss_xt = train_loss_xe / len(train_dataloader)
-        val_loss_xt = val_loss_xe
+        train_loss_xe = train_loss_xe / len(train_dataloader)
+        val_loss_xe = val_loss_xe
 
-        print(f'epoch {epoch:04d},  Train xt {train_loss_xe:.5f}')
-        print(f'epoch {epoch:04d} ----- Val xt {val_loss_xe:.5f}')
+        print(f'epoch {epoch:04d},  Train xe {train_loss_xe:.5f}')
+        print(f'epoch {epoch:04d} ----- Val xe {val_loss_xe:.5f}')
         # Logging ==============
-        tb_writer.add_scalar('Train/MSE_XT', train_loss_xe, epoch)
-        tb_writer.add_scalar('Validation/MSE_XT', val_loss_xe, epoch)
+        tb_writer.add_scalar('Train/MSE_XE', train_loss_xe, epoch)
+        tb_writer.add_scalar('Validation/MSE_XE', val_loss_xe, epoch)
 
         # Save checkpoint
         if (epoch) % 1000 == 0:
