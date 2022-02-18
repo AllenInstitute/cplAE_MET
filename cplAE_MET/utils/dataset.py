@@ -87,6 +87,7 @@ def load_MET_dataset(data_path, verbose=False):
     D['cluster_id'] = data['cluster_id'].astype(int)
     D['cluster_color'] = data['cluster_color']
     D['specimen_id'] = data['specimen_id']
+    D['gene_ids'] = data['gene_ids']
     return D
 
 
@@ -220,12 +221,31 @@ class T_AE_Dataset(torch.utils.data.Dataset):
         XT: np.array
     """
     def __init__(self, XT):
-        super(MET_Dataset).__init__()
+        super(T_AE_Dataset).__init__()
         self.XT = XT
         self.n_samples = XT.shape[0]
 
     def __getitem__(self, idx):
         sample = {"XT": self.XT[idx, :]}
+        return sample
+
+    def __len__(self):
+        return self.n_samples
+
+
+class E_AE_Dataset(torch.utils.data.Dataset):
+    """Create a torch dataset from inputs XT
+
+    Args:
+        XT: np.array
+    """
+    def __init__(self, XE):
+        super(E_AE_Dataset).__init__()
+        self.XE = XE
+        self.n_samples = XE.shape[0]
+
+    def __getitem__(self, idx):
+        sample = {"XE": self.XE[idx, :]}
         return sample
 
     def __len__(self):

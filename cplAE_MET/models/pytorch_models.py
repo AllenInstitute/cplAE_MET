@@ -408,9 +408,9 @@ class Encoder_E(nn.Module):
     """
 
     def __init__(self,
-                 in_dim=301,
+                 in_dim=134,
                  int_dim=40,
-                 out_dim=3,
+                 latent_dim=3,
                  noise_sd=None,
                  dropout_p=0.1):
 
@@ -425,8 +425,8 @@ class Encoder_E(nn.Module):
         self.fc1 = nn.Linear(int_dim, int_dim)
         self.fc2 = nn.Linear(int_dim, int_dim)
         self.fc3 = nn.Linear(int_dim, int_dim)
-        self.fc4 = nn.Linear(int_dim, out_dim)
-        self.bn = nn.BatchNorm1d(out_dim, affine=False, eps=1e-05,
+        self.fc4 = nn.Linear(int_dim, latent_dim)
+        self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
                                  momentum=0.1, track_running_stats=True)
 
         self.relu = nn.ReLU()
@@ -462,13 +462,13 @@ class Decoder_E(nn.Module):
     """
 
     def __init__(self,
-                 in_dim=3,
+                 latent_dim=3,
                  int_dim=40,
-                 out_dim=301,
+                 out_dim=134,
                  dropout_p=0.1):
 
         super(Decoder_E, self).__init__()
-        self.fc0 = nn.Linear(in_dim, int_dim)
+        self.fc0 = nn.Linear(latent_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
         self.fc2 = nn.Linear(int_dim, int_dim)
         self.fc3 = nn.Linear(int_dim, int_dim)
@@ -487,3 +487,56 @@ class Decoder_E(nn.Module):
         x = self.drp(x)
         x = self.Xout(x)
         return x
+
+
+class Model_E_AE(nn.Module):
+    """E autoencoder
+
+    Args:
+        E_noise: standard deviation of additive gaussian noise
+        latent_dim: dim for representations
+        alpha_E: loss weight for E reconstruction
+    """
+
+    def __init__(self, alpha_E=1.0, latent_dim=3):
+
+        super(Model_E_AE, self).__init__()
+        self.latent_dim = latent_dim
+        self.alpha_E = alpha_E
+
+        self.eE = Encoder_E(latent_dim=self.latent_dim)
+        self.dE = Decoder_E(latent_dim=self.latent_dim)
+
+        return
+
+    def get_hparams(self):
+        hparam_dict = {}
+        hparam_dict['latent_dim'] = self.latent_dim
+        hparam_dict['alpha_E'] = self.alpha_E
+
+    @staticmethod
+    def mean_sq_diff(x, y):
+        return torch.mean(torch.square(x - y))
+
+    @staticmethod
+    def get_1D_mask(mask):
+        mask = mask.reshape(mask.shape[0], -1)
+        return torch.any(mask, dim=1)
+
+    def forward(self, inputs):
+        # inputs
+        XE = inputs
+        mask_XE_nans = ~torch.isnan(XE)  #returns a boolian which is true when the value is not nan
+        valid_E = self.get_1D_mask(mask_XE_nans) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+
+        # replacing nans in input with zeros
+        XE = torch.nan_to_num(XE, nan=0.)
+
+        # EM arm forward pass
+        z = self.eE(XE)
+        XrE = self.dE(z)
+
+        # Loss calculations
+        loss_dict = {}
+        loss_dict['recon_E'] = self.mean_sq_diff(XE[valid_E, :], XrE[valid_E, :])
+        return XrE, loss_dict, z
