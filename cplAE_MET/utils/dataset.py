@@ -161,7 +161,7 @@ def partitions(celltype, n_partitions, seed=0):
     return ind_dict
 
 
-class MET_Dataset(torch.utils.data.Dataset):
+class T_ME_Dataset(torch.utils.data.Dataset):
     """Create a torch dataset from inputs XT, XE, XM, sd.  
 
     Args:
@@ -170,19 +170,18 @@ class MET_Dataset(torch.utils.data.Dataset):
         XM: np.array
         sd: np.array
     """
-    def __init__(self, XT, XE, XM, sd):
-        super(MET_Dataset).__init__()
-        self.XT = XT
+    def __init__(self, XE, XM, Xsd):
+        super(T_ME_Dataset).__init__()
+        # self.XT = XT
         self.XE = XE
         self.XM = XM
-        self.sd = sd
-        self.n_samples = XT.shape[0]
+        self.Xsd = Xsd
+        self.n_samples = XE.shape[0]
 
     def __getitem__(self, idx):
-        sample = {"XT": self.XT[idx, :],
-                  "XE": self.XE[idx, :],
+        sample = {"XE": self.XE[idx, :],
                   "XM": self.XM[idx, :],
-                  "X_sd": self.sd[idx]}
+                  "Xsd": self.Xsd[idx]}
         return sample
 
     def __len__(self):

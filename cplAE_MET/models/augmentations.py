@@ -69,10 +69,10 @@ def get_soma_aligned_im(im, soma_H):
     assert np.ndim(im) == 5, 'im.shape should have shape (N,1,H,W,C)'
     shifted_im = np.empty_like(im)
     center = int(im.shape[2]/2)
-    shift = (center - soma_H).astype(int)
+    shift = np.nan_to_num((center - soma_H)).astype(int)
 
     for c in range(im.shape[0]):
-        shifted_im[c, 0, ...] = shift3d(im=im[c,0, ...], shift=shift[c])
+        shifted_im[c, 0, ...] = shift3d(im=im[c, 0, ...], shift=shift[c])
     return shifted_im
 
 def get_celltype_specific_shifts(ctype, dummy=True):
