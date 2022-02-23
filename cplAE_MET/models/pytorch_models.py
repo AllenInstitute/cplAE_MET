@@ -634,30 +634,35 @@ class Model_T_ME(nn.Module):
     """
 
     def __init__(self,
-                 alpha_E=1.0,
+                 alpha_T=1.0,
                  alpha_M=1.0,
                  alpha_sd=1.0,
+                 alpha_E=1.0,
                  scale_factor=0.,
                  E_noise=None,
                  M_noise=0.,
                  latent_dim=5):
 
         super(Model_T_ME, self).__init__()
-        self.alpha_E = alpha_E
+        self.alpha_T = alpha_T
         self.alpha_M = alpha_M
         self.alpha_sd = alpha_sd
+        self.alpha_E = alpha_E
         self.scale_factor = scale_factor
         self.M_noise = M_noise
         self.E_noise = E_noise
         self.latent_dim = latent_dim
 
-        self.eE = Encoder_E(latent_dim=self.latent_dim, E_noise=self.E_noise)
-        self.dE = Decoder_E(latent_dim=self.latent_dim)
+        self.eT = Encoder_T(latent_dim=self.latent_dim)
+        self.dT = Decoder_T(latent_dim=self.latent_dim)
 
         self.eM = Encoder_M(latent_dim=self.latent_dim,
                             M_noise=self.M_noise,
                             scale_factor=self.scale_factor)
         self.dM = Decoder_M(in_dim=self.latent_dim)
+
+        self.eE = Encoder_E(latent_dim=self.latent_dim, E_noise=self.E_noise)
+        self.dE = Decoder_E(latent_dim=self.latent_dim)
 
         self.eME = Encoder_ME(ME_in_dim=51, ME_int_dim=20, latent_dim=self.latent_dim)
         self.dME = Decoder_ME(ME_in_dim=51, ME_int_dim=20, latent_dim=self.latent_dim)
@@ -666,9 +671,10 @@ class Model_T_ME(nn.Module):
 
     def get_hparams(self):
         hparam_dict = {}
-        hparam_dict['alpha_E'] = self.alpha_E
+        hparam_dict['alpha_T'] = self.alpha_T
         hparam_dict['alpha_M'] = self.alpha_M
         hparam_dict['alpha_sd'] = self.alpha_sd
+        hparam_dict['alpha_E'] = self.alpha_E
         hparam_dict['scale_factor'] = self.scale_factor
         hparam_dict['M_noise'] = self.M_noise
         hparam_dict['E_noise'] = self.E_noise
@@ -703,55 +709,69 @@ class Model_T_ME(nn.Module):
 
     def forward(self, inputs):
         # inputs
-        XE = inputs[0]
+        XT = inputs[0]
         XM = inputs[1]
         Xsd = inputs[2]
+        XE = inputs[3]
 
         # input data masks for encoder M and E
-        E_mask = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
-        M_mask = self.get_1D_mask(XM)
-        sd_mask = self.get_1D_mask(Xsd)
+        valid_T = self.get_1D_mask(XT)
+        valid_M = self.get_1D_mask(XM)
+        valid_sd = self.get_1D_mask(Xsd)
+        valid_E = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+        valid_ME = torch.where((valid_E) & (valid_M), True, False)
+        valid_TM = torch.where((valid_T) & (valid_M), True, False)
+        valid_TE = torch.where((valid_T) & (valid_E), True, False)
 
-        assert (sd_mask == M_mask).all()
+        assert (valid_sd == valid_M).all()
 
         # input data mask for encoder ME
-        ME_mask = torch.where((M_mask) & (E_mask), True, False)
-        ME_mask_on_M_mask = ME_mask[M_mask]
-        ME_mask_on_E_mask = ME_mask[E_mask]
+        ME_M_pairs = valid_ME[valid_M]
+        ME_E_pairs = valid_ME[valid_E]
+        ME_T_pairs = valid_ME[valid_T]
+        T_M_pairs = valid_TM
+        T_E_pairs = valid_TE
 
         # removing nans
-        XE = XE[E_mask]
-        XM = XM[M_mask]
-        Xsd = Xsd[sd_mask]
+        XT = XT[valid_T]
+        XM = XM[valid_M]
+        Xsd = Xsd[valid_sd]
+        XE = XE[valid_E]
 
         # get the nanzero mask for M for adding noise
         mask_XM_zero = XM == 0.
 
         # encoder
-        ze, xe_inter = self.eE(XE)
+        zt = self.eT(XT)
         zmsd, xm_aug, _, pool_ind1, pool_ind2, xmsd_inter = self.eM(XM, Xsd, mask_XM_zero)
-
-        XME_inter = torch.cat(tensors=(xmsd_inter[ME_mask_on_M_mask], xe_inter[ME_mask_on_E_mask]), dim=1)
+        ze, xe_inter = self.eE(XE)
+        XME_inter = torch.cat(tensors=(xmsd_inter[ME_M_pairs], xe_inter[ME_E_pairs]), dim=1)
         zme = self.eME(XME_inter)
 
         # decoder
+        XrT = self.dT(zt)
         XrM, Xrsd = self.dM(zmsd, pool_ind1, pool_ind2, common_decoder=False)
         XrE = self.dE(ze, common_decoder=False)
         XrME_inter = self.dME(zme)
-
-        XrM_from_zme, Xrsd_from_zme = self.dM(XrME_inter[:, :11], pool_ind1[ME_mask_on_M_mask], pool_ind2[ME_mask_on_M_mask], common_decoder=True)
+        XrM_from_zme, Xrsd_from_zme = self.dM(XrME_inter[:, :11], pool_ind1[ME_M_pairs], pool_ind2[ME_M_pairs], common_decoder=True)
         XrE_from_zme = self.dE(XrME_inter[:, 11:], common_decoder=True)
 
         # Loss calculations
         loss_dict = {}
-        loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
+        loss_dict['recon_T'] = self.mean_sq_diff(XT, XrT)
         loss_dict['recon_M'] = self.mean_sq_diff(xm_aug, XrM)
         loss_dict['recon_sd'] = self.mean_sq_diff(Xsd, Xrsd)
-        loss_dict['recon_ME'] = self.mean_sq_diff(XM[ME_mask_on_M_mask], XrM_from_zme) +\
-                                self.mean_sq_diff(Xsd[ME_mask_on_M_mask], Xrsd_from_zme) +\
-                                self.mean_sq_diff(XE[ME_mask_on_E_mask], XrE_from_zme)
+        loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
+        loss_dict['recon_ME'] = self.mean_sq_diff(XM[ME_M_pairs], XrM_from_zme) +\
+                                self.mean_sq_diff(Xsd[ME_M_pairs], Xrsd_from_zme) +\
+                                self.mean_sq_diff(XE[ME_E_pairs], XrE_from_zme)
 
-        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_mask_on_M_mask], zme)
-        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_mask_on_E_mask], zme)
+        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_M_pairs], zme)
+        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_E_pairs], zme)
+        loss_dict['cpl_ME_T'] = self.min_var_loss(zt[ME_T_pairs], zme)
 
-        return loss_dict, ze, zmsd, zme, XrE, XrM, Xrsd, E_mask, M_mask, ME_mask
+        loss_dict['cpl_TM'] = self.min_var_loss(zt[T_M_pairs], zmsd)
+        loss_dict['cpl_TE'] = self.min_var_loss(zt[T_E_pairs], ze)
+
+
+        return loss_dict, zt , zmsd, ze, zme, XrT, XrM, Xrsd, XrE, valid_T, valid_M, valid_E, valid_ME, valid_TM, valid_TE

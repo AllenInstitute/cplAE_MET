@@ -170,18 +170,20 @@ class T_ME_Dataset(torch.utils.data.Dataset):
         XM: np.array
         sd: np.array
     """
-    def __init__(self, XE, XM, Xsd):
+    def __init__(self, XT, XM, Xsd, XE):
         super(T_ME_Dataset).__init__()
-        # self.XT = XT
-        self.XE = XE
+        self.XT = XT
         self.XM = XM
         self.Xsd = Xsd
-        self.n_samples = XE.shape[0]
+        self.XE = XE
+        self.n_samples = XT.shape[0]
 
     def __getitem__(self, idx):
-        sample = {"XE": self.XE[idx, :],
+        sample = {"XT": self.XT[idx, :],
                   "XM": self.XM[idx, :],
-                  "Xsd": self.Xsd[idx]}
+                  "Xsd": self.Xsd[idx],
+                  "XE": self.XE[idx, :]}
+
         return sample
 
     def __len__(self):
