@@ -72,18 +72,22 @@ def main(alpha_E=1.0,
         # Run the model in the evaluation mode
         model.eval()
         with torch.no_grad():
-            loss_dict, ze, zm, zme, XrE, XrM, Xrsd = model((astensor_(data['XE']),
-                                                                  astensor_(data['XM']),
-                                                                  astensor_(data['Xsd'])))
-
+            loss_dict, ze, zm, zme, XrE, XrM, Xrsd, E_mask, M_mask, ME_mask = \
+                model((astensor_(data['XE']),
+                       astensor_(data['XM']),
+                       astensor_(data['Xsd'])))
 
             # Run classification task
-            # small_types_mask = get_small_types_mask(data['cluster_label'], 7)
-            # X = tonumpy(zme[small_types_mask])
-            # n_classes, y = np.unique(data['cluster_label'][small_types_mask], return_inverse=True)
-            # classification_acc = run_LogisticRegression(X, y, y, 0.1)
-            # tb_writer.add_scalar('Classification_acc', classification_acc, epoch)
-            # print(f'epoch {epoch:04d} ----- Classification_acc {classification_acc:.2f} ----- Number of types {len(n_classes)}')
+            classification_acc = {}
+            for (z, mask, key) in zip([ze, zm, zme], [E_mask, M_mask, ME_mask], ["ze", "zm", "zme"]):
+                masked_labels = data['cluster_label'][mask]
+                small_types_mask = get_small_types_mask(masked_labels, 7)
+                X = tonumpy(z[small_types_mask])
+                n_classes, y = np.unique(masked_labels[small_types_mask], return_inverse=True)
+                classification_acc[key] = run_LogisticRegression(X, y, y, 0.1)
+                out_key = "Classification_acc_" + key
+                tb_writer.add_scalar(out_key, classification_acc[key], epoch)
+                print(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {len(n_classes)}')
 
         model.train()
 
@@ -96,12 +100,18 @@ def main(alpha_E=1.0,
                     'XM': data['XM'],
                     'Xrsd': tonumpy(Xrsd),
                     'Xsd': data['Xsd'],
+                    'E_mask': tonumpy(E_mask),
+                    'M_mask': tonumpy(M_mask),
+                    'ME_mask': tonumpy(ME_mask),
                     'specimen_id': data['specimen_id'],
                     'cluster_label': data['cluster_label'],
                     'cluster_color': data['cluster_color'],
                     'cluster_id': data['cluster_id'],
-                    'gene_ids': data['gene_ids']}
-                    # 'classification_acc': classification_acc}
+                    'gene_ids': data['gene_ids'],
+                    'classification_acc_ze': classification_acc["ze"],
+                    'classification_acc_zm': classification_acc["zm"],
+                    'classification_acc_zme': classification_acc["zme"]}
+
         savedict.update(splits[n_fold])
         savepkl(savedict, fname)
         return
@@ -165,7 +175,7 @@ def main(alpha_E=1.0,
         for batch in iter(train_dataloader):
             # zero + forward + backward + udpate
             optimizer.zero_grad()
-            loss_dict, _, _, _, _, _, _ = model((astensor_(batch['XE']),
+            loss_dict, _, _, _, _, _, _, _, _, _ = model((astensor_(batch['XE']),
                                      astensor_(batch['XM']),
                                      astensor_(batch['Xsd'])))
 
@@ -189,7 +199,7 @@ def main(alpha_E=1.0,
         # validation
         model.eval()
         with torch.no_grad():
-            loss_dict, _, _, _, _, _, _ = model((astensor_(D['XE'][val_ind, ...]),
+            loss_dict, _, _, _, _, _, _, _, _, _  = model((astensor_(D['XE'][val_ind, ...]),
                                                     astensor_(D['XM'][val_ind, ...]),
                                                     astensor_(D['Xsd'][val_ind])))
 

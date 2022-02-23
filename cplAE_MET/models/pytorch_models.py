@@ -708,21 +708,21 @@ class Model_T_ME(nn.Module):
         Xsd = inputs[2]
 
         # input data masks for encoder M and E
-        valid_E = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
-        valid_M = self.get_1D_mask(XM)
-        valid_sd = self.get_1D_mask(Xsd)
+        E_mask = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+        M_mask = self.get_1D_mask(XM)
+        sd_mask = self.get_1D_mask(Xsd)
 
-        assert (valid_sd == valid_M).all()
+        assert (sd_mask == M_mask).all()
 
         # input data mask for encoder ME
-        valid_ME = torch.where((valid_M) & (valid_E), True, False)
-        valid_E_in_M = valid_ME[valid_M]
-        valid_M_in_E = valid_ME[valid_E]
+        ME_mask = torch.where((M_mask) & (E_mask), True, False)
+        ME_mask_on_M_mask = ME_mask[M_mask]
+        ME_mask_on_E_mask = ME_mask[E_mask]
 
         # removing nans
-        XE = XE[valid_E]
-        XM = XM[valid_M]
-        Xsd = Xsd[valid_sd]
+        XE = XE[E_mask]
+        XM = XM[M_mask]
+        Xsd = Xsd[sd_mask]
 
         # get the nanzero mask for M for adding noise
         mask_XM_zero = XM == 0.
@@ -731,7 +731,7 @@ class Model_T_ME(nn.Module):
         ze, xe_inter = self.eE(XE)
         zmsd, xm_aug, _, pool_ind1, pool_ind2, xmsd_inter = self.eM(XM, Xsd, mask_XM_zero)
 
-        XME_inter = torch.cat(tensors=(xmsd_inter[valid_E_in_M], xe_inter[valid_M_in_E]), dim=1)
+        XME_inter = torch.cat(tensors=(xmsd_inter[ME_mask_on_M_mask], xe_inter[ME_mask_on_E_mask]), dim=1)
         zme = self.eME(XME_inter)
 
         # decoder
@@ -739,7 +739,7 @@ class Model_T_ME(nn.Module):
         XrE = self.dE(ze, common_decoder=False)
         XrME_inter = self.dME(zme)
 
-        XrM_from_zme, Xrsd_from_zme = self.dM(XrME_inter[:, :11], pool_ind1[valid_E_in_M], pool_ind2[valid_E_in_M], common_decoder=True)
+        XrM_from_zme, Xrsd_from_zme = self.dM(XrME_inter[:, :11], pool_ind1[ME_mask_on_M_mask], pool_ind2[ME_mask_on_M_mask], common_decoder=True)
         XrE_from_zme = self.dE(XrME_inter[:, 11:], common_decoder=True)
 
         # Loss calculations
@@ -747,11 +747,11 @@ class Model_T_ME(nn.Module):
         loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
         loss_dict['recon_M'] = self.mean_sq_diff(xm_aug, XrM)
         loss_dict['recon_sd'] = self.mean_sq_diff(Xsd, Xrsd)
-        loss_dict['recon_ME'] = self.mean_sq_diff(XM[valid_E_in_M], XrM_from_zme) +\
-                                self.mean_sq_diff(Xsd[valid_E_in_M], Xrsd_from_zme) +\
-                                self.mean_sq_diff(XE[valid_M_in_E], XrE_from_zme)
+        loss_dict['recon_ME'] = self.mean_sq_diff(XM[ME_mask_on_M_mask], XrM_from_zme) +\
+                                self.mean_sq_diff(Xsd[ME_mask_on_M_mask], Xrsd_from_zme) +\
+                                self.mean_sq_diff(XE[ME_mask_on_E_mask], XrE_from_zme)
 
-        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[valid_E_in_M], zme)
-        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[valid_M_in_E], zme)
+        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_mask_on_M_mask], zme)
+        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_mask_on_E_mask], zme)
 
-        return loss_dict, ze, zmsd, zme, XrE, XrM, Xrsd
+        return loss_dict, ze, zmsd, zme, XrE, XrM, Xrsd, E_mask, M_mask, ME_mask
