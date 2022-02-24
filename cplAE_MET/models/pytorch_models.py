@@ -714,23 +714,25 @@ class Model_T_ME(nn.Module):
         Xsd = inputs[2]
         XE = inputs[3]
 
-        # input data masks for encoder M and E
+        # masks with the size of the whole batch
         valid_T = self.get_1D_mask(XT)
         valid_M = self.get_1D_mask(XM)
         valid_sd = self.get_1D_mask(Xsd)
         valid_E = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
         valid_ME = torch.where((valid_E) & (valid_M), True, False)
-        valid_TM = torch.where((valid_T) & (valid_M), True, False)
-        valid_TE = torch.where((valid_T) & (valid_E), True, False)
+        valid_TM_noE = torch.where((valid_T) & (valid_M) & ~(valid_E), True, False)
+        valid_TE_noM = torch.where((valid_T) & (valid_E) & ~(valid_M), True, False)
 
         assert (valid_sd == valid_M).all()
 
-        # input data mask for encoder ME
-        ME_M_pairs = valid_ME[valid_M]
-        ME_E_pairs = valid_ME[valid_E]
-        ME_T_pairs = valid_ME[valid_T]
-        T_M_pairs = valid_TM
-        T_E_pairs = valid_TE
+        # masks with the size of each modality
+        ME_pairs_in_Mdata = valid_ME[valid_M] #size of this mask is the same as M
+        ME_pairs_in_Edata = valid_ME[valid_E] #size of this mask is the same as E
+        ME_pairs_in_Tdata = valid_ME[valid_T] #size of this mask is the same as T
+        TM_noE_pairs_in_Tdata = valid_TM_noE[valid_T] #size of this mask is the same as T
+        TE_noM_pairs_in_Tdata = valid_TE_noM[valid_T]
+        TM_noE_pairs_in_Mdata = valid_TM_noE[valid_M]
+        TE_noM_pairs_in_Edata = valid_TE_noM[valid_E]
 
         # removing nans
         XT = XT[valid_T]
@@ -741,19 +743,19 @@ class Model_T_ME(nn.Module):
         # get the nanzero mask for M for adding noise
         mask_XM_zero = XM == 0.
 
-        # encoder
+        # encoders
         zt = self.eT(XT)
         zmsd, xm_aug, _, pool_ind1, pool_ind2, xmsd_inter = self.eM(XM, Xsd, mask_XM_zero)
         ze, xe_inter = self.eE(XE)
-        XME_inter = torch.cat(tensors=(xmsd_inter[ME_M_pairs], xe_inter[ME_E_pairs]), dim=1)
+        XME_inter = torch.cat(tensors=(xmsd_inter[ME_pairs_in_Mdata], xe_inter[ME_pairs_in_Edata]), dim=1)
         zme = self.eME(XME_inter)
 
-        # decoder
+        # decoders
         XrT = self.dT(zt)
         XrM, Xrsd = self.dM(zmsd, pool_ind1, pool_ind2, common_decoder=False)
         XrE = self.dE(ze, common_decoder=False)
         XrME_inter = self.dME(zme)
-        XrM_from_zme, Xrsd_from_zme = self.dM(XrME_inter[:, :11], pool_ind1[ME_M_pairs], pool_ind2[ME_M_pairs], common_decoder=True)
+        XrM_from_zme, Xrsd_from_zme = self.dM(XrME_inter[:, :11], pool_ind1[ME_pairs_in_Mdata], pool_ind2[ME_pairs_in_Mdata], common_decoder=True)
         XrE_from_zme = self.dE(XrME_inter[:, 11:], common_decoder=True)
 
         # Loss calculations
@@ -762,16 +764,16 @@ class Model_T_ME(nn.Module):
         loss_dict['recon_M'] = self.mean_sq_diff(xm_aug, XrM)
         loss_dict['recon_sd'] = self.mean_sq_diff(Xsd, Xrsd)
         loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
-        loss_dict['recon_ME'] = self.mean_sq_diff(XM[ME_M_pairs], XrM_from_zme) +\
-                                self.mean_sq_diff(Xsd[ME_M_pairs], Xrsd_from_zme) +\
-                                self.mean_sq_diff(XE[ME_E_pairs], XrE_from_zme)
+        loss_dict['recon_ME'] = self.mean_sq_diff(XM[ME_pairs_in_Mdata], XrM_from_zme) +\
+                                self.mean_sq_diff(Xsd[ME_pairs_in_Mdata], Xrsd_from_zme) +\
+                                self.mean_sq_diff(XE[ME_pairs_in_Edata], XrE_from_zme)
 
-        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_M_pairs], zme)
-        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_E_pairs], zme)
-        loss_dict['cpl_ME_T'] = self.min_var_loss(zt[ME_T_pairs], zme)
+        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_pairs_in_Mdata], zme)
+        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_pairs_in_Edata], zme)
+        loss_dict['cpl_ME_T'] = self.min_var_loss(zt[ME_pairs_in_Tdata], zme)
 
-        loss_dict['cpl_TM'] = self.min_var_loss(zt[T_M_pairs], zmsd)
-        loss_dict['cpl_TE'] = self.min_var_loss(zt[T_E_pairs], ze)
+        loss_dict['cpl_TM'] = self.min_var_loss(zt[TM_noE_pairs_in_Tdata], zmsd[TM_noE_pairs_in_Mdata])
+        loss_dict['cpl_TE'] = self.min_var_loss(zt[TE_noM_pairs_in_Tdata], ze[TE_noM_pairs_in_Edata])
 
 
-        return loss_dict, zt , zmsd, ze, zme, XrT, XrM, Xrsd, XrE, valid_T, valid_M, valid_E, valid_ME, valid_TM, valid_TE
+        return loss_dict, zt , zmsd, ze, zme, XrT, XrM, Xrsd, XrE, valid_T, valid_M, valid_E, valid_ME

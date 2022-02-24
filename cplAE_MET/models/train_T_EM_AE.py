@@ -81,7 +81,7 @@ def main(alpha_T=1.0,
         # Run the model in the evaluation mode
         model.eval()
         with torch.no_grad():
-            loss_dict, zt, zm, ze, zme, XrT, XrM, Xrsd, XrE, valid_T, valid_M, valid_E, valid_ME, valid_TM, valid_TE = \
+            loss_dict, zt, zm, ze, zme, XrT, XrM, Xrsd, XrE, valid_T, valid_M, valid_E, valid_ME = \
                 model((astensor_(data['XT']),
                        astensor_(data['XM']),
                        astensor_(data['Xsd']),
@@ -218,7 +218,7 @@ def main(alpha_T=1.0,
         for batch in iter(train_dataloader):
             # zero + forward + backward + udpate
             optimizer.zero_grad()
-            loss_dict, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = model((
+            loss_dict, _, _, _, _, _, _, _, _, _, _, _, _ = model((
                 astensor_(batch['XT']), astensor_(batch['XM']), astensor_(batch['Xsd']), astensor_(batch['XE'])))
 
             loss = model.alpha_T * loss_dict['recon_T'] + \
@@ -248,7 +248,7 @@ def main(alpha_T=1.0,
         # validation
         model.eval()
         with torch.no_grad():
-            loss_dict, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = model((
+            loss_dict, _, _, _, _, _, _, _, _, _, _, _, _ = model((
                 astensor_(D['XT'][val_ind, ...]), astensor_(D['XM'][val_ind, ...]), astensor_(D['Xsd'][val_ind]), astensor_(D['XE'][val_ind])))
 
         val_loss_xt += loss_dict["recon_T"]
