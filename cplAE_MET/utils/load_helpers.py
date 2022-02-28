@@ -1,11 +1,12 @@
 import os
 import json
+import pandas as pd
 from pathlib import Path
 from typing import Dict
-
 import numpy as np
 import scipy.io as sio
 import toml
+import cplAE_MET.utils.utils as ut
 from cplAE_MET.utils.tree_helpers import HTree, get_merged_ordered_classes, simplify_tree
 
 
@@ -232,7 +233,7 @@ def taxonomy_assignments(inputmat_fileid, initial_labels, datadict: Dict, n_requ
 
 
 def get_fileid(model_id, alpha_T, alpha_E, alpha_M, alpha_sd, lambda_T_EM,
-               augment_decoders, latent_dim, batchsize, n_epochs, run_iter, n_fold):
+               augment_decoders, E_noise, M_noise, dilate_M, latent_dim, batchsize, n_epochs, run_iter, n_fold):
     '''
     returns the fileid based on the run parameters
 
@@ -244,20 +245,32 @@ def get_fileid(model_id, alpha_T, alpha_E, alpha_M, alpha_sd, lambda_T_EM,
         alpha_sd: soma depth reconstruction loss weight
         lambda_T_EM: T - EM coupling loss weight
         augment_decoders: 0 or 1 - Train with cross modal reconstruction
+        E_noise: the std of the noise added to E data
+        M_noise: the std of the noise added to M data
         latent_dim: Number of latent dims
         batchsize: Batch size
         n_epochs: Number of epochs to train
         run_iter: Run-specific id
         n_fold: Fold id in the kfold cross validation training
     '''
-    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
-              f'csT_EM_{str(lambda_T_EM)}_ad_{str(augment_decoders)}_' +
+
+    if E_noise is not None:
+        if M_noise is not None:
+            fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
+              f'csT_EM_{str(lambda_T_EM)}_Mnoi_{str(M_noise)}_Enoi_{str(E_noise)}_' +
+              f'dil_M_{str(dilate_M)}_ad_{str(augment_decoders)}_' +
               f'ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
+    else:
+        fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_' +
+                  f'csT_EM_{str(lambda_T_EM)}_ad_{str(augment_decoders)}_' +
+                  f'ld_{latent_dim:d}_bs_{batchsize:d}_ne_{n_epochs:d}_' +
+                  f'ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
+
     return fileid
 
 
-def get_io_path(package_dir, exp_name, input_fileid=None, output_fileid=None):
+def get_io_path(package_dir, exp_name, output_fileid=None):
     ''' Returns a dict with all output and input paths
 
     Args:
@@ -268,9 +281,21 @@ def get_io_path(package_dir, exp_name, input_fileid=None, output_fileid=None):
     path['input_dir_path'] = os.path.join(package_dir, "data/proc/")
     path['output_dir_path'] = os.path.join(package_dir, "data/results/", exp_name)
     path['logs'] = os.path.join(package_dir, "data/results/", exp_name, "logs/")
-    if input_fileid:
-        path['input_path'] = os.path.join(path['input_dir_path'], input_fileid)
+
     if output_fileid:
         path['output_path'] = os.path.join(path['output_dir_path'], (output_fileid + "_exit-summary.pkl"))
         path['log_path'] = os.path.join(path['output_dir_path'], "logs/", (output_fileid + ".csv"))
     return path
+
+def get_results_run_id(model_id, alpha_T, alpha_E, alpha_M, alpha_sd, lambda_T_EM, augment_decoders, E_noise,
+                       M_noise, dilate_M, latent_dim, batchsize, n_epochs, run_iter, n_fold, package_dir, exp_name):
+
+    results = {}
+    fileid = get_fileid(model_id, alpha_T, alpha_E, alpha_M, alpha_sd, lambda_T_EM, augment_decoders, E_noise,
+                        M_noise, dilate_M, latent_dim, batchsize, n_epochs, run_iter, n_fold)
+
+    io_path = get_io_path(package_dir, exp_name, output_fileid=fileid)
+    results["summary"] = ut.loadpkl(io_path["output_path"])
+    results["log"] = pd.read_csv(io_path["log_path"])
+
+    return results

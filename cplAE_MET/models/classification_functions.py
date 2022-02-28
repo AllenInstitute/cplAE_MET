@@ -34,4 +34,4 @@ def run_LogisticRegression(X, y, stratify, test_size):
     '''
     X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=stratify, test_size=test_size, random_state=0)
     clf = LogisticRegression(random_state=0, max_iter=10000).fit(X_train, y_train)
-    return clf.score(X_test, y_test) * 100
+    return clf.score(X_test, y_test) * 100, len(Counter(y_test))
