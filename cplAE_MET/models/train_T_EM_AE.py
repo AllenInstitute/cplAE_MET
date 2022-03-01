@@ -36,7 +36,7 @@ parser.add_argument('--exp_name',        default='DEBUG',       type=str,   help
 def set_paths(config_file=None, exp_name='TEMP'):
     paths = load_config(config_file=config_file, verbose=False)
     paths['result'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/'
-    paths['tb_logs'] = f'{paths["result"]}tb_logs/'
+    paths['tb_logs'] = f'{paths["result"]}tb_logs/{exp_name}'
     Path(paths['tb_logs']).mkdir(parents=True, exist_ok=True)
     return paths
 
@@ -69,7 +69,7 @@ def main(alpha_T=1.0,
         # Run the model in the evaluation mode
         model.eval()
         with torch.no_grad():
-            loss_dict, zt, zm, ze, zme, XrT, valid_T, valid_M, valid_E, valid_ME = \
+            loss_dict, zt, zm, ze, zme, XrT, XrM_from_zme, Xrsd_from_zme, XrE_from_zme, valid_T, valid_M, valid_E, valid_ME = \
                 model((astensor_(data['XT']),
                        astensor_(data['XM']),
                        astensor_(data['Xsd']),
@@ -77,6 +77,10 @@ def main(alpha_T=1.0,
 
             zt = tonumpy(zt)
             zme = tonumpy(zme)
+            XrT = tonumpy(XrT)
+            XrM_from_zme = tonumpy(XrM_from_zme)
+            Xrsd_from_zme = tonumpy(Xrsd_from_zme)
+            XrE_from_zme = tonumpy(XrE_from_zme)
             valid_T = tonumpy(valid_T)
             valid_M = tonumpy(valid_M)
             valid_E = tonumpy(valid_E)
@@ -104,6 +108,10 @@ def main(alpha_T=1.0,
                     'XM': data['XM'],
                     'Xsd': data['Xsd'],
                     'XE': data['XE'],
+                    'XrT': XrT,
+                    'XrE_from_zme': XrE_from_zme,
+                    'XrM_from_zme': XrM_from_zme,
+                    'Xrsd_from_zme': Xrsd_from_zme,
                     'valid_T': valid_T,
                     'valid_M': valid_M,
                     'valid_E': valid_E,

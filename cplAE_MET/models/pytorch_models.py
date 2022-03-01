@@ -659,7 +659,7 @@ class Model_T_ME(nn.Module):
         loss_dict['cpl_ME_T'] = self.min_var_loss(zt[ME_pairs_in_Tdata], zme)
 
 
-        return loss_dict, zt, zmsd, ze, zme, XrT, valid_T, valid_M, valid_E, valid_ME
+        return loss_dict, zt, zmsd, ze, zme, XrT, XrM_from_zme, Xrsd_from_zme, XrE_from_zme, valid_T, valid_M, valid_E, valid_ME
 
 
 
