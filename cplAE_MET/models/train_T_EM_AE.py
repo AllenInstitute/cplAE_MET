@@ -18,7 +18,7 @@ from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_T',         default=1.0,           type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_ME',         default=1.0,           type=float, help='ME reconstruction loss weight')
+parser.add_argument('--alpha_ME',        default=1.0,           type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_ME_T',     default=1.0,           type=float, help='coupling term between ME and T')
 parser.add_argument('--scale_factor',    default=0.3,           type=float, help='scaling factor for interpolation')
 parser.add_argument('--latent_dim',      default=5,             type=int,   help='Number of latent dims')
