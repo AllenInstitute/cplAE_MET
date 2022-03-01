@@ -11,30 +11,31 @@ class Encoder_M(nn.Module):
     """
     Encoder for morphology arbor density data.
     Args:
-        latent_dim: dimension of the latent representation
-        M_noise: a number that is used to generate noise for the arbor density images
-        scale_factor: scale factor to stretch or squeeze the images along the H axis
+        latent_dim: (int) dimension of the latent representation
+        M_noise: (float) std of gaussian noise injection to non zero pixels
+        scale_factor: (float) scale factor to stretch or squeeze the images along the H axis
     """
-    def __init__(self, latent_dim=100, M_noise=0., scale_factor=0.):
+    def __init__(self,
+                 latent_dim=100,
+                 M_noise=0.,
+                 scale_factor=0.):
         super(Encoder_M, self).__init__()
+
+        self.M_noise = M_noise
+        self.scale_factor = scale_factor
 
         self.do_aug_scale = True
         self.do_aug_noise = True
+
         self.conv3d_1 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.pool3d_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
         self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.pool3d_2 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-
-
-
         self.fcm1 = nn.Linear(240, 10)
         self.fc1 = nn.Linear(11, 11)
         self.fc2 = nn.Linear(11, latent_dim)
-        self.M_noise = M_noise
-        self.scale_factor = scale_factor
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
                                  momentum=0.1, track_running_stats=True)
-
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
@@ -42,28 +43,41 @@ class Encoder_M(nn.Module):
         return
 
 
-    def aug_noise(self, h, nonzero_mask_xm):
+    def aug_noise(self, im):
+        '''
+        Get the image and mask for the nonzero pixels and add gaussian noise to the nonzero pixels if training
+        Args:
+            im: array with the shape of (batch_size x 1 x 240 x 4 x 4)
+        '''
+        # get the nanzero mask for M for adding noise
+        mask = im != 0.
         if self.training:
-            return torch.where(nonzero_mask_xm, h + (torch.randn(h.shape, device=device) * self.M_noise), h)
+            noise = torch.randn(im.shape, device=device) * self.M_noise
+            return torch.where(mask, im + noise, im)
         else:
-            return h
+            return im
 
 
-    def aug_fnoise(self, f):
+    def aug_fnoise(self, sd):
+        '''
+        Gets the soma depth and return the soma depth augmented with gaussian noise if training
+        Args:
+            sd: soma depth location array with the shape of (batch_size x 1)
+        '''
         if self.training:
-            return f + (torch.randn(f.shape, device=device) * self.M_noise)
+            noise = torch.randn(sd.shape, device=device) * self.M_noise
+            return sd + noise
         else:
-            return f
+            return sd
 
 
     def aug_scale_im(self, im, scaling_by):
         '''
         Scaling the image by interpolation. The original images are padded beforehand to make sure they dont go out
-        of the frame during the scaling. We padded them with H/2 along H
+        of the frame during the scaling. We padded them with H/2 along H and they are soma aligned beforehand
         Args:
-            im: original images with the size of (N, 1, H, W, C)
-            scaling_by: scaling factor for interpolation
-
+            im: padded arbor density images with the size of (batch_size x 1 x 240 x 4 x 4)
+            scaling_by: (float) scaling factor for interpolation
         '''
         # scaling the cells
         min_rand = 1. - scaling_by
@@ -79,11 +93,11 @@ class Encoder_M(nn.Module):
         '''
         Takes the scaled image and the original image and either crop or pad the scaled image to get the original size.
         Args:
-            scaled_im: scaled image with the size of (N, 1, h, W, C), h is the scaled image height
-            im: original image with the size of (N, 1, H, W, C)
+            scaled_im: scaled image with the size of (batch_size x 1 x 240 x 4 x 4), h is the scaled image height
+            im: original image with the size of (batch_size x 1 x 240 x 4 x 4)
 
         Returns:
-            padded_or_copped_im: padded or cropped images with the size of (M, 1, H, W, C)
+            padded_or_copped_im: padded or cropped images with the size of (batch_size x 1 x 240 x 4 x 4)
 
         '''
         out_depth = scaled_im.shape[2]
@@ -114,7 +128,7 @@ class Encoder_M(nn.Module):
         '''
         Scaling the image and then getting back to the original size by cropping or padding
         Args:
-            im: soma aligned images with the size of (N, 1, H, W, C)
+            im: soma aligned images with the size of (batch_size x 1 x 240 x 4 x 4)
             scaling_by: scaling factor, a float between 0 and 1
 
         Returns:
@@ -129,14 +143,15 @@ class Encoder_M(nn.Module):
         return scaled_im
 
 
-    def forward(self, xm, xsd, nonzero_mask_xm):
+    def forward(self, xm, xsd):
 
         if self.do_aug_noise:
-            xm = self.aug_noise(xm, nonzero_mask_xm)
+            xm = self.aug_noise(xm)
             xsd = self.aug_fnoise(xsd)
         if self.do_aug_scale:
             xm = self.aug_scale(xm, scaling_by=self.scale_factor)
 
+        # xm is the augmented image, if we need to reconstruct the augmented image then we need to output this xm
         x, pool1_ind = self.pool3d_1(self.relu(self.conv3d_1(xm)))
         x, pool2_ind = self.pool3d_2(self.relu(self.conv3d_2(x)))
         x = x.view(x.shape[0], -1)
@@ -152,17 +167,21 @@ class Encoder_M(nn.Module):
 
 class Decoder_M_specific(nn.Module):
     """
-    Decoder for morphology data. Hard-coded architecture.
-    Output is expected to be shape: (batch_size x 2 x 120 x 4)
+    NOTE: Decoder M has two modules called "Decoder_M_specific" and "Decoder_M_shared"
+
+    Specific module of Decoder for morphology data is used only when we are reconstructing XM and
+     Xsd from zmsd. The architecture is Hard-coded.
+    Input is expected to be shape: (batch_size x latent_dim) and the output: (batch_size x 11)
 
     Args:
-        in_dim: representation dimensionality
+        in_dim: set to the representation dimensionality
     """
 
-    def __init__(self, latent_dim=3):
+    def __init__(self,
+                 in_dim=3):
 
         super(Decoder_M_specific, self).__init__()
-        self.fc1_dec = nn.Linear(latent_dim, 11)
+        self.fc1_dec = nn.Linear(in_dim, 11)
         self.fc2_dec = nn.Linear(11, 11)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
@@ -178,11 +197,11 @@ class Decoder_M_specific(nn.Module):
 
 class Decoder_M_shared(nn.Module):
     """
-    Decoder for morphology data. Hard-coded architecture.
-    Output is expected to be shape: (batch_size x 2 x 120 x 4)
-
-    Args:
-        in_dim: representation dimensionality
+    Shared module of decoder M is used when we are reconstructing XrM, Xrsd or cross modal reconstruction
+    such as XrM_from_zme of Xrsd_from_zme.
+    The architecture is hard-coded.
+    The input is of the size: (batch_size x 11) and the output dimension is
+    XM_from_zme with: (batch_size x 1 x 240 x 4 x 4) and Xrsd_from_zme with the size (batch_size, 1)
     """
 
     def __init__(self):
@@ -223,7 +242,7 @@ class Encoder_T(nn.Module):
     Encoder for transcriptomic data
 
     Args:
-        in_dim: input size of data
+        in_dim: input size of data, hard-coded
         int_dim: number of units in hidden layers
         out_dim: set to latent space dim
         dropout_p: dropout probability
@@ -270,12 +289,12 @@ class Decoder_T(nn.Module):
     """
 
     def __init__(self,
-                 latent_dim=3,
+                 in_dim=3,
                  int_dim=50,
                  out_dim=1252):
 
         super(Decoder_T, self).__init__()
-        self.fc0 = nn.Linear(latent_dim, int_dim)
+        self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
         self.fc2 = nn.Linear(int_dim, int_dim)
         self.fc3 = nn.Linear(int_dim, int_dim)
@@ -353,24 +372,26 @@ class Encoder_E(nn.Module):
 
 class Decoder_E_specific(nn.Module):
     """
-    Decoder for electrophysiology data shared part
+    NOTE: Decoder E has two modules called "Decoder_E_specific" and "Decoder_E_shared"
 
+    Specific module of Decoder for electrophysiology data is used only when we are reconstructing XE from ze.
+    The architecture is Hard-coded.
+    Input is expected to be shape: (batch_size x latent_dim) and the output: (batch_size x 40)
     Args:
-        in_dim: set to embedding dim obtained from encoder
-        int_dim: number of units in hidden layers
-        out_dim: number of outputs
+        latent_dim: set to embedding dim obtained from encoder
+        out_dim: number of units in hidden layers
     """
 
     def __init__(self,
-                 latent_dim=3,
-                 int_dim=40,
+                 in_dim=3,
+                 out_dim=40,
                  dropout_p=0.1):
 
         super(Decoder_E_specific, self).__init__()
-        self.fc0 = nn.Linear(latent_dim, int_dim)
-        self.fc1 = nn.Linear(int_dim, int_dim)
-        self.fc2 = nn.Linear(int_dim, int_dim)
-        self.fc3 = nn.Linear(int_dim, int_dim)
+        self.fc0 = nn.Linear(in_dim, out_dim)
+        self.fc1 = nn.Linear(out_dim, out_dim)
+        self.fc2 = nn.Linear(out_dim, out_dim)
+        self.fc3 = nn.Linear(out_dim, out_dim)
         self.drp = nn.Dropout(p=dropout_p)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
@@ -382,15 +403,16 @@ class Decoder_E_specific(nn.Module):
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
         x = self.relu(self.fc3(x))
-        x = self.drp(x)
+        # x = self.drp(x)
         return x
 
 
 
 class Decoder_E_shared(nn.Module):
     """
-    Decoder for electrophysiology data shared part
-
+    Shared module of decoder E is used when we are reconstructing XrE or XrE_from_zme(cross modal reconstruction of XE).
+    The architecture is hard-coded.
+    The input is of the size: (batch_size x 40) and the output is XrE_from_zme with dimension: (batch_size x 134)
     Args:
         int_dim: number of units in hidden layers
         out_dim: number of outputs
@@ -414,25 +436,21 @@ class Encoder_ME(nn.Module):
     Encoder for EM data.
 
     Args:
-        E_dim: number of E features
-        E_int_dim: intermediate linear layer dimension for E
-        sd_int_dim: intermediate linear layer dimension for soma depth
-        std_dev: gaussian noise std dev
-        out_dim: representation dimenionality
-        E_noise_sd: per-feature gaussian noise for E data
-        E_dropout: dropout probability for E features
+        in_dim: number of ME features
+        int_dim: intermediate linear layer dimension for ME
+        latent_dim: representation dimenionality
     """
 
     def __init__(self,
-                 ME_in_dim=51,
-                 ME_int_dim=20,
+                 in_dim=51,
+                 int_dim=20,
                  latent_dim=5):
 
         super(Encoder_ME, self).__init__()
 
-        self.fc_me1 = nn.Linear(ME_in_dim, ME_int_dim)
-        self.fc_me2 = nn.Linear(ME_int_dim, ME_int_dim)
-        self.fc_me3 = nn.Linear(ME_int_dim, latent_dim)
+        self.fc_me1 = nn.Linear(in_dim, int_dim)
+        self.fc_me2 = nn.Linear(int_dim, int_dim)
+        self.fc_me3 = nn.Linear(int_dim, latent_dim)
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
@@ -452,24 +470,23 @@ class Encoder_ME(nn.Module):
 
 class Decoder_ME(nn.Module):
     """
-    Decoder for EM data. M dimensions are hard coded.
+    Decoder for ME data.
 
     Args:
         in_dim: representation dimensionality
-        EM_int_dim: joint E and M representation dimensionality
-        E_int_dim: intermediate layer dims for E
-        E_dim: output dim for E
+        int_dim: intermediate layer dims for ME
+        out_dim: ME output dimension
     """
 
     def __init__(self,
-                 latent_dim=3,
-                 ME_int_dim=20,
-                 ME_in_dim=51):
+                 in_dim=3,
+                 int_dim=20,
+                 out_dim=51):
 
         super(Decoder_ME, self).__init__()
-        self.fc_me1 = nn.Linear(latent_dim, ME_int_dim)
-        self.fc_me2 = nn.Linear(ME_int_dim, ME_int_dim)
-        self.fc_me3 = nn.Linear(ME_int_dim, ME_in_dim)
+        self.fc_me1 = nn.Linear(in_dim, int_dim)
+        self.fc_me2 = nn.Linear(int_dim, int_dim)
+        self.fc_me3 = nn.Linear(int_dim, out_dim)
 
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
@@ -513,23 +530,23 @@ class Model_T_ME(nn.Module):
 
         # T
         self.eT = Encoder_T(latent_dim=self.latent_dim)
-        self.dT = Decoder_T(latent_dim=self.latent_dim)
+        self.dT = Decoder_T(in_dim=self.latent_dim)
 
         # M
         self.eM = Encoder_M(latent_dim=self.latent_dim,
                             M_noise=self.M_noise,
                             scale_factor=self.scale_factor)
         self.dM_shared = Decoder_M_shared()
-        self.dM_specific = Decoder_M_specific(latent_dim=self.latent_dim)
+        self.dM_specific = Decoder_M_specific(in_dim=self.latent_dim)
 
         # E
         self.eE = Encoder_E(latent_dim=self.latent_dim, E_noise=self.E_noise)
         self.dE_shared = Decoder_E_shared()
-        self.dE_specific = Decoder_E_specific(latent_dim=self.latent_dim)
+        self.dE_specific = Decoder_E_specific(in_dim=self.latent_dim)
 
         # ME
-        self.eME = Encoder_ME(ME_in_dim=51, ME_int_dim=20, latent_dim=self.latent_dim)
-        self.dME = Decoder_ME(ME_in_dim=51, ME_int_dim=20, latent_dim=self.latent_dim)
+        self.eME = Encoder_ME(in_dim=51, int_dim=20, latent_dim=self.latent_dim)
+        self.dME = Decoder_ME(in_dim=self.latent_dim, int_dim=20, out_dim=51)
 
         return
 
@@ -601,15 +618,14 @@ class Model_T_ME(nn.Module):
         Xsd = Xsd[valid_sd]
         XE = XE[valid_E]
 
-        # get the nanzero mask for M for adding noise
-        mask_XM_zero = XM != 0.
+
 
 
         # ENCODERS
         ## T
         zt = self.eT(XT)
         ## M
-        zmsd, xm_aug, _, pool_ind1, pool_ind2, xmsd_inter = self.eM(XM, Xsd, mask_XM_zero)
+        zmsd, xm_aug, _, pool_ind1, pool_ind2, xmsd_inter = self.eM(XM, Xsd)
 
         ## E
         ze, xe_inter = self.eE(XE)

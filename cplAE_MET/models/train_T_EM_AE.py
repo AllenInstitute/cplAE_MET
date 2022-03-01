@@ -168,8 +168,10 @@ def main(alpha_T=1.0,
     # Train ============================
     for epoch in range(n_epochs):
         train_loss_xt = 0.
+        train_loss_xme = 0.
         train_loss_cpl_met = 0.
         val_loss_xt = 0.
+        val_loss_xme = 0.
         val_loss_cpl_met = 0.
 
         for batch in iter(train_dataloader):
@@ -191,6 +193,7 @@ def main(alpha_T=1.0,
 
             # track loss over batches:
             train_loss_xt += loss_dict["recon_T"]
+            train_loss_xme += loss_dict["recon_ME"]
             train_loss_cpl_met += loss_dict['cpl_ME_T']
 
         # validation
@@ -203,23 +206,30 @@ def main(alpha_T=1.0,
                 astensor_(D['XE'][val_ind])))
 
         val_loss_xt += loss_dict["recon_T"]
+        val_loss_xme += loss_dict["recon_ME"]
         val_loss_cpl_met += loss_dict['cpl_ME_T']
         model.train()
 
         # Average losses over batches
         train_loss_xt = train_loss_xt / len(train_dataloader)
+        train_loss_xme = train_loss_xme / len(train_dataloader)
         train_loss_cpl_met = train_loss_cpl_met / len(train_dataloader)
 
         val_loss_xt = val_loss_xt
+        val_loss_xme = val_loss_xme
         val_loss_cpl_met = val_loss_cpl_met
 
 
         print(f'epoch {epoch:04d},  Train xt {train_loss_xt:.5f}')
         print(f'epoch {epoch:04d} ----- Val xt {val_loss_xt:.5f}')
+        print(f'epoch {epoch:04d},  Train xme {train_loss_xme:.5f}')
+        print(f'epoch {epoch:04d} ----- Val xme {val_loss_xme:.5f}')
 
         # Logging ==============
         tb_writer.add_scalar('Train/MSE_XT', train_loss_xt, epoch)
         tb_writer.add_scalar('Validation/MSE_XT', val_loss_xt, epoch)
+        tb_writer.add_scalar('Train/MSE_XME', train_loss_xme, epoch)
+        tb_writer.add_scalar('Validation/MSE_XME', val_loss_xme, epoch)
         tb_writer.add_scalar('Train/cpl_ME_T', train_loss_cpl_met, epoch)
         tb_writer.add_scalar('Validation/cpl_ME_T', val_loss_cpl_met, epoch)
 
