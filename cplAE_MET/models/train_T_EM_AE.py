@@ -2,6 +2,7 @@ import torch
 import argparse
 from pathlib import Path
 from functools import partial
+import matplotlib.pyplot as plt
 
 from cplAE_MET.utils.utils import savepkl
 from torch.utils.tensorboard import SummaryWriter
@@ -18,8 +19,12 @@ from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_T',         default=1.0,           type=float, help='T reconstruction loss weight')
+parser.add_argument('--alpha_M',         default=1.0,           type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_E',         default=1.0,           type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',        default=1.0,           type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_ME_T',     default=1.0,           type=float, help='coupling term between ME and T')
+parser.add_argument('--lambda_ME_M',     default=1.0,           type=float, help='coupling term between ME and M')
+parser.add_argument('--lambda_ME_E',     default=1.0,           type=float, help='coupling term between ME and E')
 parser.add_argument('--scale_factor',    default=0.3,           type=float, help='scaling factor for interpolation')
 parser.add_argument('--latent_dim',      default=5,             type=int,   help='Number of latent dims')
 parser.add_argument('--M_noise',         default=0.0,           type=float, help='std of the gaussian noise added to M data')
@@ -42,8 +47,12 @@ def set_paths(config_file=None, exp_name='TEMP'):
 
 
 def main(alpha_T=1.0,
+         alpha_M=1.0,
+         alpha_E=1.0,
          alpha_ME=1.0,
          lambda_ME_T=1.0,
+         lambda_ME_M=1.0,
+         lambda_ME_E=1.0,
          scale_factor=0.3,
          M_noise=0.0,
          E_noise=0.05,
@@ -59,8 +68,8 @@ def main(alpha_T=1.0,
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
-    fileid = (model_id + f'_aT_{str(alpha_T)}_aME_{str(alpha_ME)}_' +
-              f'lambda_ME_T_{str(lambda_ME_T)}_' +
+    fileid = (model_id + f'_aT_{str(alpha_T)}_aM_{str(alpha_M)}_aE_{str(alpha_E)}_aME_{str(alpha_ME)}_' +
+              f'lambda_ME_T_{str(lambda_ME_T)}_lambda_ME_M_{str(lambda_ME_M)}_lambda_ME_E_{str(lambda_ME_E)}_' +
               f'noise_{str(M_noise)}_scale_{str(scale_factor)}_' +
               f'ld_{latent_dim:d}_ne_{n_epochs:d}_' +
               f'ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
@@ -69,28 +78,25 @@ def main(alpha_T=1.0,
         # Run the model in the evaluation mode
         model.eval()
         with torch.no_grad():
-            loss_dict, zt, zm, ze, zme, XrT, XrM_from_zme, Xrsd_from_zme, XrE_from_zme, valid_T, valid_M, valid_E, valid_ME = \
-                model((astensor_(data['XT']),
-                       astensor_(data['XM']),
-                       astensor_(data['Xsd']),
-                       astensor_(data['XE'])))
+            loss_dict, z_dict, xr_dict, mask_dict = model((astensor_(data['XT']),
+                                                           astensor_(data['XM']),
+                                                           astensor_(data['Xsd']),
+                                                           astensor_(data['XE'])))
 
-            zt = tonumpy(zt)
-            zme = tonumpy(zme)
-            XrT = tonumpy(XrT)
-            XrM_from_zme = tonumpy(XrM_from_zme)
-            Xrsd_from_zme = tonumpy(Xrsd_from_zme)
-            XrE_from_zme = tonumpy(XrE_from_zme)
-            valid_T = tonumpy(valid_T)
-            valid_M = tonumpy(valid_M)
-            valid_E = tonumpy(valid_E)
-            valid_ME = tonumpy(valid_ME)
+            for dict in [z_dict, xr_dict, mask_dict]:
+                for k, v in dict.items():
+                    dict[k] = tonumpy(v)
 
 
             # Run classification task
             classification_acc = {}
             n_class = {}
-            for (z, mask, key) in zip([zt, zme], [valid_T, valid_ME], ["zt", "zme"]):
+
+            for (z, mask, key) in zip(
+                    [z_dict['zt'], z_dict['zm'], z_dict['ze'], z_dict['zme']],
+                    [mask_dict['valid_T'], mask_dict['valid_M'], mask_dict['valid_E'], mask_dict['valid_ME']],
+                    ["zt", "zm", "ze", "zme"]):
+
                 masked_labels = data['cluster_label'][mask]
                 small_types_mask = get_small_types_mask(masked_labels, 7)
                 X = z[small_types_mask]
@@ -102,32 +108,43 @@ def main(alpha_T=1.0,
 
         model.train()
 
-        savedict = {'zt': zt,
-                    'zme': zme,
-                    'XT': data['XT'],
+        savedict = {'XT': data['XT'],
                     'XM': data['XM'],
                     'Xsd': data['Xsd'],
                     'XE': data['XE'],
-                    'XrT': XrT,
-                    'XrE_from_zme': XrE_from_zme,
-                    'XrM_from_zme': XrM_from_zme,
-                    'Xrsd_from_zme': Xrsd_from_zme,
-                    'valid_T': valid_T,
-                    'valid_M': valid_M,
-                    'valid_E': valid_E,
                     'specimen_id': data['specimen_id'],
                     'cluster_label': data['cluster_label'],
                     'cluster_color': data['cluster_color'],
                     'cluster_id': data['cluster_id'],
                     'gene_ids': data['gene_ids'],
                     'classification_acc_zt': classification_acc["zt"],
+                    'classification_acc_zm': classification_acc["zm"],
+                    'classification_acc_ze': classification_acc["ze"],
                     'classification_acc_zme': classification_acc["zme"],
                     'T_class': n_class['zt'],
+                    'M_class': n_class['zm'],
+                    'E_class': n_class['ze'],
                     'ME_class': n_class['zme']}
+
+        for dict in [z_dict, xr_dict, mask_dict]:
+            for key, value in dict.items():
+                savedict[key] = value
 
         savedict.update(splits[n_fold])
         savepkl(savedict, fname)
         return
+
+    def set_requires_grad(module, val):
+        for p in module.parameters():
+            p.requires_grad = val
+
+    def init_losses(loss_dict):
+        train_loss = {}
+        val_loss = {}
+        for k in loss_dict.keys():
+            train_loss[k] = 0.
+            val_loss[k] = 0.
+        return train_loss, val_loss
 
     # Data selection============================
     D = load_MET_dataset(dir_pth['MET_data'])
@@ -162,8 +179,12 @@ def main(alpha_T=1.0,
 
     # Model ============================
     model = Model_T_ME(alpha_T=alpha_T,
+                       alpha_M=alpha_M,
+                       alpha_E=alpha_E,
                        alpha_ME=alpha_ME,
                        lambda_ME_T=lambda_ME_T,
+                       lambda_ME_M=lambda_ME_M,
+                       lambda_ME_E=lambda_ME_E,
                        scale_factor=scale_factor,
                        E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0),
                        M_noise=M_noise,
@@ -173,16 +194,10 @@ def main(alpha_T=1.0,
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     model.to(device)
 
+
     # Train ============================
     for epoch in range(n_epochs):
-        train_loss_xt = 0.
-        train_loss_xme = 0.
-        train_loss_cpl_met = 0.
-        val_loss_xt = 0.
-        val_loss_xme = 0.
-        val_loss_cpl_met = 0.
-
-        for batch in iter(train_dataloader):
+        for step, batch in enumerate(iter(train_dataloader)):
             # zero + forward + backward + update
             optimizer.zero_grad()
             loss_dict, *_ = model((
@@ -191,18 +206,35 @@ def main(alpha_T=1.0,
                 astensor_(batch['Xsd']),
                 astensor_(batch['XE'])))
 
+            print("")
             loss = model.alpha_T * loss_dict['recon_T'] + \
+                   model.alpha_E * loss_dict['recon_E'] + \
+                   model.alpha_M * loss_dict['recon_M'] + \
+                   model.alpha_M * loss_dict['recon_sd'] + \
                    model.alpha_ME * loss_dict['recon_ME'] + \
-                   model.lambda_ME_T * loss_dict['cpl_ME_T']
+                   model.lambda_ME_M * loss_dict['cpl_ME_M'] + \
+                   model.lambda_ME_T * loss_dict['cpl_ME_T'] + \
+                   model.lambda_ME_E * loss_dict['cpl_ME_E']
 
+            # set require grad for the shared module in the M and in the E equal to False
+            # This way, we will not update shared modules in the M or in the E autoencoder
+            set_requires_grad(model.dE_shared_copy, False)
+            set_requires_grad(model.dM_shared_copy, False)
 
             loss.backward()
             optimizer.step()
 
+            # copy the weights of the shared modules from the ME part
+            model.dM_shared_copy.load_state_dict(model.dM_shared.state_dict())
+            model.dE_shared_copy.load_state_dict(model.dE_shared.state_dict())
+
+            if step == 0:
+                train_loss, val_loss = init_losses(loss_dict)
+
             # track loss over batches:
-            train_loss_xt += loss_dict["recon_T"]
-            train_loss_xme += loss_dict["recon_ME"]
-            train_loss_cpl_met += loss_dict['cpl_ME_T']
+            for k, v in loss_dict.items():
+                train_loss[k] += loss_dict[k]
+
 
         # validation
         model.eval()
@@ -213,37 +245,44 @@ def main(alpha_T=1.0,
                 astensor_(D['Xsd'][val_ind]),
                 astensor_(D['XE'][val_ind])))
 
-        val_loss_xt += loss_dict["recon_T"]
-        val_loss_xme += loss_dict["recon_ME"]
-        val_loss_cpl_met += loss_dict['cpl_ME_T']
+
+        for k, v in loss_dict.items():
+            val_loss[k] += loss_dict[k]
+
         model.train()
 
         # Average losses over batches
-        train_loss_xt = train_loss_xt / len(train_dataloader)
-        train_loss_xme = train_loss_xme / len(train_dataloader)
-        train_loss_cpl_met = train_loss_cpl_met / len(train_dataloader)
+        for k, v in train_loss.items():
+            train_loss[k] = train_loss[k] / len(train_dataloader)
 
-        val_loss_xt = val_loss_xt
-        val_loss_xme = val_loss_xme
-        val_loss_cpl_met = val_loss_cpl_met
+        # printing logs
+        for k, v in train_loss.items():
+            print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
 
-
-        print(f'epoch {epoch:04d},  Train xt {train_loss_xt:.5f}')
-        print(f'epoch {epoch:04d} ----- Val xt {val_loss_xt:.5f}')
-        print(f'epoch {epoch:04d},  Train xme {train_loss_xme:.5f}')
-        print(f'epoch {epoch:04d} ----- Val xme {val_loss_xme:.5f}')
+        for k, v in val_loss.items():
+            print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
 
         # Logging ==============
-        tb_writer.add_scalar('Train/MSE_XT', train_loss_xt, epoch)
-        tb_writer.add_scalar('Validation/MSE_XT', val_loss_xt, epoch)
-        tb_writer.add_scalar('Train/MSE_XME', train_loss_xme, epoch)
-        tb_writer.add_scalar('Validation/MSE_XME', val_loss_xme, epoch)
-        tb_writer.add_scalar('Train/cpl_ME_T', train_loss_cpl_met, epoch)
-        tb_writer.add_scalar('Validation/cpl_ME_T', val_loss_cpl_met, epoch)
+        tb_writer.add_scalar('Train/MSE_XT', train_loss['recon_T'], epoch)
+        tb_writer.add_scalar('Validation/MSE_XT', val_loss['recon_T'], epoch)
+        tb_writer.add_scalar('Train/MSE_XM', train_loss['recon_M'], epoch)
+        tb_writer.add_scalar('Validation/MSE_XM', val_loss['recon_M'], epoch)
+        tb_writer.add_scalar('Train/MSE_Xsd', train_loss['recon_sd'], epoch)
+        tb_writer.add_scalar('Validation/MSE_Xsd', val_loss['recon_sd'], epoch)
+        tb_writer.add_scalar('Train/MSE_XE', train_loss['recon_E'], epoch)
+        tb_writer.add_scalar('Validation/MSE_XE', val_loss['recon_E'], epoch)
+        tb_writer.add_scalar('Train/MSE_XME', train_loss['recon_ME'], epoch)
+        tb_writer.add_scalar('Validation/MSE_XME', val_loss['recon_ME'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME_T', train_loss['cpl_ME_T'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME_T', val_loss['cpl_ME_T'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME_M', train_loss['cpl_ME_M'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME_M', val_loss['cpl_ME_M'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME_E', train_loss['cpl_ME_E'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME_E', val_loss['cpl_ME_E'], epoch)
 
 
         # Save checkpoint
-        if (epoch) % 1000 == 0:
+        if (epoch) % 100 == 0:
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
             save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
 
