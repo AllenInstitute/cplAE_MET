@@ -1,15 +1,16 @@
+from typing import Dict, Any
+
 import torch
 import argparse
 from pathlib import Path
 from functools import partial
-import matplotlib.pyplot as plt
+
+from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 
 from cplAE_MET.utils.utils import savepkl
-from torch.utils.tensorboard import SummaryWriter
-
-from torch.utils.data import DataLoader
+from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.load_config import load_config
-
 from cplAE_MET.models.pytorch_models import Model_T_ME
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
@@ -18,23 +19,24 @@ from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--alpha_T',         default=1.0,           type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_M',         default=1.0,           type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_E',         default=1.0,           type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_ME',        default=1.0,           type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_ME_T',     default=1.0,           type=float, help='coupling term between ME and T')
-parser.add_argument('--lambda_ME_M',     default=1.0,           type=float, help='coupling term between ME and M')
-parser.add_argument('--lambda_ME_E',     default=1.0,           type=float, help='coupling term between ME and E')
-parser.add_argument('--scale_factor',    default=0.3,           type=float, help='scaling factor for interpolation')
-parser.add_argument('--latent_dim',      default=5,             type=int,   help='Number of latent dims')
-parser.add_argument('--M_noise',         default=0.0,           type=float, help='std of the gaussian noise added to M data')
-parser.add_argument('--E_noise',         default=0.05,          type=float, help='std of the gaussian noise added to E data')
-parser.add_argument('--n_epochs',        default=50000,         type=int,   help='Number of epochs to train')
-parser.add_argument('--n_fold',          default=0,             type=int,   help='kth fold in 10-fold CV splits')
-parser.add_argument('--run_iter',        default=0,             type=int,   help='Run-specific id')
-parser.add_argument('--config_file',     default='config.toml', type=str,   help='config file with data paths')
-parser.add_argument('--model_id',        default='ME_T',     type=str,   help='Model-specific id')
-parser.add_argument('--exp_name',        default='DEBUG',       type=str,   help='Experiment set')
+parser.add_argument('--alpha_T',         default=1.0,          type=float, help='T reconstruction loss weight')
+parser.add_argument('--alpha_M',         default=1.0,          type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_E',         default=1.0,          type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_ME',        default=1.0,          type=float, help='ME reconstruction loss weight')
+parser.add_argument('--lambda_ME_T',     default=1.0,          type=float, help='coupling loss weight between ME and T')
+parser.add_argument('--lambda_ME_M',     default=1.0,          type=float, help='coupling loss weight between ME and M')
+parser.add_argument('--lambda_ME_E',     default=1.0,          type=float, help='coupling loss weight between ME and E')
+parser.add_argument('--scale_factor',    default=0.3,          type=float, help='scaling factor for M_data interpolation')
+parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
+parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
+parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
+parser.add_argument('--n_epochs',        default=50000,          type=int,   help='Number of epochs to train')
+parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
+parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
+parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
+parser.add_argument('--model_id',        default='ME_T',       type=str,   help='Model-specific id')
+parser.add_argument('--exp_name',        default='DEBUG',      type=str,   help='Experiment set')
+parser.add_argument('--log_weights',     default=False,        type=bool,  help='To log the model w')
 
 
 
@@ -62,17 +64,18 @@ def main(alpha_T=1.0,
          n_fold=0,
          run_iter=0,
          model_id='T_EM',
-         exp_name='DEBUG'):
+         exp_name='DEBUG',
+         log_weights=False):
 
 
+    global epoch, val_loss, train_loss
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
     fileid = (model_id + f'_aT_{str(alpha_T)}_aM_{str(alpha_M)}_aE_{str(alpha_E)}_aME_{str(alpha_ME)}_' +
               f'lambda_ME_T_{str(lambda_ME_T)}_lambda_ME_M_{str(lambda_ME_M)}_lambda_ME_E_{str(lambda_ME_E)}_' +
-              f'noise_{str(M_noise)}_scale_{str(scale_factor)}_' +
-              f'ld_{latent_dim:d}_ne_{n_epochs:d}_' +
-              f'ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
+              f'Enoise_{str(E_noise)}_Mnoise_{str(M_noise)}_scale_{str(scale_factor)}_' +
+              f'ld_{latent_dim:d}_ne_{n_epochs:d}_ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
 
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
         # Run the model in the evaluation mode
@@ -82,7 +85,7 @@ def main(alpha_T=1.0,
                                                            astensor_(data['XM']),
                                                            astensor_(data['Xsd']),
                                                            astensor_(data['XE'])))
-
+            # convert model output tensors to numpy
             for dict in [z_dict, xr_dict, mask_dict]:
                 for k, v in dict.items():
                     dict[k] = tonumpy(v)
@@ -91,20 +94,19 @@ def main(alpha_T=1.0,
             # Run classification task
             classification_acc = {}
             n_class = {}
-
             for (z, mask, key) in zip(
-                    [z_dict['zt'], z_dict['zm'], z_dict['ze'], z_dict['zme']],
-                    [mask_dict['valid_T'], mask_dict['valid_M'], mask_dict['valid_E'], mask_dict['valid_ME']],
-                    ["zt", "zm", "ze", "zme"]):
+                            [z_dict['zt'], z_dict['zm'], z_dict['ze'], z_dict['zme']],
+                            [mask_dict['valid_T'], mask_dict['valid_M'], mask_dict['valid_E'], mask_dict['valid_ME']],
+                            ["zt", "zm", "ze", "zme"]):
 
-                masked_labels = data['cluster_label'][mask]
-                small_types_mask = get_small_types_mask(masked_labels, 7)
-                X = z[small_types_mask]
-                _, y = np.unique(masked_labels[small_types_mask], return_inverse=True)
-                classification_acc[key], n_class[key] = run_LogisticRegression(X, y, y, 0.1)
+                classification_acc[key], n_class[key] = run_LogisticRegression(
+                    X=z, y=data['cluster_label'][mask], test_size=0.1, min_label_size=7)
+
+                # Logging
                 out_key = "Classification_acc_" + key
                 tb_writer.add_scalar(out_key, classification_acc[key], epoch)
                 print(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
+
 
         model.train()
 
@@ -126,6 +128,7 @@ def main(alpha_T=1.0,
                     'E_class': n_class['ze'],
                     'ME_class': n_class['zme']}
 
+        # saving the embeddings, masks and classification_acc
         for dict in [z_dict, xr_dict, mask_dict]:
             for key, value in dict.items():
                 savedict[key] = value
@@ -206,15 +209,14 @@ def main(alpha_T=1.0,
                 astensor_(batch['Xsd']),
                 astensor_(batch['XE'])))
 
-            print("")
-            loss = model.alpha_T * loss_dict['recon_T'] + \
-                   model.alpha_E * loss_dict['recon_E'] + \
-                   model.alpha_M * loss_dict['recon_M'] + \
-                   model.alpha_M * loss_dict['recon_sd'] + \
-                   model.alpha_ME * loss_dict['recon_ME'] + \
-                   model.lambda_ME_M * loss_dict['cpl_ME_M'] + \
-                   model.lambda_ME_T * loss_dict['cpl_ME_T'] + \
-                   model.lambda_ME_E * loss_dict['cpl_ME_E']
+            loss = loss_dict['recon_T'] * model.alpha_T + \
+                   loss_dict['recon_M'] * model.alpha_M + \
+                   loss_dict['recon_sd'] * model.alpha_M + \
+                   loss_dict['recon_E'] * model.alpha_E + \
+                   loss_dict['recon_ME'] * model.alpha_ME + \
+                   loss_dict['cpl_ME_M'] * model.lambda_ME_M + \
+                   loss_dict['cpl_ME_E'] * model.lambda_ME_E + \
+                   loss_dict['cpl_ME_T'] * model.lambda_ME_T
 
             # set require grad for the shared module in the M and in the E equal to False
             # This way, we will not update shared modules in the M or in the E autoencoder
@@ -235,6 +237,8 @@ def main(alpha_T=1.0,
             for k, v in loss_dict.items():
                 train_loss[k] += loss_dict[k]
 
+        if log_weights:
+            Log_model_weights_histogram(model=model, tensorb_writer=tb_writer, epoch=epoch)
 
         # validation
         model.eval()
@@ -281,8 +285,8 @@ def main(alpha_T=1.0,
         tb_writer.add_scalar('Validation/cpl_ME_E', val_loss['cpl_ME_E'], epoch)
 
 
-        # Save checkpoint
-        if (epoch) % 100 == 0:
+        #Save checkpoint
+        if (epoch) % 10000 == 0:
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
             save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
 

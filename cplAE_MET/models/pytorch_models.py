@@ -30,8 +30,8 @@ class Encoder_M_shared(nn.Module):
         self.pool3d_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
         self.conv3d_2 = nn.Conv3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.pool3d_2 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-        self.fcm1 = nn.Linear(240, 10)
-        self.fc1 = nn.Linear(11, 11)
+        self.fcm0 = nn.Linear(240, 10)
+        self.fc0 = nn.Linear(11, 11)
 
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
@@ -152,10 +152,11 @@ class Encoder_M_shared(nn.Module):
         x, pool1_ind = self.pool3d_1(self.relu(self.conv3d_1(xm)))
         x, pool2_ind = self.pool3d_2(self.relu(self.conv3d_2(x)))
         x = x.view(x.shape[0], -1)
-        x = self.elu(self.fcm1(x))
+        # x = x.view((x.shape[0], x.shape[1] * x.shape[2] * x.shape[3] * x.shape[4]))
+        x = self.elu(self.fcm0(x))
 
         x = torch.cat(tensors=(x, xsd), dim=1)
-        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc0(x))
 
         return xm, xsd, pool1_ind, pool2_ind, x
 
@@ -172,7 +173,7 @@ class Encoder_M_specific(nn.Module):
                  latent_dim=100):
         super(Encoder_M_specific, self).__init__()
 
-        self.fc2 = nn.Linear(11, latent_dim)
+        self.fc0 = nn.Linear(11, latent_dim)
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
                                  momentum=0.1, track_running_stats=True)
 
@@ -181,7 +182,7 @@ class Encoder_M_specific(nn.Module):
 
     def forward(self, x):
 
-        z = self.bn(self.fc2(x))
+        z = self.bn(self.fc0(x))
 
         return z
 
@@ -203,8 +204,8 @@ class Decoder_M_specific(nn.Module):
                  in_dim=3):
 
         super(Decoder_M_specific, self).__init__()
-        self.fc1_dec = nn.Linear(in_dim, 11)
-        self.fc2_dec = nn.Linear(11, 11)
+        self.fc0 = nn.Linear(in_dim, 11)
+        self.fc1 = nn.Linear(11, 11)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
@@ -212,8 +213,8 @@ class Decoder_M_specific(nn.Module):
         return
 
     def forward(self, x):
-        x = self.elu(self.fc1_dec(x))
-        x = self.elu(self.fc2_dec(x))
+        x = self.elu(self.fc0(x))
+        x = self.elu(self.fc1(x))
         return x
 
 
@@ -229,7 +230,7 @@ class Decoder_M_shared(nn.Module):
     def __init__(self):
 
         super(Decoder_M_shared, self).__init__()
-        self.fcm_dec = nn.Linear(10, 240)
+        self.fcm0 = nn.Linear(10, 240)
 
         self.convT1_1 = nn.ConvTranspose3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
         self.convT1_2 = nn.ConvTranspose3d(1, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
@@ -248,7 +249,7 @@ class Decoder_M_shared(nn.Module):
         xrsd = x[:, 10]
         xrsd = torch.clamp(xrsd.view(-1, 1), min=0, max=1)
 
-        xrm = self.elu(self.fcm_dec(xrm))
+        xrm = self.elu(self.fcm0(xrm))
         xrm = xrm.view(-1, 1, 15, 4, 4)
         xrm = self.elu(self.unpool3d_1(xrm, p2_ind))
         xrm = self.convT1_1(xrm)
@@ -320,7 +321,7 @@ class Decoder_T(nn.Module):
         self.fc1 = nn.Linear(int_dim, int_dim)
         self.fc2 = nn.Linear(int_dim, int_dim)
         self.fc3 = nn.Linear(int_dim, int_dim)
-        self.Xout = nn.Linear(int_dim, out_dim)
+        self.fc4 = nn.Linear(int_dim, out_dim)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
         return
@@ -330,10 +331,8 @@ class Decoder_T(nn.Module):
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
         x = self.relu(self.fc3(x))
-        x = self.relu(self.Xout(x))
+        x = self.relu(self.fc4(x))
         return x
-
-
 
 
 class Encoder_E_shared(nn.Module):
@@ -406,13 +405,13 @@ class Encoder_E_specific(nn.Module):
 
 
         super(Encoder_E_specific, self).__init__()
-        self.fc4 = nn.Linear(int_dim, latent_dim)
+        self.fc0 = nn.Linear(int_dim, latent_dim)
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
                                  momentum=0.1, track_running_stats=True)
         return
 
     def forward(self, x):
-        z = self.bn(self.fc4(x))
+        z = self.bn(self.fc0(x))
         return z
 
 
@@ -462,20 +461,20 @@ class Decoder_E_shared(nn.Module):
                  out_dim=134):
 
         super(Decoder_E_shared, self).__init__()
+        self.fc0 = nn.Linear(int_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
         self.fc2 = nn.Linear(int_dim, int_dim)
-        self.fc3 = nn.Linear(int_dim, int_dim)
-        self.Xout = nn.Linear(int_dim, out_dim)
+        self.fc3 = nn.Linear(int_dim, out_dim)
         self.relu = nn.ReLU()
 
         return
 
     def forward(self, x):
+        x = self.relu(self.fc0(x))
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
-        x = self.relu(self.fc3(x))
         # x = self.drp(x)
-        x = self.Xout(x)
+        x = self.fc3(x)
         return x
 
 
@@ -496,9 +495,9 @@ class Encoder_ME(nn.Module):
 
         super(Encoder_ME, self).__init__()
 
-        self.fc_me1 = nn.Linear(in_dim, int_dim)
-        self.fc_me2 = nn.Linear(int_dim, int_dim)
-        self.fc_me3 = nn.Linear(int_dim, latent_dim)
+        self.fc0 = nn.Linear(in_dim, int_dim)
+        self.fc1 = nn.Linear(int_dim, int_dim)
+        self.fc2 = nn.Linear(int_dim, latent_dim)
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
@@ -508,9 +507,9 @@ class Encoder_ME(nn.Module):
 
     def forward(self, x):
 
-        x = self.elu(self.fc_me1(x))
-        x = self.elu(self.fc_me2(x))
-        x = self.elu(self.fc_me3(x))
+        x = self.elu(self.fc0(x))
+        x = self.elu(self.fc1(x))
+        x = self.elu(self.fc2(x))
         zme = self.bn(x)
 
         return zme
@@ -532,18 +531,18 @@ class Decoder_ME(nn.Module):
                  out_dim=51):
 
         super(Decoder_ME, self).__init__()
-        self.fc_me1 = nn.Linear(in_dim, int_dim)
-        self.fc_me2 = nn.Linear(int_dim, int_dim)
-        self.fc_me3 = nn.Linear(int_dim, out_dim)
+        self.fc0 = nn.Linear(in_dim, int_dim)
+        self.fc1 = nn.Linear(int_dim, int_dim)
+        self.fc2 = nn.Linear(int_dim, out_dim)
 
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         return
 
     def forward(self, x):
-        x = self.relu(self.fc_me1(x))
-        x = self.relu(self.fc_me2(x))
-        x = self.relu(self.fc_me3(x))
+        x = self.relu(self.fc0(x))
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
 
         return x
 
@@ -641,7 +640,6 @@ class Model_T_ME(nn.Module):
         loss_ij = zi_zj_mse / torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
         return loss_ij
 
-
     @staticmethod
     def mean_sq_diff(x, y):
         return torch.mean(torch.square(x - y))
@@ -675,21 +673,16 @@ class Model_T_ME(nn.Module):
         valid_E = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
         valid_ME = torch.where((valid_E) & (valid_M), True, False)
 
-
-        # M_only = torch.where((valid_M) & ~(valid_T) & ~(valid_E), True, False)
-        # E_only = torch.where((valid_E) & ~(valid_M) & ~(valid_T), True, False)
-        # T_only = torch.where((valid_T) & ~(valid_M) & ~(valid_E), True, False)
-        # ME_only = torch.where((valid_M) & (valid_E) & ~(valid_T), True, False)
-        # MT_only = torch.where((valid_M) & (valid_T) & ~(valid_E), True, False)
-        # TE_only = torch.where((valid_T) & (valid_E) & ~(valid_M), True, False)
-
         assert (valid_sd == valid_M).all()
 
         # masks with the size of each modality
-        ME_pairs_in_Mdata = valid_ME[valid_M] #size of this mask is the same as M
-        ME_pairs_in_Edata = valid_ME[valid_E] #size of this mask is the same as E
-        ME_pairs_in_Tdata = valid_ME[valid_T] #size of this mask is the same as T
+        ME_cells_in_Mdata = valid_ME[valid_M] #size of this mask is the same as M
+        ME_cells_in_Edata = valid_ME[valid_E] #size of this mask is the same as E
+        ME_cells_in_Tdata = valid_ME[valid_T] #size of this mask is the same as T
 
+        T_cells_in_MEdata = valid_T[valid_ME]
+        M_cells_in_MEdata = valid_M[valid_ME]
+        E_cells_in_MEdata = valid_E[valid_ME]
 
         ## removing nans
         XT = XT[valid_T]
@@ -711,8 +704,8 @@ class Model_T_ME(nn.Module):
         ze = self.eE_specific(xe_inter.detach()) #Also detaching the xe_inter
 
         ## ME
-        XME_inter = torch.cat(tensors=(xmsd_inter[ME_pairs_in_Mdata],
-                                       xe_inter[ME_pairs_in_Edata]), dim=1)
+        XME_inter = torch.cat(tensors=(xmsd_inter[ME_cells_in_Mdata],
+                                       xe_inter[ME_cells_in_Edata]), dim=1)
         zme = self.eME(XME_inter)
 
         ############################## DECODERS
@@ -731,8 +724,8 @@ class Model_T_ME(nn.Module):
         XrME_inter = self.dME(zme)
         ## decoder M for me inputs
         XrM_from_zme, Xrsd_from_zme = self.dM_shared(XrME_inter[:, :11],
-                                                     pool_ind1[ME_pairs_in_Mdata],
-                                                     pool_ind2[ME_pairs_in_Mdata])
+                                                     pool_ind1[ME_cells_in_Mdata],
+                                                     pool_ind2[ME_cells_in_Mdata])
         ## E for me inputs
         XrE_from_zme = self.dE_shared(XrME_inter[:, 11:])
 
@@ -742,13 +735,13 @@ class Model_T_ME(nn.Module):
         loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
         loss_dict['recon_M'] = self.mean_sq_diff(xm_aug, XrM)
         loss_dict['recon_sd'] = self.mean_sq_diff(Xsd, Xrsd)
-        loss_dict['recon_ME'] = self.mean_sq_diff(xm_aug[ME_pairs_in_Mdata], XrM_from_zme) + \
-                                self.mean_sq_diff(Xsd[ME_pairs_in_Mdata], Xrsd_from_zme) + \
-                                self.mean_sq_diff(XE[ME_pairs_in_Edata], XrE_from_zme)
+        loss_dict['recon_ME'] = self.mean_sq_diff(xm_aug[ME_cells_in_Mdata], XrM_from_zme) + \
+                                self.mean_sq_diff(Xsd[ME_cells_in_Mdata], Xrsd_from_zme) + \
+                                self.mean_sq_diff(XE[ME_cells_in_Edata], XrE_from_zme)
 
-        loss_dict['cpl_ME_T'] = self.min_var_loss(zt[ME_pairs_in_Tdata], zme)
-        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_pairs_in_Mdata], zme.detach())
-        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_pairs_in_Edata], zme.detach())
+        loss_dict['cpl_ME_T'] = self.min_var_loss(zt.detach()[ME_cells_in_Tdata], zme[T_cells_in_MEdata])
+        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_cells_in_Mdata], zme[M_cells_in_MEdata].detach())
+        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_cells_in_Edata], zme[E_cells_in_MEdata].detach())
 
         ############################## get output dicts
         z_dict = self.get_output_dict([zt, zmsd, ze, zme], ["zt", "zm", "ze", "zme"])

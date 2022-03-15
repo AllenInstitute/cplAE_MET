@@ -19,19 +19,24 @@ def get_small_types_mask(types, min_size):
     return np.array([False if t in type_rm else True for t in types])
 
 
-def run_LogisticRegression(X, y, stratify, test_size):
+def run_LogisticRegression(X, y, test_size, min_label_size=7):
     '''
 
     Args:
         X: input array with the size of (n_cells, n_features)
         y: labels for each X entry with the size of (n_cells, )
-        stratify: the column to be used for startifed split
         test_size: float value for the split
+        min_label_size: all clusters with less than min_label_size number of members will be removed
 
     Returns:
         accuracy of the classification task
 
     '''
-    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=stratify, test_size=test_size, random_state=0)
+    small_types_mask = get_small_types_mask(y, min_label_size)
+    X = X[small_types_mask]
+    _, y = np.unique(y[small_types_mask], return_inverse=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
     clf = LogisticRegression(random_state=0, max_iter=10000).fit(X_train, y_train)
-    return clf.score(X_test, y_test) * 100, len(Counter(y_test))
+    classification_acc = clf.score(X_test, y_test) * 100
+    n_class = len(Counter(y_test))
+    return classification_acc, n_class
