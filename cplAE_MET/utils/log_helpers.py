@@ -1,0 +1,88 @@
+
+def Log_model_weights_histogram(model, tensorb_writer, epoch):
+    ################################# T
+    tensorb_writer.add_histogram('eT/Weight/fc0', model.eT.fc0.weight, epoch)
+    tensorb_writer.add_histogram('eT/Weight/fc1', model.eT.fc1.weight, epoch)
+    tensorb_writer.add_histogram('eT/Weight/fc2', model.eT.fc2.weight, epoch)
+    tensorb_writer.add_histogram('eT/Weight/fc3', model.eT.fc3.weight, epoch)
+    tensorb_writer.add_histogram('eT/Weight/fc4', model.eT.fc4.weight, epoch)
+    tensorb_writer.add_histogram('dT/Weight/fc0', model.dT.fc0.weight, epoch)
+    tensorb_writer.add_histogram('dT/Weight/fc1', model.dT.fc1.weight, epoch)
+    tensorb_writer.add_histogram('dT/Weight/fc2', model.dT.fc2.weight, epoch)
+    tensorb_writer.add_histogram('dT/Weight/fc3', model.dT.fc3.weight, epoch)
+    tensorb_writer.add_histogram('dT/Weight/fc4', model.dT.fc4.weight, epoch)
+    tensorb_writer.add_histogram('eT/Bias/fc0', model.eT.fc0.bias, epoch)
+    tensorb_writer.add_histogram('eT/Bias/fc1', model.eT.fc1.bias, epoch)
+    tensorb_writer.add_histogram('eT/Bias/fc2', model.eT.fc2.bias, epoch)
+    tensorb_writer.add_histogram('eT/Bias/fc3', model.eT.fc3.bias, epoch)
+    tensorb_writer.add_histogram('eT/Bias/fc4', model.eT.fc4.bias, epoch)
+    tensorb_writer.add_histogram('dT/Bias/fc0', model.dT.fc0.bias, epoch)
+    tensorb_writer.add_histogram('dT/Bias/fc1', model.dT.fc1.bias, epoch)
+    tensorb_writer.add_histogram('dT/Bias/fc2', model.dT.fc2.bias, epoch)
+    tensorb_writer.add_histogram('dT/Bias/fc3', model.dT.fc3.bias, epoch)
+    tensorb_writer.add_histogram('dT/Bias/fc4', model.dT.fc4.bias, epoch)
+
+    ################################# E
+    # E_shared
+    tensorb_writer.add_histogram('eE_shared/Weight/fc0', model.eE_shared.fc0.weight, epoch)
+    tensorb_writer.add_histogram('eE_shared/Weight/fc1', model.eE_shared.fc1.weight, epoch)
+    tensorb_writer.add_histogram('eE_shared/Weight/fc2', model.eE_shared.fc2.weight, epoch)
+    tensorb_writer.add_histogram('eE_shared/Weight/fc3', model.eE_shared.fc3.weight, epoch)
+    tensorb_writer.add_histogram('dE_shared/Weight/fc0', model.dE_shared.fc0.weight, epoch)
+    tensorb_writer.add_histogram('dE_shared/Weight/fc1', model.dE_shared.fc1.weight, epoch)
+    tensorb_writer.add_histogram('dE_shared/Weight/fc2', model.dE_shared.fc2.weight, epoch)
+    tensorb_writer.add_histogram('dE_shared/Weight/fc3', model.dE_shared.fc3.weight, epoch)
+    # E_specific
+    tensorb_writer.add_histogram('eE_specific/Weight/fc0', model.eE_specific.fc0.weight, epoch)
+    tensorb_writer.add_histogram('dE_specific/Weight/fc0', model.dE_specific.fc0.weight, epoch)
+    # E_shared
+    tensorb_writer.add_histogram('eE_shared/Bias/fc0', model.eE_shared.fc0.bias, epoch)
+    tensorb_writer.add_histogram('eE_shared/Bias/fc1', model.eE_shared.fc1.bias, epoch)
+    tensorb_writer.add_histogram('eE_shared/Bias/fc2', model.eE_shared.fc2.bias, epoch)
+    tensorb_writer.add_histogram('eE_shared/Bias/fc3', model.eE_shared.fc3.bias, epoch)
+    tensorb_writer.add_histogram('dE_shared/Bias/fc0', model.dE_shared.fc0.bias, epoch)
+    tensorb_writer.add_histogram('dE_shared/Bias/fc1', model.dE_shared.fc1.bias, epoch)
+    tensorb_writer.add_histogram('dE_shared/Bias/fc2', model.dE_shared.fc2.bias, epoch)
+    tensorb_writer.add_histogram('dE_shared/Bias/fc3', model.dE_shared.fc3.bias, epoch)
+    # E_specific
+    tensorb_writer.add_histogram('dE_specific/Bias/fc0', model.eE_specific.fc0.bias, epoch)
+    tensorb_writer.add_histogram('dE_specific/Bias/fc0', model.dE_specific.fc0.bias, epoch)
+
+    ################################# M
+    # M_shared
+    tensorb_writer.add_histogram('eM_shared/Weight/conv3d_1', model.eM_shared.conv3d_1.weight, epoch)
+    tensorb_writer.add_histogram('eM_shared/Weight/conv3d_2', model.eM_shared.conv3d_2.weight, epoch)
+    tensorb_writer.add_histogram('eM_shared/Weight/fc0', model.eM_shared.fc0.weight, epoch)
+    tensorb_writer.add_histogram('eM_shared/Weight/fcm0', model.eM_shared.fcm0.weight, epoch)
+    tensorb_writer.add_histogram('dM_shared/Weight/convT1_1', model.dM_shared.convT1_1.weight, epoch)
+    tensorb_writer.add_histogram('dM_shared/Weight/convT1_2', model.dM_shared.convT1_2.weight, epoch)
+    tensorb_writer.add_histogram('dM_shared/Weight/fcm0', model.dM_shared.fcm0.weight, epoch)
+    # M_specific
+    tensorb_writer.add_histogram('eM_specific/Weight/fc0', model.eM_specific.fc0.weight, epoch)
+    tensorb_writer.add_histogram('dM_specific/Weight/fc0', model.dM_specific.fc0.weight, epoch)
+    tensorb_writer.add_histogram('dM_specific/Weight/fc1', model.dM_specific.fc1.weight, epoch)
+    tensorb_writer.add_histogram('eM_shared/Bias/conv3d_1', model.eM_shared.conv3d_1.bias, epoch)
+    tensorb_writer.add_histogram('eM_shared/Bias/conv3d_2', model.eM_shared.conv3d_2.bias, epoch)
+    tensorb_writer.add_histogram('eM_shared/Bias/fc0', model.eM_shared.fc0.bias, epoch)
+    tensorb_writer.add_histogram('eM_shared/Bias/fcm0', model.eM_shared.fcm0.bias, epoch)
+    tensorb_writer.add_histogram('dM_shared/Bias/convT1_1', model.dM_shared.convT1_1.bias, epoch)
+    tensorb_writer.add_histogram('dM_shared/Bias/convT1_2', model.dM_shared.convT1_2.bias, epoch)
+    tensorb_writer.add_histogram('dM_shared/Bias/fcm0', model.dM_shared.fcm0.bias, epoch)
+    # M_specific
+    tensorb_writer.add_histogram('eM_specific/Bias/fc0', model.eM_specific.fc0.bias, epoch)
+    tensorb_writer.add_histogram('dM_specific/Bias/fc0', model.dM_specific.fc0.bias, epoch)
+    tensorb_writer.add_histogram('dM_specific/Bias/fc1', model.dM_specific.fc1.bias, epoch)
+
+    ################################# ME
+    tensorb_writer.add_histogram('eME/Weight/fc0', model.eME.fc0.weight, epoch)
+    tensorb_writer.add_histogram('eME/Weight/fc1', model.eME.fc1.weight, epoch)
+    tensorb_writer.add_histogram('eME/Weight/fc2', model.eME.fc2.weight, epoch)
+    tensorb_writer.add_histogram('dME/Weight/fc0', model.dME.fc0.weight, epoch)
+    tensorb_writer.add_histogram('dME/Weight/fc1', model.dME.fc1.weight, epoch)
+    tensorb_writer.add_histogram('dME/Weight/fc2', model.dME.fc2.weight, epoch)
+    tensorb_writer.add_histogram('eME/Bias/fc0', model.eME.fc0.bias, epoch)
+    tensorb_writer.add_histogram('eME/Bias/fc1', model.eME.fc1.bias, epoch)
+    tensorb_writer.add_histogram('eME/Bias/fc2', model.eME.fc2.bias, epoch)
+    tensorb_writer.add_histogram('dME/Bias/fc0', model.dME.fc0.bias, epoch)
+    tensorb_writer.add_histogram('dME/Bias/fc1', model.dME.fc1.bias, epoch)
+    tensorb_writer.add_histogram('dME/Bias/fc2', model.dME.fc2.bias, epoch)
