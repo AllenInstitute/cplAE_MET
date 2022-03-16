@@ -152,7 +152,6 @@ class Encoder_M_shared(nn.Module):
         x, pool1_ind = self.pool3d_1(self.relu(self.conv3d_1(xm)))
         x, pool2_ind = self.pool3d_2(self.relu(self.conv3d_2(x)))
         x = x.view(x.shape[0], -1)
-        # x = x.view((x.shape[0], x.shape[1] * x.shape[2] * x.shape[3] * x.shape[4]))
         x = self.elu(self.fcm0(x))
 
         x = torch.cat(tensors=(x, xsd), dim=1)
@@ -260,7 +259,7 @@ class Decoder_M_shared(nn.Module):
 
 
 
-class Encoder_T(nn.Module):
+class Encoder_T_specific(nn.Module):
     """
     Encoder for transcriptomic data
 
@@ -277,7 +276,7 @@ class Encoder_T(nn.Module):
                  latent_dim=3,
                  dropout_p=0.5):
 
-        super(Encoder_T, self).__init__()
+        super(Encoder_T_specific, self).__init__()
         self.drp = nn.Dropout(p=dropout_p)
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
@@ -301,7 +300,7 @@ class Encoder_T(nn.Module):
         return z
 
 
-class Decoder_T(nn.Module):
+class Decoder_T_specific(nn.Module):
     """
     Decoder for transcriptomic data
 
@@ -316,7 +315,7 @@ class Decoder_T(nn.Module):
                  int_dim=50,
                  out_dim=1252):
 
-        super(Decoder_T, self).__init__()
+        super(Decoder_T_specific, self).__init__()
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
         self.fc2 = nn.Linear(int_dim, int_dim)
@@ -478,7 +477,7 @@ class Decoder_E_shared(nn.Module):
         return x
 
 
-class Encoder_ME(nn.Module):
+class Encoder_ME_specific(nn.Module):
     """
     Encoder for EM data.
 
@@ -493,7 +492,7 @@ class Encoder_ME(nn.Module):
                  int_dim=20,
                  latent_dim=5):
 
-        super(Encoder_ME, self).__init__()
+        super(Encoder_ME_specific, self).__init__()
 
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
@@ -515,7 +514,7 @@ class Encoder_ME(nn.Module):
         return zme
 
 
-class Decoder_ME(nn.Module):
+class Decoder_ME_specific(nn.Module):
     """
     Decoder for ME data.
 
@@ -530,7 +529,7 @@ class Decoder_ME(nn.Module):
                  int_dim=20,
                  out_dim=51):
 
-        super(Decoder_ME, self).__init__()
+        super(Decoder_ME_specific, self).__init__()
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
         self.fc2 = nn.Linear(int_dim, out_dim)
@@ -563,6 +562,7 @@ class Model_T_ME(nn.Module):
                  alpha_E=1.0,
                  alpha_ME=1.0,
                  lambda_ME_T=1.0,
+                 lambda_tune_ME_T=1.0,
                  lambda_ME_M=1.0,
                  lambda_ME_E=1.0,
                  scale_factor=0.,
@@ -576,6 +576,7 @@ class Model_T_ME(nn.Module):
         self.alpha_E = alpha_E
         self.alpha_ME = alpha_ME
         self.lambda_ME_T = lambda_ME_T
+        self.lambda_tune_ME_T = lambda_tune_ME_T
         self.lambda_ME_M = lambda_ME_M
         self.lambda_ME_E = lambda_ME_E
         self.scale_factor = scale_factor
@@ -584,8 +585,8 @@ class Model_T_ME(nn.Module):
         self.latent_dim = latent_dim
 
         # T
-        self.eT = Encoder_T(latent_dim=self.latent_dim)
-        self.dT = Decoder_T(in_dim=self.latent_dim)
+        self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
+        self.dT = Decoder_T_specific(in_dim=self.latent_dim)
 
         # M
         self.eM_shared = Encoder_M_shared(M_noise=self.M_noise, scale_factor=self.scale_factor)
@@ -604,8 +605,8 @@ class Model_T_ME(nn.Module):
 
 
         # ME
-        self.eME = Encoder_ME(in_dim=51, int_dim=20, latent_dim=self.latent_dim)
-        self.dME = Decoder_ME(in_dim=self.latent_dim, int_dim=20, out_dim=51)
+        self.eME = Encoder_ME_specific(in_dim=51, int_dim=20, latent_dim=self.latent_dim)
+        self.dME = Decoder_ME_specific(in_dim=self.latent_dim, int_dim=20, out_dim=51)
 
         return
 
@@ -616,6 +617,7 @@ class Model_T_ME(nn.Module):
         hparam_dict['alpha_E'] = self.alpha_E
         hparam_dict['alpha_ME'] = self.alpha_ME
         hparam_dict['lambda_ME_T'] = self.lambda_ME_T
+        hparam_dict['lambda_tune_ME_T'] = self.lambda_tune_ME_T
         hparam_dict['lambda_ME_M'] = self.lambda_ME_M
         hparam_dict['lambda_ME_E'] = self.lambda_ME_E
         hparam_dict['scale_factor'] = self.scale_factor
@@ -740,6 +742,7 @@ class Model_T_ME(nn.Module):
                                 self.mean_sq_diff(XE[ME_cells_in_Edata], XrE_from_zme)
 
         loss_dict['cpl_ME_T'] = self.min_var_loss(zt.detach()[ME_cells_in_Tdata], zme[T_cells_in_MEdata])
+        loss_dict['cpl_T_ME'] = self.min_var_loss(zt[ME_cells_in_Tdata], zme.detach()[T_cells_in_MEdata])
         loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_cells_in_Mdata], zme[M_cells_in_MEdata].detach())
         loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_cells_in_Edata], zme[E_cells_in_MEdata].detach())
 
@@ -770,8 +773,8 @@ class Model_T_AE(nn.Module):
         self.latent_dim = latent_dim
         self.alpha_T = alpha_T
 
-        self.eT = Encoder_T(latent_dim=self.latent_dim)
-        self.dT = Decoder_T(latent_dim=self.latent_dim)
+        self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
+        self.dT = Decoder_T_specific()
 
         return
 
@@ -824,8 +827,10 @@ class Model_E_AE(nn.Module):
         self.alpha_E = alpha_E
         self.E_noise = E_noise
 
-        self.eE = Encoder_E(latent_dim=self.latent_dim, E_noise=self.E_noise)
-        self.dE = Decoder_E(latent_dim=self.latent_dim)
+        self.eE_shared = Encoder_E_shared(E_noise=self.E_noise)
+        self.eE_specific = Encoder_E_specific(latent_dim=self.latent_dim)
+        self.dE_specific = Decoder_E_specific()
+        self.dE_shared = Decoder_E_shared()
 
         return
 
@@ -854,8 +859,10 @@ class Model_E_AE(nn.Module):
         XE = torch.nan_to_num(XE, nan=0.)
 
         # EM arm forward pass
-        z = self.eE(XE)
-        XrE = self.dE(z)
+        x_inter = self.eE_shared(XE)
+        z = self.eE_specific(x_inter)
+        xr_inter = self.dE_specific(z)
+        XrE = self.dE_shared(xr_inter)
 
         # Loss calculations
         loss_dict = {}
@@ -887,11 +894,10 @@ class Model_M_AE(nn.Module):
         self.alpha_M = alpha_M
         self.alpha_sd = alpha_sd
 
-        self.eM = Encoder_M(latent_dim=self.latent_dim,
-                            M_noise=self.M_noise,
-                            scale_factor=self.scale_factor)
-
-        self.dM = Decoder_M(in_dim=self.latent_dim)
+        self.eM_shared = Encoder_M_shared(M_noise=self.M_noise, scale_factor=self.scale_factor)
+        self.eM_specific = Encoder_M_specific(latent_dim=self.latent_dim)
+        self.dM_specific = Decoder_M_specific(in_dim=self.latent_dim)
+        self.dM_shared = Decoder_M_shared()
         return
 
     def get_hparams(self):
@@ -917,7 +923,6 @@ class Model_M_AE(nn.Module):
         XM = inputs[0]
         Xsd = inputs[1]
         mask_XM_nans = ~torch.isnan(XM)
-        mask_XM_nonzero = XM != 0.
         valid_M = self.get_1D_mask(mask_XM_nans)
 
         # replacing nans in input with zeros
@@ -925,8 +930,10 @@ class Model_M_AE(nn.Module):
         Xsd = torch.nan_to_num(Xsd, nan=0.)
 
         # EM arm forward pass
-        z, xm, xsd, p1_ind, p2_ind = self.eM(XM, Xsd, mask_XM_nonzero)
-        XrM, Xr_sd = self.dM(z, p1_ind, p2_ind)
+        xm, xsd, p1_ind, p2_ind, x_inter = self.eM_shared(XM, Xsd)
+        z = self.eM_specific(x_inter)
+        xr_inter = self.dM_specific(z)
+        XrM, Xr_sd = self.dM_shared(xr_inter, p1_ind, p2_ind)
 
         # Loss calculations
         loss_dict = {}

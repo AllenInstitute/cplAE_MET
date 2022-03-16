@@ -20,17 +20,18 @@ from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_T',         default=1.0,          type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_M',         default=1.0,          type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_E',         default=1.0,          type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_M',         default=0.0,          type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_E',         default=0.0,          type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',        default=1.0,          type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_ME_T',     default=1.0,          type=float, help='coupling loss weight between ME and T')
-parser.add_argument('--lambda_ME_M',     default=1.0,          type=float, help='coupling loss weight between ME and M')
-parser.add_argument('--lambda_ME_E',     default=1.0,          type=float, help='coupling loss weight between ME and E')
+parser.add_argument('--lambda_tune_ME_T',default=1.0,          type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_ME_M',     default=0.0,          type=float, help='coupling loss weight between ME and M')
+parser.add_argument('--lambda_ME_E',     default=0.0,          type=float, help='coupling loss weight between ME and E')
 parser.add_argument('--scale_factor',    default=0.3,          type=float, help='scaling factor for M_data interpolation')
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
 parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
-parser.add_argument('--n_epochs',        default=50000,          type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=50000,        type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
 parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
@@ -53,6 +54,7 @@ def main(alpha_T=1.0,
          alpha_E=1.0,
          alpha_ME=1.0,
          lambda_ME_T=1.0,
+         lambda_tune_ME_T=1.0,
          lambda_ME_M=1.0,
          lambda_ME_E=1.0,
          scale_factor=0.3,
@@ -73,7 +75,8 @@ def main(alpha_T=1.0,
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
     fileid = (model_id + f'_aT_{str(alpha_T)}_aM_{str(alpha_M)}_aE_{str(alpha_E)}_aME_{str(alpha_ME)}_' +
-              f'lambda_ME_T_{str(lambda_ME_T)}_lambda_ME_M_{str(lambda_ME_M)}_lambda_ME_E_{str(lambda_ME_E)}_' +
+              f'lambda_ME_T_{str(lambda_ME_T)}_lambda_tune_ME_T_{str(lambda_tune_ME_T)}_lambda_ME_M_{str(lambda_ME_M)}_'
+              f'lambda_ME_E_{str(lambda_ME_E)}_' +
               f'Enoise_{str(E_noise)}_Mnoise_{str(M_noise)}_scale_{str(scale_factor)}_' +
               f'ld_{latent_dim:d}_ne_{n_epochs:d}_ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
 
@@ -99,8 +102,10 @@ def main(alpha_T=1.0,
                             [mask_dict['valid_T'], mask_dict['valid_M'], mask_dict['valid_E'], mask_dict['valid_ME']],
                             ["zt", "zm", "ze", "zme"]):
 
-                classification_acc[key], n_class[key] = run_LogisticRegression(
-                    X=z, y=data['cluster_label'][mask], test_size=0.1, min_label_size=7)
+                classification_acc[key], n_class[key] = run_QDA(X=z,
+                                                                y=data['cluster_label'][mask],
+                                                                test_size=0.1,
+                                                                min_label_size=7)
 
                 # Logging
                 out_key = "Classification_acc_" + key
@@ -188,6 +193,7 @@ def main(alpha_T=1.0,
                        lambda_ME_T=lambda_ME_T,
                        lambda_ME_M=lambda_ME_M,
                        lambda_ME_E=lambda_ME_E,
+                       lambda_tune_ME_T=lambda_tune_ME_T,
                        scale_factor=scale_factor,
                        E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0),
                        M_noise=M_noise,
@@ -209,14 +215,16 @@ def main(alpha_T=1.0,
                 astensor_(batch['Xsd']),
                 astensor_(batch['XE'])))
 
-            loss = loss_dict['recon_T'] * model.alpha_T + \
-                   loss_dict['recon_M'] * model.alpha_M + \
-                   loss_dict['recon_sd'] * model.alpha_M + \
-                   loss_dict['recon_E'] * model.alpha_E + \
-                   loss_dict['recon_ME'] * model.alpha_ME + \
+            loss = model.alpha_T * loss_dict['recon_T'] + \
+                   model.alpha_M * loss_dict['recon_M'] + \
+                   model.alpha_M * loss_dict['recon_sd'] + \
+                   model.alpha_E * loss_dict['recon_E'] + \
+                   model.alpha_ME * loss_dict['recon_ME'] + \
+                   model.lambda_ME_T * model.lambda_tune_ME_T * loss_dict['cpl_ME_T'] + \
+                   model.lambda_ME_T * (1 - model.lambda_tune_ME_T) * loss_dict['cpl_T_ME'] + \
                    loss_dict['cpl_ME_M'] * model.lambda_ME_M + \
-                   loss_dict['cpl_ME_E'] * model.lambda_ME_E + \
-                   loss_dict['cpl_ME_T'] * model.lambda_ME_T
+                   loss_dict['cpl_ME_E'] * model.lambda_ME_E
+
 
             # set require grad for the shared module in the M and in the E equal to False
             # This way, we will not update shared modules in the M or in the E autoencoder

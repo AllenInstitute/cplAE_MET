@@ -2,7 +2,7 @@ import numpy as np
 from collections import Counter
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 
 def get_small_types_mask(types, min_size):
     '''
@@ -36,7 +36,33 @@ def run_LogisticRegression(X, y, test_size, min_label_size=7):
     X = X[small_types_mask]
     _, y = np.unique(y[small_types_mask], return_inverse=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
+
     clf = LogisticRegression(random_state=0, max_iter=10000).fit(X_train, y_train)
+    classification_acc = clf.score(X_test, y_test) * 100
+    n_class = len(Counter(y_test))
+    return classification_acc, n_class
+
+
+def run_QDA(X, y, test_size, min_label_size=7):
+    '''
+
+    Args:
+        X: input array with the size of (n_cells, n_features)
+        y: labels for each X entry with the size of (n_cells, )
+        test_size: float value for the split
+        min_label_size: all clusters with less than min_label_size number of members will be removed
+
+    Returns:
+        accuracy of the classification task
+
+    '''
+    small_types_mask = get_small_types_mask(y, min_label_size)
+    X = X[small_types_mask]
+    _, y = np.unique(y[small_types_mask], return_inverse=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
+
+    clf = QuadraticDiscriminantAnalysis()
+    clf.fit(X_train, y_train)
     classification_acc = clf.score(X_test, y_test) * 100
     n_class = len(Counter(y_test))
     return classification_acc, n_class
