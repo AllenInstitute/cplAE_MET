@@ -190,6 +190,29 @@ class T_ME_Dataset(torch.utils.data.Dataset):
         return self.n_samples
 
 
+class TE_Dataset(torch.utils.data.Dataset):
+    """Create a torch dataset from inputs XT, XE
+
+    Args:
+        XT: np.array
+        XE: np.array
+    """
+    def __init__(self, XT, XE):
+        super(TE_Dataset).__init__()
+        self.XT = XT
+        self.XE = XE
+        self.n_samples = XT.shape[0]
+
+    def __getitem__(self, idx):
+        sample = {"XT": self.XT[idx, :],
+                  "XE": self.XE[idx, :]}
+
+        return sample
+
+    def __len__(self):
+        return self.n_samples
+
+
 
 class M_AE_Dataset(torch.utils.data.Dataset):
     """Create a torch dataset from inputs XM, sd.

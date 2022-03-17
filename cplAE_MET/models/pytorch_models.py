@@ -548,12 +548,21 @@ class Decoder_ME_specific(nn.Module):
 
 
 class Model_T_ME(nn.Module):
-    """E autoencoder
+    """T, ME autoencoder
 
     Args:
-        E_noise: standard deviation of additive gaussian noise
+        alpha_T: T reconstruction loss weight
+        alpha_M: M reconstruction loss weight
+        alpha_E: E reconstruction loss weight
+        alpha_ME: ME reconstruction loss weight
+        lambda_ME_T: coupling loss weight between ME and T
+        lambda_ME_M: coupling loss weight between ME and M
+        lambda_ME_E: coupling loss weight between ME and E
+        lambda_tune_ME_T: tuning parameter for bidirectional coupling term between ME and T arms
+        scale_factor: scaling factor for arbor density image augmentation
+        E_noise: standard deviation of additive gaussian noise for E data
+        M_noise: standard deviation of additive gaussian noise for M data
         latent_dim: dim for representations
-        alpha_E: loss weight for E reconstruction
     """
 
     def __init__(self,
@@ -741,10 +750,10 @@ class Model_T_ME(nn.Module):
                                 self.mean_sq_diff(Xsd[ME_cells_in_Mdata], Xrsd_from_zme) + \
                                 self.mean_sq_diff(XE[ME_cells_in_Edata], XrE_from_zme)
 
-        loss_dict['cpl_ME_T'] = self.min_var_loss(zt.detach()[ME_cells_in_Tdata], zme[T_cells_in_MEdata])
-        loss_dict['cpl_T_ME'] = self.min_var_loss(zt[ME_cells_in_Tdata], zme.detach()[T_cells_in_MEdata])
-        loss_dict['cpl_ME_M'] = self.min_var_loss(zmsd[ME_cells_in_Mdata], zme[M_cells_in_MEdata].detach())
-        loss_dict['cpl_ME_E'] = self.min_var_loss(ze[ME_cells_in_Edata], zme[E_cells_in_MEdata].detach())
+        loss_dict['cpl_T->ME'] = self.min_var_loss(zt.detach()[ME_cells_in_Tdata], zme[T_cells_in_MEdata])
+        loss_dict['cpl_ME->T'] = self.min_var_loss(zt[ME_cells_in_Tdata], zme.detach()[T_cells_in_MEdata])
+        loss_dict['cpl_ME->M'] = self.min_var_loss(zmsd[ME_cells_in_Mdata], zme.detach()[M_cells_in_MEdata])
+        loss_dict['cpl_ME->E'] = self.min_var_loss(ze[ME_cells_in_Edata], zme.detach()[E_cells_in_MEdata])
 
         ############################## get output dicts
         z_dict = self.get_output_dict([zt, zmsd, ze, zme], ["zt", "zm", "ze", "zme"])
@@ -756,6 +765,138 @@ class Model_T_ME(nn.Module):
                                          ["valid_T", "valid_M", "valid_E", "valid_ME"])
 
         return loss_dict, z_dict, xr_dict, mask_dict
+
+
+
+
+class Model_TE(nn.Module):
+        """TE autoencoder
+
+        Args:
+            alpha_T: T reconstruction loss weight
+            alpha_E: E reconstruction loss weight
+            lambda_TE: coupling loss weight between T and E
+            E_noise: standard deviation of additive gaussian noise for E data
+            latent_dim: dim for representations
+        """
+
+        def __init__(self,
+                     alpha_T=1.0,
+                     alpha_E=1.0,
+                     lambda_TE=1.0,
+                     E_noise=None,
+                     latent_dim=5):
+            super(Model_TE, self).__init__()
+            self.alpha_T = alpha_T
+            self.alpha_E = alpha_E
+            self.lambda_TE = lambda_TE
+            self.E_noise = E_noise
+            self.latent_dim = latent_dim
+
+            # T
+            self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
+            self.dT = Decoder_T_specific(in_dim=self.latent_dim)
+
+            # E
+            self.eE_shared = Encoder_E_shared(E_noise=self.E_noise)
+            self.eE_specific = Encoder_E_specific(latent_dim=self.latent_dim)
+            self.dE_specific = Decoder_E_specific(in_dim=self.latent_dim)
+            self.dE_shared = Decoder_E_shared()
+
+            return
+
+        def get_hparams(self):
+            hparam_dict = {}
+            hparam_dict['alpha_T'] = self.alpha_T
+            hparam_dict['alpha_E'] = self.alpha_E
+            hparam_dict['lambda_TE'] = self.lambda_TE
+            hparam_dict['E_noise'] = self.E_noise
+            hparam_dict['latent_dim'] = self.latent_dim
+
+        @staticmethod
+        def min_var_loss(zi, zj):
+            # SVD calculated over all entries in the batch
+            batch_size = zj.shape[0]
+            zj_centered = zj - torch.mean(zj, 0, True)
+            min_eig = torch.min(torch.linalg.svdvals(zj_centered))
+            min_var_zj = torch.square(min_eig) / (batch_size - 1)
+
+            zi_centered = zi - torch.mean(zi, 0, True)
+            min_eig = torch.min(torch.linalg.svdvals(zi_centered))
+            min_var_zi = torch.square(min_eig) / (batch_size - 1)
+
+            # Wij_paired is the weight of matched pairs
+            zi_zj_mse = torch.mean(torch.sum(torch.square(zi - zj), 1))
+            loss_ij = zi_zj_mse / torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
+            return loss_ij
+
+        @staticmethod
+        def mean_sq_diff(x, y):
+            return torch.mean(torch.square(x - y))
+
+        @staticmethod
+        def get_1D_mask(x):
+            mask = ~torch.isnan((x))
+            mask = mask.reshape(mask.shape[0], -1)
+            return torch.all(mask, dim=1)
+
+        @staticmethod
+        def get_output_dict(out_list, key_list):
+            out_dict = {}
+            for (val, key) in zip(out_list, key_list):
+                out_dict[key] = val
+            return out_dict
+
+        def forward(self, inputs):
+            # inputs
+            XT = inputs[0]
+            XE = inputs[1]
+
+            ############################## masks
+            ## masks with the size of the whole batch
+            valid_T = self.get_1D_mask(XT)
+            valid_E = self.get_1D_mask(XE)  # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+            valid_TE = torch.where((valid_T) & (valid_E), True, False)
+
+            # masks with the size of each modality
+            TE_cells_in_Tdata = valid_TE[valid_T]  # size of this mask is the same as M
+            TE_cells_in_Edata = valid_TE[valid_E]  # size of this mask is the same as E
+
+            ## removing nans
+            XT = XT[valid_T]
+            XE = XE[valid_E]
+
+            ############################## ENCODERS
+            ## T
+            zt = self.eT(XT)
+
+            ## E
+            xe_inter = self.eE_shared(XE)
+            ze = self.eE_specific(xe_inter)  # Also detaching the xe_inter
+
+            ############################## DECODERS
+            ## T
+            XrT = self.dT(zt)
+
+            ## E
+            XrE_inter = self.dE_specific(ze)
+            XrE = self.dE_shared(XrE_inter)
+
+            ############################## Loss calculations
+            loss_dict = {}
+            loss_dict['recon_T'] = self.mean_sq_diff(XT, XrT)
+            loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
+
+            loss_dict['cpl_TE'] = self.min_var_loss(zt[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
+
+            ############################## get output dicts
+            z_dict = self.get_output_dict([zt, ze], ["zt", "ze"])
+
+            xr_dict = self.get_output_dict([XrT, XrE], ["XrT", "XrE"])
+
+            mask_dict = self.get_output_dict([valid_T, valid_E, valid_TE], ["valid_T", "valid_E", "valid_ME"])
+
+            return loss_dict, z_dict, xr_dict, mask_dict
 
 
 

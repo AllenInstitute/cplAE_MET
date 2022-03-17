@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_E',         default=1.0,           type=float, help='T reconstruction loss weight')
 parser.add_argument('--latent_dim',      default=3,             type=int,   help='Number of latent dims')
 parser.add_argument('--n_epochs',        default=50000,           type=int,   help='Number of epochs to train')
+parser.add_argument('--E_noise',          default=0.05,            type=float, help='std of the gaussian noise added to E data')
 parser.add_argument('--config_file',     default='config.toml', type=str,   help='config file with data paths')
 parser.add_argument('--n_fold',          default=0,             type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,             type=int,   help='Run-specific id')
@@ -35,11 +36,14 @@ def set_paths(config_file=None, exp_name='TEMP'):
 def main(alpha_E=1.0,
          latent_dim=3,
          n_epochs=500,
+         E_noise=0.05,
          config_file='config.toml',
          n_fold=0,
          run_iter=0,
          model_id='MAE',
          exp_name='DEBUG'):
+
+
 
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
@@ -96,7 +100,7 @@ def main(alpha_E=1.0,
     train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=True)
 
     # Model ============================
-    model = Model_E_AE(alpha_E=alpha_E, latent_dim=latent_dim)
+    model = Model_E_AE(alpha_E=alpha_E, latent_dim=latent_dim,  E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0))
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
