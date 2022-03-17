@@ -22,9 +22,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_T',         default=1.0,          type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',         default=0.0,          type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_E',         default=0.0,          type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_ME',        default=1.0,          type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_ME_T',     default=1.0,          type=float, help='coupling loss weight between ME and T')
-parser.add_argument('--lambda_tune_ME_T',default=1.0,          type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--alpha_ME',        default=0.0,          type=float, help='ME reconstruction loss weight')
+parser.add_argument('--lambda_ME_T',     default=0.0,          type=float, help='coupling loss weight between ME and T')
+parser.add_argument('--lambda_tune_ME_T',default=0.0,          type=float, help='Tune the directionality of coupling between ME and T')
 parser.add_argument('--lambda_ME_M',     default=0.0,          type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',     default=0.0,          type=float, help='coupling loss weight between ME and E')
 parser.add_argument('--scale_factor',    default=0.3,          type=float, help='scaling factor for M_data interpolation')
@@ -83,6 +83,7 @@ def main(alpha_T=1.0,
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
         # Run the model in the evaluation mode
         model.eval()
+        print("model is validation mode")
         with torch.no_grad():
             loss_dict, z_dict, xr_dict, mask_dict = model((astensor_(data['XT']),
                                                            astensor_(data['XM']),
@@ -114,6 +115,7 @@ def main(alpha_T=1.0,
 
 
         model.train()
+        print("model is training mode")
 
         savedict = {'XT': data['XT'],
                     'XM': data['XM'],
@@ -220,10 +222,10 @@ def main(alpha_T=1.0,
                    model.alpha_M * loss_dict['recon_sd'] + \
                    model.alpha_E * loss_dict['recon_E'] + \
                    model.alpha_ME * loss_dict['recon_ME'] + \
-                   model.lambda_ME_T * model.lambda_tune_ME_T * loss_dict['cpl_ME_T'] + \
-                   model.lambda_ME_T * (1 - model.lambda_tune_ME_T) * loss_dict['cpl_T_ME'] + \
-                   loss_dict['cpl_ME_M'] * model.lambda_ME_M + \
-                   loss_dict['cpl_ME_E'] * model.lambda_ME_E
+                   model.lambda_ME_T * model.lambda_tune_ME_T * loss_dict['cpl_T->ME'] + \
+                   model.lambda_ME_T * (1 - model.lambda_tune_ME_T) * loss_dict['cpl_ME->T'] + \
+                   model.lambda_ME_M * loss_dict['cpl_ME->M'] + \
+                   model.lambda_ME_E * loss_dict['cpl_ME->E']
 
 
             # set require grad for the shared module in the M and in the E equal to False
@@ -250,6 +252,7 @@ def main(alpha_T=1.0,
 
         # validation
         model.eval()
+        print("model is validation mode")
         with torch.no_grad():
             loss_dict, *_ = model((
                 astensor_(D['XT'][val_ind, ...]),
@@ -262,6 +265,7 @@ def main(alpha_T=1.0,
             val_loss[k] += loss_dict[k]
 
         model.train()
+        print("model is training mode")
 
         # Average losses over batches
         for k, v in train_loss.items():
@@ -285,16 +289,18 @@ def main(alpha_T=1.0,
         tb_writer.add_scalar('Validation/MSE_XE', val_loss['recon_E'], epoch)
         tb_writer.add_scalar('Train/MSE_XME', train_loss['recon_ME'], epoch)
         tb_writer.add_scalar('Validation/MSE_XME', val_loss['recon_ME'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME_T', train_loss['cpl_ME_T'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME_T', val_loss['cpl_ME_T'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME_M', train_loss['cpl_ME_M'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME_M', val_loss['cpl_ME_M'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME_E', train_loss['cpl_ME_E'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME_E', val_loss['cpl_ME_E'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME->T', train_loss['cpl_ME->T'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME->T', val_loss['cpl_ME->T'], epoch)
+        tb_writer.add_scalar('Train/cpl_T->ME', train_loss['cpl_T->ME'], epoch)
+        tb_writer.add_scalar('Validation/cpl_T->ME', val_loss['cpl_T->ME'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME->M', train_loss['cpl_ME->M'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME->M', val_loss['cpl_ME->M'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME->E', train_loss['cpl_ME->E'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_ME->E'], epoch)
 
 
         #Save checkpoint
-        if (epoch) % 10000 == 0:
+        if (epoch) % 10 == 0:
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
             save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
 
