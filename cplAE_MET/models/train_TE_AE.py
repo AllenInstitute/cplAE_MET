@@ -19,6 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_T',         default=0.0,          type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_E',         default=0.0,          type=float, help='E reconstruction loss weight')
 parser.add_argument('--lambda_TE',       default=0.0,          type=float, help='coupling loss weight between T and E')
+parser.add_argument('--lambda_tune_TE',  default=0.5,          type=float, help='weight for coupling loss weight between T and E')
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
 parser.add_argument('--n_epochs',        default=50000,        type=int,   help='Number of epochs to train')
@@ -41,6 +42,7 @@ def set_paths(config_file=None, exp_name='TEMP'):
 def main(alpha_T=1.0,
          alpha_E=1.0,
          lambda_TE=1.0,
+         lambda_tune_TE=0.5,
          E_noise=0.05,
          latent_dim=3,
          n_epochs=500,
@@ -56,7 +58,8 @@ def main(alpha_T=1.0,
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
-    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_lambda_TE_{str(lambda_TE)}_Enoise_{str(E_noise)}' +
+    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}'
+                         f'_lambda_TE_{str(lambda_TE)}_lambda_tune_TE_{str(lambda_tune_TE)}_Enoise_{str(E_noise)}' +
               f'_ld_{latent_dim:d}_ne_{n_epochs:d}_ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
 
 
@@ -145,6 +148,7 @@ def main(alpha_T=1.0,
     model = Model_TE(alpha_T=alpha_T,
                      alpha_E=alpha_E,
                      lambda_TE=lambda_TE,
+                     lambda_tune_TE=lambda_tune_TE,
                      E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0),
                      latent_dim=latent_dim)
 
@@ -161,7 +165,8 @@ def main(alpha_T=1.0,
 
             loss = model.alpha_T * loss_dict['recon_T'] + \
                    model.alpha_E * loss_dict['recon_E'] + \
-                   model.lambda_TE * loss_dict['cpl_TE']
+                   model.lambda_TE * model.lambda_tune_TE * loss_dict['cpl_T->E'] + \
+                   model.lambda_TE * (1 - model.lambda_tune_TE) * loss_dict['cpl_E->T']
 
             loss.backward()
             optimizer.step()
@@ -204,8 +209,10 @@ def main(alpha_T=1.0,
         tb_writer.add_scalar('Validation/MSE_XT', val_loss['recon_T'], epoch)
         tb_writer.add_scalar('Train/MSE_XE', train_loss['recon_E'], epoch)
         tb_writer.add_scalar('Validation/MSE_XE', val_loss['recon_E'], epoch)
-        tb_writer.add_scalar('Train/cpl_TE', train_loss['cpl_TE'], epoch)
-        tb_writer.add_scalar('Validation/cpl_TE', val_loss['cpl_TE'], epoch)
+        tb_writer.add_scalar('Train/cpl_T->E', train_loss['cpl_T->E'], epoch)
+        tb_writer.add_scalar('Validation/cpl_T->E', val_loss['cpl_T->E'], epoch)
+        tb_writer.add_scalar('Train/cpl_E->T', train_loss['cpl_E->T'], epoch)
+        tb_writer.add_scalar('Validation/cpl_E->T', val_loss['cpl_E->T'], epoch)
 
 
         #Save checkpoint

@@ -115,7 +115,6 @@ def main(alpha_T=1.0,
 
 
         model.train()
-        print("model is training mode")
 
         savedict = {'XT': data['XT'],
                     'XM': data['XM'],
@@ -265,7 +264,6 @@ def main(alpha_T=1.0,
             val_loss[k] += loss_dict[k]
 
         model.train()
-        print("model is training mode")
 
         # Average losses over batches
         for k, v in train_loss.items():
