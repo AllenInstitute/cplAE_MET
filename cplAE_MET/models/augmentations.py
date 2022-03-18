@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 def get_padding_up_and_down(soma_depth, im):
     soma_shift = np.round(60 - soma_depth).astype(int).squeeze()
@@ -75,35 +76,15 @@ def get_soma_aligned_im(im, soma_H):
         shifted_im[c, 0, ...] = shift3d(im=im[c, 0, ...], shift=shift[c])
     return shifted_im
 
-def get_celltype_specific_shifts(ctype, dummy=True):
-    #TODO: populate logic in case using cell type specific shifting augmentation.
-    if dummy:
-        shifts = np.zeros((ctype.size, 2), dtype=int)
-    return shifts
-
-
-def undone_radial_correction(image):
-    '''
-    Takes the image and undone the radial correction. The pixels along the W axis were divided by pi*(r2^2 - r1^2)
-    Args:
-        image:images with the shape of (120, 4)
-
-    '''
-    raw_image = np.empty_like(image)
-    for c in range(image.shape[1]):
-        r1 = c
-        r2 = c + 1
-        raw_image[:, c] = image[:, c] * (np.pi * (r2 ** 2 - r1 ** 2))
-    return raw_image
-
 
 def do_radial_correction(image):
-    '''
-    Takes the image and undone the radial correction. The pixels along the W axis where divided by pi*(r2^2 - r1^2)
+    """
+    Takes the image and undone the radial correction. 
+    The pixels along the W axis where divided by pi*(r2^2 - r1^2)
     Args:
         image:images with the shape of (120, 4)
 
-    '''
+    """
     raw_image = np.empty_like(image)
     for c in range(image.shape[1]):
         r1 = c
@@ -111,3 +92,19 @@ def do_radial_correction(image):
         raw_image[:, c] = image[:, c] / (np.pi * (r2 ** 2 - r1 ** 2))
     return raw_image
 
+
+def undone_radial_correction(image):
+    """
+    Takes the image and undo the radial correction.
+    Radial correction was performed by Olga
+    Pixels along the W axis were divided by pi*(r2^2 - r1^2)
+    TODO: change name to undo_radial_correction
+    Args:
+        image:images with the shape of (120, 4)
+    """
+    raw_image = np.empty_like(image)
+    for c in range(image.shape[1]):
+        r1 = c
+        r2 = c + 1
+        raw_image[:, c] = image[:, c] * (np.pi * (r2 ** 2 - r1 ** 2))
+    return raw_image

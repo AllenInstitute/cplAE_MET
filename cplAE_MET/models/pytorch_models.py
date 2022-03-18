@@ -7,14 +7,16 @@ from cplAE_MET.models.torch_helpers import astensor
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 astensor_ = partial(astensor, device=device)
 
+
 class Encoder_M_shared(nn.Module):
     """
-    Encoder for morphology arbor density data.
+    Encoder for morphology arbor density data. Output of this module is used by two subnetworks: 
+    one that processes only M, and another that processes ME combined. 
     Args:
-        latent_dim: (int) dimension of the latent representation
         M_noise: (float) std of gaussian noise injection to non zero pixels
         scale_factor: (float) scale factor to stretch or squeeze the images along the H axis
     """
+
     def __init__(self,
                  M_noise=0.,
                  scale_factor=0.):
@@ -36,16 +38,15 @@ class Encoder_M_shared(nn.Module):
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
-
         return
 
 
     def aug_noise(self, im):
-        '''
+        """
         Get the image and mask for the nonzero pixels and add gaussian noise to the nonzero pixels if training
         Args:
             im: array with the shape of (batch_size x 1 x 240 x 4 x 4)
-        '''
+        """
         # get the nanzero mask for M for adding noise
         mask = im != 0.
         if self.training:
@@ -56,11 +57,11 @@ class Encoder_M_shared(nn.Module):
 
 
     def aug_fnoise(self, sd):
-        '''
+        """
         Gets the soma depth and return the soma depth augmented with gaussian noise if training
         Args:
             sd: soma depth location array with the shape of (batch_size x 1)
-        '''
+        """
         if self.training:
             noise = torch.randn(sd.shape, device=device) * self.M_noise
             return sd + noise
@@ -69,13 +70,13 @@ class Encoder_M_shared(nn.Module):
 
 
     def aug_scale_im(self, im, scaling_by):
-        '''
+        """
         Scaling the image by interpolation. The original images are padded beforehand to make sure they dont go out
         of the frame during the scaling. We padded them with H/2 along H and they are soma aligned beforehand
         Args:
             im: padded arbor density images with the size of (batch_size x 1 x 240 x 4 x 4)
             scaling_by: (float) scaling factor for interpolation
-        '''
+        """
         # scaling the cells
         min_rand = 1. - scaling_by
         max_rand = 1. + scaling_by
@@ -87,7 +88,7 @@ class Encoder_M_shared(nn.Module):
 
 
     def pad_or_crop_im(self, scaled_im, im):
-        '''
+        """
         Takes the scaled image and the original image and either crop or pad the scaled image to get the original size.
         Args:
             scaled_im: scaled image with the size of (batch_size x 1 x 240 x 4 x 4), h is the scaled image height
@@ -96,7 +97,7 @@ class Encoder_M_shared(nn.Module):
         Returns:
             padded_or_copped_im: padded or cropped images with the size of (batch_size x 1 x 240 x 4 x 4)
 
-        '''
+        """
         out_depth = scaled_im.shape[2]
         in_depth = im.shape[2]
 
@@ -122,7 +123,7 @@ class Encoder_M_shared(nn.Module):
 
 
     def aug_scale(self, im, scaling_by=0.1):
-        '''
+        """
         Scaling the image and then getting back to the original size by cropping or padding
         Args:
             im: soma aligned images with the size of (batch_size x 1 x 240 x 4 x 4)
@@ -130,7 +131,7 @@ class Encoder_M_shared(nn.Module):
 
         Returns:
             scaled image
-        '''
+        """
 
         if self.training:
             scaled_im = self.aug_scale_im(im, scaling_by)
@@ -168,23 +169,18 @@ class Encoder_M_specific(nn.Module):
         M_noise: (float) std of gaussian noise injection to non zero pixels
         scale_factor: (float) scale factor to stretch or squeeze the images along the H axis
     """
+
     def __init__(self,
                  latent_dim=100):
         super(Encoder_M_specific, self).__init__()
-
         self.fc0 = nn.Linear(11, latent_dim)
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-05,
                                  momentum=0.1, track_running_stats=True)
-
         return
 
-
     def forward(self, x):
-
         z = self.bn(self.fc0(x))
-
         return z
-
 
 
 class Decoder_M_specific(nn.Module):
@@ -201,14 +197,12 @@ class Decoder_M_specific(nn.Module):
 
     def __init__(self,
                  in_dim=3):
-
         super(Decoder_M_specific, self).__init__()
         self.fc0 = nn.Linear(in_dim, 11)
         self.fc1 = nn.Linear(11, 11)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
-
         return
 
     def forward(self, x):
@@ -602,7 +596,7 @@ class Model_T_ME(nn.Module):
         self.eM_specific = Encoder_M_specific(latent_dim=self.latent_dim)
         self.dM_specific = Decoder_M_specific(in_dim=self.latent_dim)
         self.dM_shared = Decoder_M_shared()
-        self.dM_shared_copy = Decoder_M_shared()
+        self.dM_shared_copy = Decoder_M_shared() #Will share weights with self.DM_shared
 
 
         # E
@@ -610,13 +604,12 @@ class Model_T_ME(nn.Module):
         self.eE_specific = Encoder_E_specific(latent_dim=self.latent_dim)
         self.dE_specific = Decoder_E_specific(in_dim=self.latent_dim)
         self.dE_shared = Decoder_E_shared()
-        self.dE_shared_copy = Decoder_E_shared()
+        self.dE_shared_copy = Decoder_E_shared() #Will share weights with self.DE_shared
 
 
         # ME
         self.eME = Encoder_ME_specific(in_dim=51, int_dim=20, latent_dim=self.latent_dim)
         self.dME = Decoder_ME_specific(in_dim=self.latent_dim, int_dim=20, out_dim=51)
-
         return
 
     def get_hparams(self):
@@ -633,41 +626,7 @@ class Model_T_ME(nn.Module):
         hparam_dict['M_noise'] = self.M_noise
         hparam_dict['E_noise'] = self.E_noise
         hparam_dict['latent_dim'] = self.latent_dim
-
-    @staticmethod
-    def min_var_loss(zi, zj):
-        # SVD calculated over all entries in the batch
-        batch_size = zj.shape[0]
-        zj_centered = zj - torch.mean(zj, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
-        min_var_zj = torch.square(min_eig) / (batch_size - 1)
-
-        zi_centered = zi - torch.mean(zi, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
-        min_var_zi = torch.square(min_eig) / (batch_size - 1)
-
-        # Wij_paired is the weight of matched pairs
-        zi_zj_mse = torch.mean(torch.sum(torch.square(zi - zj), 1))
-        loss_ij = zi_zj_mse / torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
-        return loss_ij
-
-    @staticmethod
-    def mean_sq_diff(x, y):
-        return torch.mean(torch.square(x - y))
-
-    @staticmethod
-    def get_1D_mask(x):
-        mask = ~torch.isnan((x))
-        mask = mask.reshape(mask.shape[0], -1)
-        return torch.all(mask, dim=1)
-
-    @staticmethod
-    def get_output_dict(out_list, key_list):
-        out_dict = {}
-        for (val, key) in zip(out_list, key_list):
-            out_dict[key] = val
-        return out_dict
-
+        return
 
     def forward(self, inputs):
         # inputs
@@ -678,13 +637,11 @@ class Model_T_ME(nn.Module):
 
         ############################## masks
         ## masks with the size of the whole batch
-        valid_T = self.get_1D_mask(XT)
-        valid_M = self.get_1D_mask(XM)
-        valid_sd = self.get_1D_mask(Xsd)
-        valid_E = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+        valid_T = get_1D_mask(XT)
+        valid_M = get_1D_mask(XM)
+        valid_sd = valid_M # this is checked elsewhere. 
+        valid_E = get_1D_mask(XE) # if ALL values for one cell are nan, then it is unused in loss calculation
         valid_ME = torch.where((valid_E) & (valid_M), True, False)
-
-        assert (valid_sd == valid_M).all()
 
         # masks with the size of each modality
         ME_cells_in_Mdata = valid_ME[valid_M] #size of this mask is the same as M
@@ -707,12 +664,11 @@ class Model_T_ME(nn.Module):
 
         ## M
         xm_aug, _, pool_ind1, pool_ind2, xmsd_inter = self.eM_shared(XM, Xsd)
-        zmsd = self.eM_specific(xmsd_inter.detach()) #by detaching we make sure that eM_shared is not going
-        # to be updated in the backward pass
+        zmsd = self.eM_specific(xmsd_inter.detach())
 
         ## E
         xe_inter = self.eE_shared(XE)
-        ze = self.eE_specific(xe_inter.detach()) #Also detaching the xe_inter
+        ze = self.eE_specific(xe_inter.detach())
 
         ## ME
         XME_inter = torch.cat(tensors=(xmsd_inter[ME_cells_in_Mdata],
@@ -742,27 +698,28 @@ class Model_T_ME(nn.Module):
 
         ############################## Loss calculations
         loss_dict = {}
-        loss_dict['recon_T'] = self.mean_sq_diff(XT, XrT)
-        loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
-        loss_dict['recon_M'] = self.mean_sq_diff(xm_aug, XrM)
-        loss_dict['recon_sd'] = self.mean_sq_diff(Xsd, Xrsd)
-        loss_dict['recon_ME'] = self.mean_sq_diff(xm_aug[ME_cells_in_Mdata], XrM_from_zme) + \
-                                self.mean_sq_diff(Xsd[ME_cells_in_Mdata], Xrsd_from_zme) + \
-                                self.mean_sq_diff(XE[ME_cells_in_Edata], XrE_from_zme)
+        loss_dict['recon_T'] = mean_sq_diff(XT, XrT)
+        loss_dict['recon_E'] = mean_sq_diff(XE, XrE)
+        loss_dict['recon_M'] = mean_sq_diff(xm_aug, XrM)
+        loss_dict['recon_sd'] = mean_sq_diff(Xsd, Xrsd)
+        loss_dict['recon_ME'] = mean_sq_diff(xm_aug[ME_cells_in_Mdata], XrM_from_zme) + \
+                                mean_sq_diff(Xsd[ME_cells_in_Mdata], Xrsd_from_zme) + \
+                                mean_sq_diff(XE[ME_cells_in_Edata], XrE_from_zme)
 
-        loss_dict['cpl_T->ME'] = self.min_var_loss(zt.detach()[ME_cells_in_Tdata], zme[T_cells_in_MEdata])
-        loss_dict['cpl_ME->T'] = self.min_var_loss(zt[ME_cells_in_Tdata], zme.detach()[T_cells_in_MEdata])
-        loss_dict['cpl_ME->M'] = self.min_var_loss(zmsd[ME_cells_in_Mdata], zme.detach()[M_cells_in_MEdata])
-        loss_dict['cpl_ME->E'] = self.min_var_loss(ze[ME_cells_in_Edata], zme.detach()[E_cells_in_MEdata])
+        loss_dict['cpl_T->ME'] = min_var_loss(zt.detach()[ME_cells_in_Tdata], zme[T_cells_in_MEdata])
+        loss_dict['cpl_ME->T'] = min_var_loss(zt[ME_cells_in_Tdata], zme.detach()[T_cells_in_MEdata])
+        loss_dict['cpl_ME->M'] = min_var_loss(zmsd[ME_cells_in_Mdata], zme.detach()[M_cells_in_MEdata])
+        loss_dict['cpl_ME->E'] = min_var_loss(ze[ME_cells_in_Edata], zme.detach()[E_cells_in_MEdata])
 
         ############################## get output dicts
-        z_dict = self.get_output_dict([zt, zmsd, ze, zme], ["zt", "zm", "ze", "zme"])
+        z_dict = get_output_dict([zt, zmsd, ze, zme], 
+                                 ["zt", "zm", "ze", "zme"])
 
-        xr_dict = self.get_output_dict([XrT, XrM, Xrsd, XrE, XrM_from_zme, Xrsd_from_zme, XrE_from_zme],
-                                       ["XrT", "XrM", "Xrsd", "XrE", "XrM_from_zme", "Xrsd_from_zme", "XrE_from_zme"])
+        xr_dict = get_output_dict([XrT, XrM, Xrsd, XrE, XrM_from_zme, Xrsd_from_zme, XrE_from_zme],
+                                  ["XrT", "XrM", "Xrsd", "XrE", "XrM_from_zme", "Xrsd_from_zme", "XrE_from_zme"])
 
-        mask_dict = self.get_output_dict([valid_T, valid_M, valid_E, valid_ME],
-                                         ["valid_T", "valid_M", "valid_E", "valid_ME"])
+        mask_dict = get_output_dict([valid_T, valid_M, valid_E, valid_ME],
+                                    ["valid_T", "valid_M", "valid_E", "valid_ME"])
 
         return loss_dict, z_dict, xr_dict, mask_dict
 
@@ -848,40 +805,6 @@ class Model_T_M_E(nn.Module):
         hparam_dict['E_noise'] = self.E_noise
         hparam_dict['latent_dim'] = self.latent_dim
 
-    @staticmethod
-    def min_var_loss(zi, zj):
-        # SVD calculated over all entries in the batch
-        batch_size = zj.shape[0]
-        zj_centered = zj - torch.mean(zj, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
-        min_var_zj = torch.square(min_eig) / (batch_size - 1)
-
-        zi_centered = zi - torch.mean(zi, 0, True)
-        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
-        min_var_zi = torch.square(min_eig) / (batch_size - 1)
-
-        # Wij_paired is the weight of matched pairs
-        zi_zj_mse = torch.mean(torch.sum(torch.square(zi - zj), 1))
-        loss_ij = zi_zj_mse / torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
-        return loss_ij
-
-    @staticmethod
-    def mean_sq_diff(x, y):
-        return torch.mean(torch.square(x - y))
-
-    @staticmethod
-    def get_1D_mask(x):
-        mask = ~torch.isnan((x))
-        mask = mask.reshape(mask.shape[0], -1)
-        return torch.all(mask, dim=1)
-
-    @staticmethod
-    def get_output_dict(out_list, key_list):
-        out_dict = {}
-        for (val, key) in zip(out_list, key_list):
-            out_dict[key] = val
-        return out_dict
-
 
     def forward(self, inputs):
         # inputs
@@ -892,10 +815,10 @@ class Model_T_M_E(nn.Module):
 
         ############################## masks
         ## masks with the size of the whole batch
-        valid_T = self.get_1D_mask(XT)
-        valid_M = self.get_1D_mask(XM)
-        valid_sd = self.get_1D_mask(Xsd)
-        valid_E = self.get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+        valid_T = get_1D_mask(XT)
+        valid_M = get_1D_mask(XM)
+        valid_sd = get_1D_mask(Xsd)
+        valid_E = get_1D_mask(XE) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
         valid_TE = torch.where((valid_T) & (valid_E), True, False)
         valid_TM = torch.where((valid_T) & (valid_M), True, False)
         valid_ME = torch.where((valid_M) & (valid_E), True, False)
@@ -942,26 +865,26 @@ class Model_T_M_E(nn.Module):
 
         ############################## Loss calculations
         loss_dict = {}
-        loss_dict['recon_T'] = self.mean_sq_diff(XT, XrT)
-        loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
-        loss_dict['recon_M'] = self.mean_sq_diff(xm_aug, XrM)
-        loss_dict['recon_sd'] = self.mean_sq_diff(Xsd, Xrsd)
+        loss_dict['recon_T'] = mean_sq_diff(XT, XrT)
+        loss_dict['recon_E'] = mean_sq_diff(XE, XrE)
+        loss_dict['recon_M'] = mean_sq_diff(xm_aug, XrM)
+        loss_dict['recon_sd'] = mean_sq_diff(Xsd, Xrsd)
 
-        loss_dict['cpl_T->E'] = self.min_var_loss(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
-        loss_dict['cpl_E->T'] = self.min_var_loss(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
+        loss_dict['cpl_T->E'] = min_var_loss(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
+        loss_dict['cpl_E->T'] = min_var_loss(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
 
-        loss_dict['cpl_T->M'] = self.min_var_loss(zt.detach()[TM_cells_in_Tdata], zmsd[TM_cells_in_Mdata])
-        loss_dict['cpl_M->T'] = self.min_var_loss(zt[TM_cells_in_Tdata], zmsd.detach()[TM_cells_in_Mdata])
+        loss_dict['cpl_T->M'] = min_var_loss(zt.detach()[TM_cells_in_Tdata], zmsd[TM_cells_in_Mdata])
+        loss_dict['cpl_M->T'] = min_var_loss(zt[TM_cells_in_Tdata], zmsd.detach()[TM_cells_in_Mdata])
 
-        loss_dict['cpl_M->E'] = self.min_var_loss(zmsd.detach()[ME_cells_in_Mdata], ze[ME_cells_in_Edata])
-        loss_dict['cpl_E->M'] = self.min_var_loss(zmsd[ME_cells_in_Mdata], ze.detach()[ME_cells_in_Edata])
+        loss_dict['cpl_M->E'] = min_var_loss(zmsd.detach()[ME_cells_in_Mdata], ze[ME_cells_in_Edata])
+        loss_dict['cpl_E->M'] = min_var_loss(zmsd[ME_cells_in_Mdata], ze.detach()[ME_cells_in_Edata])
 
         ############################## get output dicts
-        z_dict = self.get_output_dict([zt, zmsd, ze], ["zt", "zm", "ze"])
+        z_dict = get_output_dict([zt, zmsd, ze], ["zt", "zm", "ze"])
 
-        xr_dict = self.get_output_dict([XrT, XrM, Xrsd, XrE], ["XrT", "XrM", "Xrsd", "XrE"])
+        xr_dict = get_output_dict([XrT, XrM, Xrsd, XrE], ["XrT", "XrM", "Xrsd", "XrE"])
 
-        mask_dict = self.get_output_dict([valid_T, valid_M, valid_E], ["valid_T", "valid_M", "valid_E"])
+        mask_dict = get_output_dict([valid_T, valid_M, valid_E], ["valid_T", "valid_M", "valid_E"])
 
         return loss_dict, z_dict, xr_dict, mask_dict
 
@@ -1014,39 +937,6 @@ class Model_TE(nn.Module):
             hparam_dict['E_noise'] = self.E_noise
             hparam_dict['latent_dim'] = self.latent_dim
 
-        @staticmethod
-        def min_var_loss(zi, zj):
-            # SVD calculated over all entries in the batch
-            batch_size = zj.shape[0]
-            zj_centered = zj - torch.mean(zj, 0, True)
-            min_eig = torch.min(torch.linalg.svdvals(zj_centered))
-            min_var_zj = torch.square(min_eig) / (batch_size - 1)
-
-            zi_centered = zi - torch.mean(zi, 0, True)
-            min_eig = torch.min(torch.linalg.svdvals(zi_centered))
-            min_var_zi = torch.square(min_eig) / (batch_size - 1)
-
-            # Wij_paired is the weight of matched pairs
-            zi_zj_mse = torch.mean(torch.sum(torch.square(zi - zj), 1))
-            loss_ij = zi_zj_mse / torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
-            return loss_ij
-
-        @staticmethod
-        def mean_sq_diff(x, y):
-            return torch.mean(torch.square(x - y))
-
-        @staticmethod
-        def get_1D_mask(x):
-            mask = ~torch.isnan((x))
-            mask = mask.reshape(mask.shape[0], -1)
-            return torch.all(mask, dim=1)
-
-        @staticmethod
-        def get_output_dict(out_list, key_list):
-            out_dict = {}
-            for (val, key) in zip(out_list, key_list):
-                out_dict[key] = val
-            return out_dict
 
         def forward(self, inputs):
             # inputs
@@ -1055,8 +945,8 @@ class Model_TE(nn.Module):
 
             ############################## masks
             ## masks with the size of the whole batch
-            valid_T = self.get_1D_mask(XT)
-            valid_E = self.get_1D_mask(XE)  # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+            valid_T = get_1D_mask(XT)
+            valid_E = get_1D_mask(XE)  # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
             valid_TE = torch.where((valid_T) & (valid_E), True, False)
 
             # masks with the size of each modality
@@ -1085,18 +975,18 @@ class Model_TE(nn.Module):
 
             ############################## Loss calculations
             loss_dict = {}
-            loss_dict['recon_T'] = self.mean_sq_diff(XT, XrT)
-            loss_dict['recon_E'] = self.mean_sq_diff(XE, XrE)
+            loss_dict['recon_T'] = mean_sq_diff(XT, XrT)
+            loss_dict['recon_E'] = mean_sq_diff(XE, XrE)
 
-            loss_dict['cpl_T->E'] = self.mean_sq_diff(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
-            loss_dict['cpl_E->T'] = self.mean_sq_diff(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
+            loss_dict['cpl_T->E'] = mean_sq_diff(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
+            loss_dict['cpl_E->T'] = mean_sq_diff(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
 
             ############################## get output dicts
-            z_dict = self.get_output_dict([zt, ze], ["zt", "ze"])
+            z_dict = get_output_dict([zt, ze], ["zt", "ze"])
 
-            xr_dict = self.get_output_dict([XrT, XrE], ["XrT", "XrE"])
+            xr_dict = get_output_dict([XrT, XrE], ["XrT", "XrE"])
 
-            mask_dict = self.get_output_dict([valid_T, valid_E, valid_TE], ["valid_T", "valid_E", "valid_ME"])
+            mask_dict = get_output_dict([valid_T, valid_E, valid_TE], ["valid_T", "valid_E", "valid_ME"])
 
             return loss_dict, z_dict, xr_dict, mask_dict
 
@@ -1118,28 +1008,19 @@ class Model_T_AE(nn.Module):
 
         self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
         self.dT = Decoder_T_specific()
-
         return
 
     def get_hparams(self):
         hparam_dict = {}
         hparam_dict['latent_dim'] = self.latent_dim
         hparam_dict['alpha_T'] = self.alpha_T
-
-    @staticmethod
-    def mean_sq_diff(x, y):
-        return torch.mean(torch.square(x - y))
-
-    @staticmethod
-    def get_1D_mask(mask):
-        mask = mask.reshape(mask.shape[0], -1)
-        return torch.any(mask, dim=1)
+        return
 
     def forward(self, inputs):
         # inputs
         XT = inputs
         mask_XT_nans = ~torch.isnan(XT)  #returns a boolian which is true when the value is not nan
-        valid_T = self.get_1D_mask(mask_XT_nans) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+        valid_T = get_1D_mask(mask_XT_nans) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
 
         # replacing nans in input with zeros
         XT = torch.nan_to_num(XT, nan=0.)
@@ -1150,7 +1031,7 @@ class Model_T_AE(nn.Module):
 
         # Loss calculations
         loss_dict = {}
-        loss_dict['recon_T'] = self.mean_sq_diff(XT[valid_T, :], XrT[valid_T, :])
+        loss_dict['recon_T'] = mean_sq_diff(XT[valid_T, :], XrT[valid_T, :])
         return XrT, loss_dict, z
 
 
@@ -1174,7 +1055,6 @@ class Model_E_AE(nn.Module):
         self.eE_specific = Encoder_E_specific(latent_dim=self.latent_dim)
         self.dE_specific = Decoder_E_specific()
         self.dE_shared = Decoder_E_shared()
-
         return
 
     def get_hparams(self):
@@ -1182,21 +1062,14 @@ class Model_E_AE(nn.Module):
         hparam_dict['latent_dim'] = self.latent_dim
         hparam_dict['alpha_E'] = self.alpha_E
         hparam_dict['E_noise'] = self.E_noise
+        return
 
-    @staticmethod
-    def mean_sq_diff(x, y):
-        return torch.mean(torch.square(x - y))
-
-    @staticmethod
-    def get_1D_mask(mask):
-        mask = mask.reshape(mask.shape[0], -1)
-        return torch.any(mask, dim=1)
 
     def forward(self, inputs):
         # inputs
         XE = inputs
         mask_XE_nans = ~torch.isnan(XE)  #returns a boolian which is true when the value is not nan
-        valid_E = self.get_1D_mask(mask_XE_nans) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
+        valid_E = get_1D_mask(mask_XE_nans) # if ALL the values for one cell is nan, then that cell is not being used in loss calculation
 
         # replacing nans in input with zeros
         XE = torch.nan_to_num(XE, nan=0.)
@@ -1209,7 +1082,7 @@ class Model_E_AE(nn.Module):
 
         # Loss calculations
         loss_dict = {}
-        loss_dict['recon_E'] = self.mean_sq_diff(XE[valid_E, :], XrE[valid_E, :])
+        loss_dict['recon_E'] = mean_sq_diff(XE[valid_E, :], XrE[valid_E, :])
         return XrE, loss_dict, z
 
 
@@ -1250,23 +1123,14 @@ class Model_M_AE(nn.Module):
         hparam_dict['latent_dim'] = self.latent_dim
         hparam_dict['alpha_M'] = self.alpha_M
         hparam_dict['alpha_sd'] = self.alpha_sd
-
-
-    @staticmethod
-    def mean_sq_diff(x, y):
-        return torch.mean(torch.square(x - y))
-
-    @staticmethod
-    def get_1D_mask(mask):
-        mask = mask.reshape(mask.shape[0], -1)
-        return torch.any(mask, dim=1)
+        return
 
     def forward(self, inputs):
         # inputs
         XM = inputs[0]
         Xsd = inputs[1]
         mask_XM_nans = ~torch.isnan(XM)
-        valid_M = self.get_1D_mask(mask_XM_nans)
+        valid_M = get_1D_mask(mask_XM_nans)
 
         # replacing nans in input with zeros
         XM = torch.nan_to_num(XM, nan=0.)
@@ -1280,6 +1144,37 @@ class Model_M_AE(nn.Module):
 
         # Loss calculations
         loss_dict = {}
-        loss_dict['recon_M'] = self.mean_sq_diff(xm[valid_M, :], XrM[valid_M, :])
-        loss_dict['recon_sd'] = self.mean_sq_diff(xsd[valid_M], Xr_sd[valid_M])
+        loss_dict['recon_M'] = mean_sq_diff(xm[valid_M, :], XrM[valid_M, :])
+        loss_dict['recon_sd'] = mean_sq_diff(xsd[valid_M], Xr_sd[valid_M])
         return XrM, Xr_sd, loss_dict, z
+
+
+def min_var_loss(zi, zj):
+    # SVD calculated over all entries in the batch
+    batch_size = zj.shape[0]
+    zj_centered = zj - torch.mean(zj, 0, True)
+    min_eig = torch.min(torch.linalg.svdvals(zj_centered))
+    min_var_zj = torch.square(min_eig) / (batch_size - 1)
+
+    zi_centered = zi - torch.mean(zi, 0, True)
+    min_eig = torch.min(torch.linalg.svdvals(zi_centered))
+    min_var_zi = torch.square(min_eig) / (batch_size - 1)
+
+    # Wij_paired is the weight of matched pairs
+    zi_zj_mse = torch.mean(torch.sum(torch.square(zi - zj), 1))
+    loss_ij = zi_zj_mse / torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
+    return loss_ij
+
+
+def mean_sq_diff(x, y):
+    return torch.mean(torch.square(x - y))
+
+
+def get_1D_mask(x):
+    mask = ~torch.isnan((x))
+    mask = mask.reshape(mask.shape[0], -1)
+    return torch.all(mask, dim=1)
+
+
+def get_output_dict(out_list, key_list):
+    return dict(zip(key_list,out_list))
