@@ -978,8 +978,8 @@ class Model_TE(nn.Module):
             loss_dict['recon_T'] = mean_sq_diff(XT, XrT)
             loss_dict['recon_E'] = mean_sq_diff(XE, XrE)
 
-            loss_dict['cpl_T->E'] = mean_sq_diff(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
-            loss_dict['cpl_E->T'] = mean_sq_diff(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
+            loss_dict['cpl_T->E'] = min_var_loss(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
+            loss_dict['cpl_E->T'] = min_var_loss(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
 
             ############################## get output dicts
             z_dict = get_output_dict([zt, ze], ["zt", "ze"])

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from cplAE_MET.utils.utils import savepkl
 from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.load_config import load_config
-from cplAE_MET.models.pytorch_models import Model_T_ME
+from cplAE_MET.models.pytorch_models import Model_T_ME, mean_sq_diff
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
 from cplAE_MET.utils.dataset import T_ME_Dataset, load_MET_dataset, partitions
@@ -31,7 +31,7 @@ parser.add_argument('--scale_factor',    default=0.3,          type=float, help=
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
 parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
-parser.add_argument('--n_epochs',        default=50000,        type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=10000,        type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
 parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
@@ -89,6 +89,11 @@ def main(alpha_T=1.0,
                                                            astensor_(data['XM']),
                                                            astensor_(data['Xsd']),
                                                            astensor_(data['XE'])))
+
+            recon_loss_xt = mean_sq_diff(astensor_(data['XT']), xr_dict['XrT'])
+            recon_loss_xe = mean_sq_diff(astensor_(data['XE']), xr_dict['XrE'])
+            recon_loss_xm = mean_sq_diff(astensor_(data['XM']), xr_dict['XrM'])
+
             # convert model output tensors to numpy
             for dict in [z_dict, xr_dict, mask_dict]:
                 for k, v in dict.items():
@@ -125,6 +130,9 @@ def main(alpha_T=1.0,
                     'cluster_color': data['cluster_color'],
                     'cluster_id': data['cluster_id'],
                     'gene_ids': data['gene_ids'],
+                    'recon_loss_xt': tonumpy(recon_loss_xt),
+                    'recon_loss_xe': tonumpy(recon_loss_xe),
+                    'recon_loss_xm': tonumpy(recon_loss_xm),
                     'classification_acc_zt': classification_acc["zt"],
                     'classification_acc_zm': classification_acc["zm"],
                     'classification_acc_ze': classification_acc["ze"],

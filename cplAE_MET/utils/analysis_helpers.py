@@ -1,5 +1,6 @@
 import os
 import re
+import umap
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -7,8 +8,8 @@ from sklearn.metrics import r2_score
 from sklearn.decomposition import PCA
 import cplAE_MET.utils.utils as ut
 from cplAE_MET.utils.utils import loadpkl
-from os import system, name
-from time import sleep
+from sklearn.preprocessing import StandardScaler
+
 
 def get_exit_summary_keys(listdir):
     '''
@@ -293,5 +294,11 @@ def summarize_model_folder(directory):
 
                 i+=1
     return summary
+
+def get_umap_data(input):
+    reducer = umap.UMAP()
+    scaled_input = StandardScaler().fit_transform(input)
+    output = reducer.fit_transform(scaled_input)
+    return output
 
 
