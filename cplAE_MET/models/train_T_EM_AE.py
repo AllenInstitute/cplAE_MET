@@ -41,10 +41,10 @@ parser.add_argument('--log_weights',     default=False,        type=bool,  help=
 
 
 
-def set_paths(config_file=None, exp_name='TEMP'):
+def set_paths(config_file=None, exp_name='TEMP', fold=0):
     paths = load_config(config_file=config_file, verbose=False)
     paths['result'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/'
-    paths['tb_logs'] = f'{paths["result"]}tb_logs/{exp_name}'
+    paths['tb_logs'] = f'{paths["result"]}tb_logs/{exp_name}/fold_{str(fold)}/'
     Path(paths['tb_logs']).mkdir(parents=True, exist_ok=True)
     return paths
 
@@ -71,7 +71,7 @@ def main(alpha_T=1.0,
 
 
     global epoch, val_loss, train_loss
-    dir_pth = set_paths(config_file=config_file, exp_name=exp_name)
+    dir_pth = set_paths(config_file=config_file, exp_name=exp_name, fold=n_fold)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
     fileid = (model_id + f'_aT_{str(alpha_T)}_aM_{str(alpha_M)}_aE_{str(alpha_E)}_aME_{str(alpha_ME)}_' +
@@ -90,9 +90,9 @@ def main(alpha_T=1.0,
                                                            astensor_(data['Xsd']),
                                                            astensor_(data['XE'])))
 
-            recon_loss_xt = mean_sq_diff(astensor_(data['XT']), xr_dict['XrT'])
-            recon_loss_xe = mean_sq_diff(astensor_(data['XE']), xr_dict['XrE'])
-            recon_loss_xm = mean_sq_diff(astensor_(data['XM']), xr_dict['XrM'])
+            recon_loss_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['valid_T']], xr_dict['XrT'])
+            recon_loss_xe = mean_sq_diff(astensor_(data['XE'])[mask_dict['valid_E']], xr_dict['XrE'])
+            recon_loss_xm = mean_sq_diff(astensor_(data['XM'])[mask_dict['valid_M']], xr_dict['XrM'])
 
             # convert model output tensors to numpy
             for dict in [z_dict, xr_dict, mask_dict]:
