@@ -83,7 +83,6 @@ def main(alpha_T=1.0,
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
         # Run the model in the evaluation mode
         model.eval()
-        print("model is validation mode")
         with torch.no_grad():
             loss_dict, z_dict, xr_dict, mask_dict = model((astensor_(data['XT']),
                                                            astensor_(data['XM']),
@@ -116,7 +115,7 @@ def main(alpha_T=1.0,
                 # Logging
                 out_key = "Classification_acc_" + key
                 tb_writer.add_scalar(out_key, classification_acc[key], epoch)
-                print(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
+                # print(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
 
 
         model.train()
@@ -259,7 +258,6 @@ def main(alpha_T=1.0,
 
         # validation
         model.eval()
-        print("model is validation mode")
         with torch.no_grad():
             loss_dict, *_ = model((
                 astensor_(D['XT'][val_ind, ...]),
@@ -278,11 +276,11 @@ def main(alpha_T=1.0,
             train_loss[k] = train_loss[k] / len(train_dataloader)
 
         # printing logs
-        for k, v in train_loss.items():
-            print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
-
-        for k, v in val_loss.items():
-            print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
+        # for k, v in train_loss.items():
+        #     print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
+        #
+        # for k, v in val_loss.items():
+        #     print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
 
         # Logging ==============
         tb_writer.add_scalar('Train/MSE_XT', train_loss['recon_T'], epoch)

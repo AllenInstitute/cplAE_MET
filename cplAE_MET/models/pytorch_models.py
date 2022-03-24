@@ -907,7 +907,8 @@ class Model_TE(nn.Module):
                      lambda_TE=1.0,
                      lambda_tune_TE=1.0,
                      E_noise=None,
-                     latent_dim=5):
+                     latent_dim=5,
+                     augment_decoders=True):
             super(Model_TE, self).__init__()
             self.alpha_T = alpha_T
             self.alpha_E = alpha_E
@@ -915,6 +916,7 @@ class Model_TE(nn.Module):
             self.lambda_tune_TE = lambda_tune_TE
             self.E_noise = E_noise
             self.latent_dim = latent_dim
+            self.augment_decoders = augment_decoders
 
             # T
             self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
@@ -936,6 +938,7 @@ class Model_TE(nn.Module):
             hparam_dict['lambda_tune_TE'] = self.lambda_tune_TE
             hparam_dict['E_noise'] = self.E_noise
             hparam_dict['latent_dim'] = self.latent_dim
+            hparam_dict['augment_decoders'] = self.augment_decoders
 
 
         def forward(self, inputs):
@@ -981,12 +984,20 @@ class Model_TE(nn.Module):
             loss_dict['cpl_T->E'] = min_var_loss(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
             loss_dict['cpl_E->T'] = min_var_loss(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
 
+            if (self.training) & (self.augment_decoders):
+                aug_XrT = self.dT(ze.detach())
+                aug_XrE_inter = self.dE_specific(zt.detach())
+                aug_XrE = self.dE_shared(aug_XrE_inter)
+
+                loss_dict['aug_recon_T'] = mean_sq_diff(XT[TE_cells_in_Tdata], aug_XrT[TE_cells_in_Edata])
+                loss_dict['aug_recon_E'] = mean_sq_diff(XE[TE_cells_in_Edata], aug_XrE[TE_cells_in_Tdata])
+
             ############################## get output dicts
             z_dict = get_output_dict([zt, ze], ["zt", "ze"])
 
             xr_dict = get_output_dict([XrT, XrE], ["XrT", "XrE"])
 
-            mask_dict = get_output_dict([valid_T, valid_E, valid_TE], ["valid_T", "valid_E", "valid_ME"])
+            mask_dict = get_output_dict([valid_T, valid_E, valid_TE], ["valid_T", "valid_E", "valid_TE"])
 
             return loss_dict, z_dict, xr_dict, mask_dict
 

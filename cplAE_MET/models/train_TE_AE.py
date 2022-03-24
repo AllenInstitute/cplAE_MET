@@ -16,11 +16,12 @@ from cplAE_MET.utils.dataset import TE_Dataset, load_MET_dataset, partitions
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--alpha_T',         default=0.0,          type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_E',         default=0.0,          type=float, help='E reconstruction loss weight')
-parser.add_argument('--lambda_TE',       default=0.0,          type=float, help='coupling loss weight between T and E')
+parser.add_argument('--alpha_T',         default=1.0,          type=float, help='T reconstruction loss weight')
+parser.add_argument('--alpha_E',         default=1.0,          type=float, help='E reconstruction loss weight')
+parser.add_argument('--lambda_TE',       default=1.0,          type=float, help='coupling loss weight between T and E')
 parser.add_argument('--lambda_tune_TE',  default=0.5,          type=float, help='weight for coupling loss weight between T and E')
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
+parser.add_argument("--augment_decoders",default=1,            type=int,   help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
 parser.add_argument('--n_epochs',        default=10000,        type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
@@ -45,6 +46,7 @@ def main(alpha_T=1.0,
          lambda_tune_TE=0.5,
          E_noise=0.05,
          latent_dim=3,
+         augment_decoders=1.0,
          n_epochs=500,
          config_file='config.toml',
          n_fold=0,
@@ -53,15 +55,18 @@ def main(alpha_T=1.0,
          exp_name='DEBUG',
          log_weights=False):
 
+    if lambda_TE == 0.0:
+        augment_decoders = 0
 
-    global epoch, val_loss, train_loss
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name, fold=n_fold)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
-    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}'
-                         f'_lambda_TE_{str(lambda_TE)}_lambda_tune_TE_{str(lambda_tune_TE)}_Enoise_{str(E_noise)}' +
+    fileid = (model_id + f'_aT_{str(alpha_T)}_aE_{str(alpha_E)}_lambda_TE_{str(lambda_TE)}_lambda_tune_TE_'
+                         f'{str(lambda_tune_TE)}_Enoise_{str(E_noise)}_aug_dec_{str(augment_decoders)}' +
               f'_ld_{latent_dim:d}_ne_{n_epochs:d}_ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
 
+    # Convert int to boolean
+    augment_decoders = augment_decoders > 0
 
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
         # Run the model in the evaluation mode
@@ -70,8 +75,20 @@ def main(alpha_T=1.0,
             loss_dict, z_dict, xr_dict, mask_dict = model((astensor_(data['XT']),
                                                            astensor_(data['XE'])))
 
+            TE_cells_in_Tdata = mask_dict['valid_TE'][mask_dict['valid_T']]  # size of this mask is the same as T
+            TE_cells_in_Edata = mask_dict['valid_TE'][mask_dict['valid_E']]
+
+            if (model.augment_decoders):
+                aug_XrT = model.dT(z_dict['ze'].detach())
+                aug_XrE_inter = model.dE_specific(z_dict['zt'].detach())
+                aug_XrE = model.dE_shared(aug_XrE_inter)
+
             recon_loss_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['valid_T']], xr_dict['XrT'])
             recon_loss_xe = mean_sq_diff(astensor_(data['XE'])[mask_dict['valid_E']], xr_dict['XrE'])
+            aug_recon_loss_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['valid_T']][TE_cells_in_Tdata],
+                                             aug_XrT[TE_cells_in_Edata])
+            aug_recon_loss_xe = mean_sq_diff(astensor_(data['XE'])[mask_dict['valid_E']][TE_cells_in_Edata],
+                                             aug_XrE[TE_cells_in_Tdata])
 
             # convert model output tensors to numpy
             for dict in [z_dict, xr_dict, mask_dict]:
@@ -94,7 +111,7 @@ def main(alpha_T=1.0,
                 # Logging
                 out_key = "Classification_acc_" + key
                 tb_writer.add_scalar(out_key, classification_acc[key], epoch)
-                print(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
+                # print(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
 
 
         model.train()
@@ -107,6 +124,8 @@ def main(alpha_T=1.0,
                     'gene_ids': data['gene_ids'],
                     'recon_loss_xt': tonumpy(recon_loss_xt),
                     'recon_loss_xe': tonumpy(recon_loss_xe),
+                    'aug_recon_loss_xt': tonumpy(aug_recon_loss_xt),
+                    'aug_recon_loss_xe': tonumpy(aug_recon_loss_xe),
                     'classification_acc_zt': classification_acc["zt"],
                     'classification_acc_ze': classification_acc["ze"],
                     'T_class': n_class['zt'],
@@ -156,7 +175,8 @@ def main(alpha_T=1.0,
                      lambda_TE=lambda_TE,
                      lambda_tune_TE=lambda_tune_TE,
                      E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0),
-                     latent_dim=latent_dim)
+                     latent_dim=latent_dim,
+                     augment_decoders=augment_decoders)
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -174,6 +194,10 @@ def main(alpha_T=1.0,
                    model.lambda_TE * model.lambda_tune_TE * loss_dict['cpl_T->E'] + \
                    model.lambda_TE * (1 - model.lambda_tune_TE) * loss_dict['cpl_E->T']
 
+            if model.augment_decoders:
+                loss += model.alpha_T * loss_dict['aug_recon_T'] + \
+                        model.alpha_E * loss_dict['aug_recon_E']
+
             loss.backward()
             optimizer.step()
 
@@ -189,7 +213,6 @@ def main(alpha_T=1.0,
 
         # validation
         model.eval()
-        print("model is validation mode")
         with torch.no_grad():
             loss_dict, *_ = model((astensor_(D['XT'][val_ind, ...]), astensor_(D['XE'][val_ind])))
 
@@ -197,18 +220,17 @@ def main(alpha_T=1.0,
             val_loss[k] += loss_dict[k]
 
         model.train()
-        print("model is training mode")
 
         # Average losses over batches
         for k, v in train_loss.items():
             train_loss[k] = train_loss[k] / len(train_dataloader)
 
         # printing logs
-        for k, v in train_loss.items():
-            print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
+        # for k, v in train_loss.items():
+        #     print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
 
-        for k, v in val_loss.items():
-            print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
+        # for k, v in val_loss.items():
+        #     print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
 
         # Logging ==============
         tb_writer.add_scalar('Train/MSE_XT', train_loss['recon_T'], epoch)
