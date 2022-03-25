@@ -568,6 +568,7 @@ class Model_T_ME(nn.Module):
                  lambda_tune_ME_T=1.0,
                  lambda_ME_M=1.0,
                  lambda_ME_E=1.0,
+                 augment_decoders=True,
                  scale_factor=0.,
                  E_noise=None,
                  M_noise=0.,
@@ -582,6 +583,7 @@ class Model_T_ME(nn.Module):
         self.lambda_tune_ME_T = lambda_tune_ME_T
         self.lambda_ME_M = lambda_ME_M
         self.lambda_ME_E = lambda_ME_E
+        self.augment_decoders = augment_decoders
         self.scale_factor = scale_factor
         self.M_noise = M_noise
         self.E_noise = E_noise
@@ -622,6 +624,7 @@ class Model_T_ME(nn.Module):
         hparam_dict['lambda_tune_ME_T'] = self.lambda_tune_ME_T
         hparam_dict['lambda_ME_M'] = self.lambda_ME_M
         hparam_dict['lambda_ME_E'] = self.lambda_ME_E
+        hparam_dict['augment_decoders'] = self.augment_decoders
         hparam_dict['scale_factor'] = self.scale_factor
         hparam_dict['M_noise'] = self.M_noise
         hparam_dict['E_noise'] = self.E_noise
@@ -636,27 +639,43 @@ class Model_T_ME(nn.Module):
         XE = inputs[3]
 
         ############################## masks
-        ## masks with the size of the whole batch
-        valid_T = get_1D_mask(XT)
-        valid_M = get_1D_mask(XM)
-        valid_sd = valid_M # this is checked elsewhere. 
-        valid_E = get_1D_mask(XE) # if ALL values for one cell are nan, then it is unused in loss calculation
-        valid_ME = torch.where((valid_E) & (valid_M), True, False)
+        ## masks with the size of the whole batch (4921)
+        mask = {}
+        mask['T_tot'] = get_1D_mask(XT)
+        mask['M_tot'] = get_1D_mask(XM)
+        mask['E_tot'] = get_1D_mask(XE)
+        mask['sd_tot'] = mask['M_tot']
+        mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
+        mask['TE_tot'] = torch.where((mask['T_tot']) & (mask['E_tot']), True, False)
+        mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
+        mask['MT_tot'] = torch.where((mask['M_tot']) & (mask['T_tot']), True, False)
+        mask['MET_tot'] = torch.where((mask['M_tot']) & (mask['E_tot']) & (mask['T_tot']), True, False)
 
-        # masks with the size of each modality
-        ME_cells_in_Mdata = valid_ME[valid_M] #size of this mask is the same as M
-        ME_cells_in_Edata = valid_ME[valid_E] #size of this mask is the same as E
-        ME_cells_in_Tdata = valid_ME[valid_T] #size of this mask is the same as T
+        ## masks with the size of T data
+        mask['TE_T'] = mask['TE_tot'][mask['T_tot']]
+        mask['MT_T'] = mask['MT_tot'][mask['T_tot']]
+        mask['MET_T'] = mask['MET_tot'][mask['T_tot']]
 
-        T_cells_in_MEdata = valid_T[valid_ME]
-        M_cells_in_MEdata = valid_M[valid_ME]
-        E_cells_in_MEdata = valid_E[valid_ME]
+        ## masks with the size of E data
+        mask['TE_E'] = mask['TE_tot'][mask['E_tot']]
+        mask['ME_E'] = mask['ME_tot'][mask['E_tot']]
+        mask['MET_E'] = mask['MET_tot'][mask['E_tot']]
+
+        ## masks with the size of M data
+        mask['MT_M'] = mask['MT_tot'][mask['M_tot']]
+        mask['ME_M'] = mask['ME_tot'][mask['M_tot']]
+        mask['MET_M'] = mask['MET_tot'][mask['M_tot']]
+
+        ## masks with the size of M data
+        mask['T_ME'] = mask['T_tot'][mask['ME_tot']]
+        mask['M_ME'] = mask['M_tot'][mask['ME_tot']]
+        mask['E_ME'] = mask['E_tot'][mask['ME_tot']]
 
         ## removing nans
-        XT = XT[valid_T]
-        XM = XM[valid_M]
-        Xsd = Xsd[valid_sd]
-        XE = XE[valid_E]
+        XT = XT[mask['T_tot']]
+        XM = XM[mask['M_tot']]
+        Xsd = Xsd[mask['M_tot']]
+        XE = XE[mask['E_tot']]
 
         ############################## ENCODERS
         ## T
@@ -671,8 +690,7 @@ class Model_T_ME(nn.Module):
         ze = self.eE_specific(xe_inter.detach())
 
         ## ME
-        XME_inter = torch.cat(tensors=(xmsd_inter[ME_cells_in_Mdata],
-                                       xe_inter[ME_cells_in_Edata]), dim=1)
+        XME_inter = torch.cat(tensors=(xmsd_inter[mask['ME_M']], xe_inter[mask['ME_E']]), dim=1)
         zme = self.eME(XME_inter)
 
         ############################## DECODERS
@@ -691,8 +709,8 @@ class Model_T_ME(nn.Module):
         XrME_inter = self.dME(zme)
         ## decoder M for me inputs
         XrM_from_zme, Xrsd_from_zme = self.dM_shared(XrME_inter[:, :11],
-                                                     pool_ind1[ME_cells_in_Mdata],
-                                                     pool_ind2[ME_cells_in_Mdata])
+                                                     pool_ind1[mask['ME_M']],
+                                                     pool_ind2[mask['ME_M']])
         ## E for me inputs
         XrE_from_zme = self.dE_shared(XrME_inter[:, 11:])
 
@@ -702,14 +720,23 @@ class Model_T_ME(nn.Module):
         loss_dict['recon_E'] = mean_sq_diff(XE, XrE)
         loss_dict['recon_M'] = mean_sq_diff(xm_aug, XrM)
         loss_dict['recon_sd'] = mean_sq_diff(Xsd, Xrsd)
-        loss_dict['recon_ME'] = mean_sq_diff(xm_aug[ME_cells_in_Mdata], XrM_from_zme) + \
-                                mean_sq_diff(Xsd[ME_cells_in_Mdata], Xrsd_from_zme) + \
-                                mean_sq_diff(XE[ME_cells_in_Edata], XrE_from_zme)
+        loss_dict['recon_ME'] = mean_sq_diff(xm_aug[mask['ME_M']], XrM_from_zme) + \
+                                mean_sq_diff(Xsd[mask['ME_M']], Xrsd_from_zme) + \
+                                mean_sq_diff(XE[mask['ME_E']], XrE_from_zme)
 
-        loss_dict['cpl_T->ME'] = min_var_loss(zt.detach()[ME_cells_in_Tdata], zme[T_cells_in_MEdata])
-        loss_dict['cpl_ME->T'] = min_var_loss(zt[ME_cells_in_Tdata], zme.detach()[T_cells_in_MEdata])
-        loss_dict['cpl_ME->M'] = min_var_loss(zmsd[ME_cells_in_Mdata], zme.detach()[M_cells_in_MEdata])
-        loss_dict['cpl_ME->E'] = min_var_loss(ze[ME_cells_in_Edata], zme.detach()[E_cells_in_MEdata])
+        loss_dict['cpl_T->ME'] = min_var_loss(zt.detach()[mask['MET_T']], zme[mask['T_ME']])
+        loss_dict['cpl_ME->T'] = min_var_loss(zt[mask['MET_T']], zme.detach()[mask['T_ME']])
+        loss_dict['cpl_ME->M'] = min_var_loss(zmsd[mask['ME_M']], zme.detach())
+        loss_dict['cpl_ME->E'] = min_var_loss(ze[mask['ME_E']], zme.detach())
+
+        if (self.training) & (self.augment_decoders):
+            aug_XrT_from_zme = self.dT(zme.detach()) #aug_XrT has ME dimension now
+            aug_XrT_from_zm = self.dT(zmsd.detach()) #aug_XrT has M dimension now
+            aug_XrT_from_ze = self.dT(ze.detach()) #aug_XrT has E dimension now
+
+            loss_dict['recon_T_from_zme'] = mean_sq_diff(XT[mask['MET_T']], aug_XrT_from_zme)
+            loss_dict['recon_T_from_zm'] = mean_sq_diff(XT[mask['MT_T']], aug_XrT_from_zm)
+            loss_dict['recon_T_from_ze'] = mean_sq_diff(XT[mask['TE_T']], aug_XrT_from_ze)
 
         ############################## get output dicts
         z_dict = get_output_dict([zt, zmsd, ze, zme], 
@@ -718,10 +745,7 @@ class Model_T_ME(nn.Module):
         xr_dict = get_output_dict([XrT, XrM, Xrsd, XrE, XrM_from_zme, Xrsd_from_zme, XrE_from_zme],
                                   ["XrT", "XrM", "Xrsd", "XrE", "XrM_from_zme", "Xrsd_from_zme", "XrE_from_zme"])
 
-        mask_dict = get_output_dict([valid_T, valid_M, valid_E, valid_ME],
-                                    ["valid_T", "valid_M", "valid_E", "valid_ME"])
-
-        return loss_dict, z_dict, xr_dict, mask_dict
+        return loss_dict, z_dict, xr_dict, mask
 
 
 class Model_T_M_E(nn.Module):
