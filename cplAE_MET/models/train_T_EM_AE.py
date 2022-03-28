@@ -32,7 +32,7 @@ parser.add_argument('--scale_factor',    default=0.3,          type=float, help=
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
 parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
-parser.add_argument('--n_epochs',        default=10000,        type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=20000,        type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
 parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
@@ -95,12 +95,10 @@ def main(alpha_T=1.0,
                                                            astensor_(data['Xsd']),
                                                            astensor_(data['XE'])))
 
-            xm_aug, *_ = model.eM_shared(astensor_(data['XM'])[mask_dict['M_tot']],
-                                         astensor_(data['Xsd'])[mask_dict['M_tot']])
+            # We need to get xm_aug and pool_inds for the following loss calculations
+            xm_aug, _, pool_ind1, pool_ind2, _ = model.eM_shared(astensor_(data['XM'])[mask_dict['M_tot']],
+                                                                 astensor_(data['Xsd'])[mask_dict['M_tot']])
 
-            aug_XrT_from_zme = model.dT(z_dict['zme'].detach())  # aug_XrT has ME dimension now
-            aug_XrT_from_zm = model.dT(z_dict['zm'].detach())  # aug_XrT has M dimension now
-            aug_XrT_from_ze = model.dT(z_dict['ze'].detach())
 
             recon_loss_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['T_tot']], xr_dict['XrT'])
             recon_loss_xe = mean_sq_diff(astensor_(data['XE'])[mask_dict['E_tot']], xr_dict['XrE'])
@@ -111,9 +109,16 @@ def main(alpha_T=1.0,
             recon_loss_xsd = mean_sq_diff(astensor_(data['Xsd'])[mask_dict['M_tot']], xr_dict['Xrsd'])
 
             if (model.augment_decoders):
-                recon_loss_T_from_zme = mean_sq_diff(astensor_(data['XT'])[mask_dict['MET_tot']], aug_XrT_from_zme)
-                recon_loss_T_from_zm = mean_sq_diff(astensor_(data['XT'])[mask_dict['MT_tot']], aug_XrT_from_zm)
-                recon_loss_T_from_ze = mean_sq_diff(astensor_(data['XT'])[mask_dict['TE_tot']], aug_XrT_from_ze)
+                aug_XrT = model.dT(z_dict['zme'][mask_dict['MET_ME']])
+                aug_XrME_inter = model.dME(z_dict['zt'][mask_dict['MET_T']])
+                aug_XrM, aug_Xrsd = model.dM_shared(aug_XrME_inter[:, :11],
+                                                    pool_ind1[mask_dict['MET_M']],
+                                                    pool_ind2[mask_dict['MET_M']])
+                aug_XrE = model.dE_shared(aug_XrME_inter[:, 11:])
+                recon_loss_aug_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['MET_T']], aug_XrT)
+                recon_loss_aug_xme = mean_sq_diff(xm_aug[mask_dict['MET_M']], aug_XrM) + \
+                                     mean_sq_diff(astensor_(data['Xsd'])[mask_dict['MET_tot']], aug_Xrsd) + \
+                                     mean_sq_diff(astensor_(data['XE'])[mask_dict['MET_tot']], aug_XrE)
 
 
             # convert model output tensors to numpy
@@ -157,9 +162,8 @@ def main(alpha_T=1.0,
                     'recon_loss_xm': tonumpy(recon_loss_xm),
                     'recon_loss_xsd': tonumpy(recon_loss_xsd),
                     'recon_loss_xme': tonumpy(recon_loss_xme),
-                    'recon_loss_T_from_zme': tonumpy(recon_loss_T_from_zme),
-                    'recon_loss_T_from_zm': tonumpy(recon_loss_T_from_zm),
-                    'recon_loss_T_from_ze': tonumpy(recon_loss_T_from_ze),
+                    'recon_loss_aug_xt': tonumpy(recon_loss_aug_xt),
+                    'recon_loss_aug_xme': tonumpy(recon_loss_aug_xme),
                     'classification_acc_zt': classification_acc["zt"],
                     'classification_acc_zm': classification_acc["zm"],
                     'classification_acc_ze': classification_acc["ze"],
@@ -263,9 +267,8 @@ def main(alpha_T=1.0,
                    model.lambda_ME_E * loss_dict['cpl_ME->E']
 
             if model.augment_decoders:
-                loss += model.alpha_T * loss_dict['recon_T_from_zme'] + \
-                        model.alpha_T * loss_dict['recon_T_from_zm'] + \
-                        model.alpha_T * loss_dict['recon_T_from_ze']
+                loss += model.alpha_T * loss_dict['aug_recon_T'] + \
+                        model.alpha_T * loss_dict['aug_recon_ME']
 
 
             # set require grad for the shared module in the M and in the E equal to False
@@ -338,7 +341,7 @@ def main(alpha_T=1.0,
 
 
         #Save checkpoint
-        if (epoch) % 10 == 0:
+        if (epoch) % 1000 == 0:
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
             save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
 

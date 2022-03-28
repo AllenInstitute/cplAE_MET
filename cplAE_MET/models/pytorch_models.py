@@ -82,7 +82,6 @@ class Encoder_M_shared(nn.Module):
         max_rand = 1. + scaling_by
         depth_scaling_factor = (torch.rand(1) * (
                     max_rand - min_rand) + min_rand).item()  # generate random numbers between min and max
-        print(depth_scaling_factor)
         out = F.interpolate(im.float(), scale_factor=(depth_scaling_factor, 1, 1))  # scale the image
         return out
 
@@ -666,10 +665,8 @@ class Model_T_ME(nn.Module):
         mask['ME_M'] = mask['ME_tot'][mask['M_tot']]
         mask['MET_M'] = mask['MET_tot'][mask['M_tot']]
 
-        ## masks with the size of M data
-        mask['T_ME'] = mask['T_tot'][mask['ME_tot']]
-        mask['M_ME'] = mask['M_tot'][mask['ME_tot']]
-        mask['E_ME'] = mask['E_tot'][mask['ME_tot']]
+        ## masks with the size of ME data
+        mask['MET_ME'] = mask['MET_tot'][mask['ME_tot']]
 
         ## removing nans
         XT = XT[mask['T_tot']]
@@ -724,19 +721,24 @@ class Model_T_ME(nn.Module):
                                 mean_sq_diff(Xsd[mask['ME_M']], Xrsd_from_zme) + \
                                 mean_sq_diff(XE[mask['ME_E']], XrE_from_zme)
 
-        loss_dict['cpl_T->ME'] = min_var_loss(zt.detach()[mask['MET_T']], zme[mask['T_ME']])
-        loss_dict['cpl_ME->T'] = min_var_loss(zt[mask['MET_T']], zme.detach()[mask['T_ME']])
+        loss_dict['cpl_T->ME'] = min_var_loss(zt.detach()[mask['MET_T']], zme[mask['MET_ME']])
+        loss_dict['cpl_ME->T'] = min_var_loss(zt[mask['MET_T']], zme.detach()[mask['MET_ME']])
         loss_dict['cpl_ME->M'] = min_var_loss(zmsd[mask['ME_M']], zme.detach())
         loss_dict['cpl_ME->E'] = min_var_loss(ze[mask['ME_E']], zme.detach())
 
         if (self.training) & (self.augment_decoders):
-            aug_XrT_from_zme = self.dT(zme.detach()) #aug_XrT has ME dimension now
-            aug_XrT_from_zm = self.dT(zmsd.detach()) #aug_XrT has M dimension now
-            aug_XrT_from_ze = self.dT(ze.detach()) #aug_XrT has E dimension now
+            aug_XrT = self.dT(zme.detach()[mask['MET_ME']])
+            aug_XrME_inter = self.dME(zt.detach()[mask['MET_T']])
+            aug_XrM, aug_Xrsd = self.dM_shared(aug_XrME_inter[:, :11],
+                                               pool_ind1[mask['MET_M']],
+                                               pool_ind2[mask['MET_M']])
+            aug_XrE = self.dE_shared(aug_XrME_inter[:, 11:])
 
-            loss_dict['recon_T_from_zme'] = mean_sq_diff(XT[mask['MET_T']], aug_XrT_from_zme)
-            loss_dict['recon_T_from_zm'] = mean_sq_diff(XT[mask['MT_T']], aug_XrT_from_zm)
-            loss_dict['recon_T_from_ze'] = mean_sq_diff(XT[mask['TE_T']], aug_XrT_from_ze)
+            loss_dict['aug_recon_T'] = mean_sq_diff(XT[mask['MET_T']], aug_XrT)
+            loss_dict['aug_recon_ME'] = mean_sq_diff(xm_aug[mask['MET_M']], aug_XrM) + \
+                                        mean_sq_diff(Xsd[mask['MET_M']], aug_Xrsd) + \
+                                        mean_sq_diff(XE[mask['MET_E']], aug_XrE)
+
 
         ############################## get output dicts
         z_dict = get_output_dict([zt, zmsd, ze, zme], 
