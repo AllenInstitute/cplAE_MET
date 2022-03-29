@@ -33,7 +33,7 @@ parser.add_argument('--latent_dim',      default=5,            type=int,   help=
 parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
 parser.add_argument('--n_epochs',        default=20000,        type=int,   help='Number of epochs to train')
-parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
+parser.add_argument('--n_fold',          default=2,            type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
 parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
 parser.add_argument('--model_id',        default='ME_T',       type=str,   help='Model-specific id')
@@ -85,6 +85,7 @@ def main(alpha_T=1.0,
 
     # Convert int to boolean
     augment_decoders = augment_decoders > 0
+    alpha_tune_ME = 0.25 if augment_decoders else 1.0
 
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
         # Run the model in the evaluation mode
@@ -108,17 +109,17 @@ def main(alpha_T=1.0,
             recon_loss_xm = mean_sq_diff(astensor_(data['XM'])[mask_dict['M_tot']], xr_dict['XrM'])
             recon_loss_xsd = mean_sq_diff(astensor_(data['Xsd'])[mask_dict['M_tot']], xr_dict['Xrsd'])
 
-            if (model.augment_decoders):
-                aug_XrT = model.dT(z_dict['zme'][mask_dict['MET_ME']])
-                aug_XrME_inter = model.dME(z_dict['zt'][mask_dict['MET_T']])
-                aug_XrM, aug_Xrsd = model.dM_shared(aug_XrME_inter[:, :11],
-                                                    pool_ind1[mask_dict['MET_M']],
-                                                    pool_ind2[mask_dict['MET_M']])
-                aug_XrE = model.dE_shared(aug_XrME_inter[:, 11:])
-                recon_loss_aug_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['MET_T']], aug_XrT)
-                recon_loss_aug_xme = mean_sq_diff(xm_aug[mask_dict['MET_M']], aug_XrM) + \
-                                     mean_sq_diff(astensor_(data['Xsd'])[mask_dict['MET_tot']], aug_Xrsd) + \
-                                     mean_sq_diff(astensor_(data['XE'])[mask_dict['MET_tot']], aug_XrE)
+            # if (model.augment_decoders):
+            #     aug_XrT = model.dT(z_dict['zme'][mask_dict['MET_ME']])
+            #     aug_XrME_inter = model.dME(z_dict['zt'][mask_dict['MET_T']])
+            #     aug_XrM, aug_Xrsd = model.dM_shared(aug_XrME_inter[:, :11],
+            #                                         pool_ind1[mask_dict['MET_M']],
+            #                                         pool_ind2[mask_dict['MET_M']])
+            #     aug_XrE = model.dE_shared(aug_XrME_inter[:, 11:])
+            #     recon_loss_aug_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['MET_T']], aug_XrT)
+            #     recon_loss_aug_xme = mean_sq_diff(xm_aug[mask_dict['MET_M']], aug_XrM) + \
+            #                          mean_sq_diff(astensor_(data['Xsd'])[mask_dict['MET_tot']], aug_Xrsd) + \
+            #                          mean_sq_diff(astensor_(data['XE'])[mask_dict['MET_tot']], aug_XrE)
 
 
             # convert model output tensors to numpy
@@ -162,8 +163,8 @@ def main(alpha_T=1.0,
                     'recon_loss_xm': tonumpy(recon_loss_xm),
                     'recon_loss_xsd': tonumpy(recon_loss_xsd),
                     'recon_loss_xme': tonumpy(recon_loss_xme),
-                    'recon_loss_aug_xt': tonumpy(recon_loss_aug_xt),
-                    'recon_loss_aug_xme': tonumpy(recon_loss_aug_xme),
+                    # 'recon_loss_aug_xt': tonumpy(recon_loss_aug_xt),
+                    # 'recon_loss_aug_xme': tonumpy(recon_loss_aug_xme),
                     'classification_acc_zt': classification_acc["zt"],
                     'classification_acc_zm': classification_acc["zm"],
                     'classification_acc_ze': classification_acc["ze"],
@@ -230,6 +231,7 @@ def main(alpha_T=1.0,
                        alpha_M=alpha_M,
                        alpha_E=alpha_E,
                        alpha_ME=alpha_ME,
+                       alpha_tune_ME=alpha_tune_ME,
                        lambda_ME_T=lambda_ME_T,
                        lambda_ME_M=lambda_ME_M,
                        lambda_ME_E=lambda_ME_E,
@@ -260,16 +262,20 @@ def main(alpha_T=1.0,
                    model.alpha_M * loss_dict['recon_M'] + \
                    model.alpha_M * loss_dict['recon_sd'] + \
                    model.alpha_E * loss_dict['recon_E'] + \
-                   model.alpha_ME * loss_dict['recon_ME'] + \
+                   model.alpha_ME * model.alpha_tune_ME * loss_dict['recon_ME'] + \
                    model.lambda_ME_T * model.lambda_tune_ME_T * loss_dict['cpl_T->ME'] + \
                    model.lambda_ME_T * (1 - model.lambda_tune_ME_T) * loss_dict['cpl_ME->T'] + \
                    model.lambda_ME_M * loss_dict['cpl_ME->M'] + \
                    model.lambda_ME_E * loss_dict['cpl_ME->E']
 
             if model.augment_decoders:
-                loss += model.alpha_T * loss_dict['aug_recon_T'] + \
-                        model.alpha_T * loss_dict['aug_recon_ME']
-
+                loss += model.alpha_T * loss_dict['aug_recon_T_from_zme'] + \
+                        model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_zt'] + \
+                        model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_ze'] + \
+                        model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_zm'] + \
+                        model.alpha_M * loss_dict['aug_recon_M_from_zme'] + \
+                        model.alpha_M * loss_dict['aug_recon_sd_from_zme'] + \
+                        model.alpha_E * loss_dict['aug_recon_E_from_zme']
 
             # set require grad for the shared module in the M and in the E equal to False
             # This way, we will not update shared modules in the M or in the E autoencoder

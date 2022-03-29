@@ -563,6 +563,7 @@ class Model_T_ME(nn.Module):
                  alpha_M=1.0,
                  alpha_E=1.0,
                  alpha_ME=1.0,
+                 alpha_tune_ME=1.0,
                  lambda_ME_T=1.0,
                  lambda_tune_ME_T=1.0,
                  lambda_ME_M=1.0,
@@ -578,6 +579,7 @@ class Model_T_ME(nn.Module):
         self.alpha_M = alpha_M
         self.alpha_E = alpha_E
         self.alpha_ME = alpha_ME
+        self.alpha_tune_ME = alpha_tune_ME
         self.lambda_ME_T = lambda_ME_T
         self.lambda_tune_ME_T = lambda_tune_ME_T
         self.lambda_ME_M = lambda_ME_M
@@ -619,6 +621,7 @@ class Model_T_ME(nn.Module):
         hparam_dict['alpha_M'] = self.alpha_M
         hparam_dict['alpha_E'] = self.alpha_E
         hparam_dict['alpha_ME'] = self.alpha_ME
+        hparam_dict['alpha_tune_ME'] = self.alpha_tune_ME
         hparam_dict['lambda_ME_T'] = self.lambda_ME_T
         hparam_dict['lambda_tune_ME_T'] = self.lambda_tune_ME_T
         hparam_dict['lambda_ME_M'] = self.lambda_ME_M
@@ -721,23 +724,67 @@ class Model_T_ME(nn.Module):
                                 mean_sq_diff(Xsd[mask['ME_M']], Xrsd_from_zme) + \
                                 mean_sq_diff(XE[mask['ME_E']], XrE_from_zme)
 
-        loss_dict['cpl_T->ME'] = min_var_loss(zt.detach()[mask['MET_T']], zme[mask['MET_ME']])
-        loss_dict['cpl_ME->T'] = min_var_loss(zt[mask['MET_T']], zme.detach()[mask['MET_ME']])
+        loss_dict['cpl_T->ME'] = min_var_loss(zt[mask['MET_T']].detach(), zme[mask['MET_ME']])
+        loss_dict['cpl_ME->T'] = min_var_loss(zt[mask['MET_T']], zme[mask['MET_ME']].detach())
         loss_dict['cpl_ME->M'] = min_var_loss(zmsd[mask['ME_M']], zme.detach())
         loss_dict['cpl_ME->E'] = min_var_loss(ze[mask['ME_E']], zme.detach())
 
         if (self.training) & (self.augment_decoders):
-            aug_XrT = self.dT(zme.detach()[mask['MET_ME']])
-            aug_XrME_inter = self.dME(zt.detach()[mask['MET_T']])
-            aug_XrM, aug_Xrsd = self.dM_shared(aug_XrME_inter[:, :11],
-                                               pool_ind1[mask['MET_M']],
-                                               pool_ind2[mask['MET_M']])
-            aug_XrE = self.dE_shared(aug_XrME_inter[:, 11:])
+            ######### Aug decoders for ME and T coupling
+            # passing zme to decoder T
+            aug_XrT_from_zme = self.dT(zme[mask['MET_ME']].detach())
+            # passing zt to decoder ME and then shared_E and shared_M
+            aug_XrME_inter = self.dME(zt[mask['MET_T']].detach())
+            aug_XrE_from_zt = self.dE_shared(aug_XrME_inter[:, 11:])
+            aug_XrM_from_zt, aug_Xrsd_from_zt = self.dM_shared(aug_XrME_inter[:, :11],
+                                                               pool_ind1[mask['MET_M']],
+                                                               pool_ind2[mask['MET_M']])
 
-            loss_dict['aug_recon_T'] = mean_sq_diff(XT[mask['MET_T']], aug_XrT)
-            loss_dict['aug_recon_ME'] = mean_sq_diff(xm_aug[mask['MET_M']], aug_XrM) + \
-                                        mean_sq_diff(Xsd[mask['MET_M']], aug_Xrsd) + \
-                                        mean_sq_diff(XE[mask['MET_E']], aug_XrE)
+            ######### Aug decoders for ME and E coupling
+            # passing zme to decoder E
+            aug_XrE_inter = self.dE_specific(zme.detach())
+            aug_XrE_from_zme = self.dE_shared(aug_XrE_inter)
+            # passing ze to decoder ME and then shared_E and shared_M
+            aug_XrME_inter = self.dME(ze[mask['ME_E']].detach())
+            aug_XrE_from_ze = self.dE_shared(aug_XrME_inter[:, 11:])
+            aug_XrM_from_ze, aug_Xrsd_from_ze = self.dM_shared(aug_XrME_inter[:, :11],
+                                                               pool_ind1[mask['ME_M']],
+                                                               pool_ind2[mask['ME_M']])
+
+            ######### Aug decoders for ME and M coupling
+            # passing zme to decoder M
+            aug_XrM_inter = self.dM_specific(zme.detach())
+            aug_XrM_from_zme, aug_Xrsd_from_zme = self.dM_shared(aug_XrM_inter[:, :11],
+                                                                 pool_ind1[mask['ME_M']],
+                                                                 pool_ind2[mask['ME_M']])
+            # passing zm to decoder ME and then shared_E and shared_M
+            aug_XrME_inter = self.dME(zmsd[mask['ME_M']].detach())
+            aug_XrE_from_zm = self.dE_shared(aug_XrME_inter[:, 11:])
+            aug_XrM_from_zm, aug_Xrsd_from_zm = self.dM_shared(aug_XrME_inter[:, :11],
+                                                               pool_ind1[mask['ME_M']],
+                                                               pool_ind2[mask['ME_M']])
+
+            ######### Aug decoders losses
+            # aug loss for ME and T coupling
+            loss_dict['aug_recon_T_from_zme'] = mean_sq_diff(XT[mask['MET_T']], aug_XrT_from_zme)
+            loss_dict['aug_recon_ME_from_zt'] = mean_sq_diff(xm_aug[mask['MET_M']], aug_XrM_from_zt) + \
+                                                mean_sq_diff(Xsd[mask['MET_M']], aug_Xrsd_from_zt) + \
+                                                mean_sq_diff(XE[mask['MET_E']], aug_XrE_from_zt)
+
+            # aug loss for ME and E coupling
+            loss_dict['aug_recon_E_from_zme'] = mean_sq_diff(XE[mask['ME_E']], aug_XrE_from_zme)
+            loss_dict['aug_recon_ME_from_ze'] = mean_sq_diff(xm_aug[mask['ME_M']], aug_XrM_from_ze) + \
+                                                mean_sq_diff(Xsd[mask['ME_M']], aug_Xrsd_from_ze) + \
+                                                mean_sq_diff(XE[mask['ME_E']], aug_XrE_from_ze)
+
+            # aug loss for ME and M coupling
+            loss_dict['aug_recon_M_from_zme'] = mean_sq_diff(xm_aug[mask['ME_M']], aug_XrM_from_zme)
+            loss_dict['aug_recon_sd_from_zme'] = mean_sq_diff(Xsd[mask['ME_M']], aug_Xrsd_from_zme)
+            loss_dict['aug_recon_ME_from_zm'] = mean_sq_diff(xm_aug[mask['ME_M']], aug_XrM_from_zm) + \
+                                                mean_sq_diff(Xsd[mask['ME_M']], aug_Xrsd_from_zm) + \
+                                                mean_sq_diff(XE[mask['ME_E']], aug_XrE_from_zm)
+
+
 
 
         ############################## get output dicts
@@ -896,14 +943,14 @@ class Model_T_M_E(nn.Module):
         loss_dict['recon_M'] = mean_sq_diff(xm_aug, XrM)
         loss_dict['recon_sd'] = mean_sq_diff(Xsd, Xrsd)
 
-        loss_dict['cpl_T->E'] = min_var_loss(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
-        loss_dict['cpl_E->T'] = min_var_loss(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
+        loss_dict['cpl_T->E'] = min_var_loss(zt[TE_cells_in_Tdata].detach(), ze[TE_cells_in_Edata])
+        loss_dict['cpl_E->T'] = min_var_loss(zt[TE_cells_in_Tdata], ze[TE_cells_in_Edata].detach())
 
-        loss_dict['cpl_T->M'] = min_var_loss(zt.detach()[TM_cells_in_Tdata], zmsd[TM_cells_in_Mdata])
-        loss_dict['cpl_M->T'] = min_var_loss(zt[TM_cells_in_Tdata], zmsd.detach()[TM_cells_in_Mdata])
+        loss_dict['cpl_T->M'] = min_var_loss(zt[TM_cells_in_Tdata].detach(), zmsd[TM_cells_in_Mdata])
+        loss_dict['cpl_M->T'] = min_var_loss(zt[TM_cells_in_Tdata], zmsd[TM_cells_in_Mdata].detach())
 
-        loss_dict['cpl_M->E'] = min_var_loss(zmsd.detach()[ME_cells_in_Mdata], ze[ME_cells_in_Edata])
-        loss_dict['cpl_E->M'] = min_var_loss(zmsd[ME_cells_in_Mdata], ze.detach()[ME_cells_in_Edata])
+        loss_dict['cpl_M->E'] = min_var_loss(zmsd[ME_cells_in_Mdata].detach(), ze[ME_cells_in_Edata])
+        loss_dict['cpl_E->M'] = min_var_loss(zmsd[ME_cells_in_Mdata], ze[ME_cells_in_Edata].detach())
 
         ############################## get output dicts
         z_dict = get_output_dict([zt, zmsd, ze], ["zt", "zm", "ze"])
@@ -1007,8 +1054,8 @@ class Model_TE(nn.Module):
             loss_dict['recon_T'] = mean_sq_diff(XT, XrT)
             loss_dict['recon_E'] = mean_sq_diff(XE, XrE)
 
-            loss_dict['cpl_T->E'] = min_var_loss(zt.detach()[TE_cells_in_Tdata], ze[TE_cells_in_Edata])
-            loss_dict['cpl_E->T'] = min_var_loss(zt[TE_cells_in_Tdata], ze.detach()[TE_cells_in_Edata])
+            loss_dict['cpl_T->E'] = min_var_loss(zt[TE_cells_in_Tdata].detach(), ze[TE_cells_in_Edata])
+            loss_dict['cpl_E->T'] = min_var_loss(zt[TE_cells_in_Tdata], ze[TE_cells_in_Edata].detach())
 
             if (self.training) & (self.augment_decoders):
                 aug_XrT = self.dT(ze.detach())
