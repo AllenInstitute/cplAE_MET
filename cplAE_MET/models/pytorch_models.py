@@ -546,6 +546,7 @@ class Model_T_ME(nn.Module):
     Args:
         alpha_T: T reconstruction loss weight
         alpha_M: M reconstruction loss weight
+        alpha_sd: soma depth reconstruction loss weight
         alpha_E: E reconstruction loss weight
         alpha_ME: ME reconstruction loss weight
         lambda_ME_T: coupling loss weight between ME and T
@@ -561,6 +562,7 @@ class Model_T_ME(nn.Module):
     def __init__(self,
                  alpha_T=1.0,
                  alpha_M=1.0,
+                 alpha_sd=1.0,
                  alpha_E=1.0,
                  alpha_ME=1.0,
                  alpha_tune_ME=1.0,
@@ -577,6 +579,7 @@ class Model_T_ME(nn.Module):
         super(Model_T_ME, self).__init__()
         self.alpha_T = alpha_T
         self.alpha_M = alpha_M
+        self.alpha_sd = alpha_sd
         self.alpha_E = alpha_E
         self.alpha_ME = alpha_ME
         self.alpha_tune_ME = alpha_tune_ME
@@ -619,6 +622,7 @@ class Model_T_ME(nn.Module):
         hparam_dict = {}
         hparam_dict['alpha_T'] = self.alpha_T
         hparam_dict['alpha_M'] = self.alpha_M
+        hparam_dict['alpha_sd'] = self.alpha_sd
         hparam_dict['alpha_E'] = self.alpha_E
         hparam_dict['alpha_ME'] = self.alpha_ME
         hparam_dict['alpha_tune_ME'] = self.alpha_tune_ME

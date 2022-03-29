@@ -21,6 +21,7 @@ from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 parser = argparse.ArgumentParser()
 parser.add_argument('--alpha_T',         default=1.0,          type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',         default=1.0,          type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_sd',        default=1.0,          type=float, help='soma depth reconstruction loss weight')
 parser.add_argument('--alpha_E',         default=1.0,          type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',        default=1.0,          type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_ME_T',     default=1.0,          type=float, help='coupling loss weight between ME and T')
@@ -52,6 +53,7 @@ def set_paths(config_file=None, exp_name='TEMP', fold=0):
 
 def main(alpha_T=1.0,
          alpha_M=1.0,
+         alpha_sd=1.0,
          alpha_E=1.0,
          alpha_ME=1.0,
          lambda_ME_T=1.0,
@@ -77,7 +79,7 @@ def main(alpha_T=1.0,
     dir_pth = set_paths(config_file=config_file, exp_name=exp_name, fold=n_fold)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
-    fileid = (model_id + f'_aT_{str(alpha_T)}_aM_{str(alpha_M)}_aE_{str(alpha_E)}_aME_{str(alpha_ME)}_' +
+    fileid = (model_id + f'_aT_{str(alpha_T)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_aE_{str(alpha_E)}_aME_{str(alpha_ME)}_' +
               f'lambda_ME_T_{str(lambda_ME_T)}_lambda_tune_ME_T_{str(lambda_tune_ME_T)}_lambda_ME_M_{str(lambda_ME_M)}_'
               f'lambda_ME_E_{str(lambda_ME_E)}_aug_dec_{str(augment_decoders)}_' +
               f'Enoise_{str(E_noise)}_Mnoise_{str(M_noise)}_scale_{str(scale_factor)}_' +
@@ -188,12 +190,12 @@ def main(alpha_T=1.0,
             p.requires_grad = val
 
     def init_losses(loss_dict):
-        train_loss = {}
-        val_loss = {}
+        t_loss = {}
+        v_loss = {}
         for k in loss_dict.keys():
-            train_loss[k] = 0.
-            val_loss[k] = 0.
-        return train_loss, val_loss
+            t_loss[k] = 0.
+            v_loss[k] = 0.
+        return t_loss, v_loss
 
     # Data selection============================
     D = load_MET_dataset(dir_pth['MET_data'])
@@ -229,6 +231,7 @@ def main(alpha_T=1.0,
     # Model ============================
     model = Model_T_ME(alpha_T=alpha_T,
                        alpha_M=alpha_M,
+                       alpha_sd=alpha_sd,
                        alpha_E=alpha_E,
                        alpha_ME=alpha_ME,
                        alpha_tune_ME=alpha_tune_ME,
@@ -260,7 +263,7 @@ def main(alpha_T=1.0,
 
             loss = model.alpha_T * loss_dict['recon_T'] + \
                    model.alpha_M * loss_dict['recon_M'] + \
-                   model.alpha_M * loss_dict['recon_sd'] + \
+                   model.alpha_sd * loss_dict['recon_sd'] + \
                    model.alpha_E * loss_dict['recon_E'] + \
                    model.alpha_ME * model.alpha_tune_ME * loss_dict['recon_ME'] + \
                    model.lambda_ME_T * model.lambda_tune_ME_T * loss_dict['cpl_T->ME'] + \
@@ -274,7 +277,7 @@ def main(alpha_T=1.0,
                         model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_ze'] + \
                         model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_zm'] + \
                         model.alpha_M * loss_dict['aug_recon_M_from_zme'] + \
-                        model.alpha_M * loss_dict['aug_recon_sd_from_zme'] + \
+                        model.alpha_sd * loss_dict['aug_recon_sd_from_zme'] + \
                         model.alpha_E * loss_dict['aug_recon_E_from_zme']
 
             # set require grad for the shared module in the M and in the E equal to False
