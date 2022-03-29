@@ -30,7 +30,7 @@ def get_TE_pkl_keys(parent_dir_path, listdir):
             latent_dim = re.search('ld_(.*)_ne', f).group(1) if re.search('ld_(.*)_ne', f) else np.nan
             fold = re.search('fold_(.*).pkl', f).group(1) if re.search('fold_(.*).pkl', f) else np.nan
             dir = parent_dir_path + f
-            output[(alphaT, alphaE, lambda_TE, lambda_tune_TE, aug_dec, latent_dim, fold)] = ut.loadpkl(dir)
+            output[(alphaT, alphaE, lambda_TE, lambda_tune_TE, aug_dec, latent_dim, aug_dec, fold)] = ut.loadpkl(dir)
             classification_acc_zt = output[(alphaT, alphaE, lambda_TE, lambda_tune_TE, latent_dim, aug_dec, fold)]['classification_acc_zt']
             classification_acc_ze = output[(alphaT, alphaE, lambda_TE, lambda_tune_TE, latent_dim, aug_dec, fold)]['classification_acc_ze']
             recon_loss_xt = output[(alphaT, alphaE, lambda_TE, lambda_tune_TE, latent_dim, aug_dec, fold)]['recon_loss_xt']
