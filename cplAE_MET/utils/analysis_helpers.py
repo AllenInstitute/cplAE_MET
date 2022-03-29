@@ -46,8 +46,81 @@ def get_TE_pkl_keys(parent_dir_path, listdir):
             "fold": [int(fold)],
             "classification_acc_zt": [classification_acc_zt],
             "classification_acc_ze": [classification_acc_ze],
-            "recon_loss_xt": [recon_loss_xt],
-            "recon_loss_xe": [recon_loss_xe]})
+            "recon_loss_xt": [float(recon_loss_xt)],
+            "recon_loss_xe": [float(recon_loss_xe)]})
+
+            df = pd.concat([df, df1], ignore_index=True)
+
+    return output, df
+
+
+def get_T_ME_pkl_keys(parent_dir_path, listdir):
+    '''
+    Get list of pkl files and return the hyperparameters used in the model as well as the model output
+    Args:
+        parent_dir_path: path to the parent folder which contains folders with multiple pkl files in them
+        listdir: list of all the folders that have multiple pkl files and we want to analyze
+    '''
+    output = {}
+    df = pd.DataFrame()
+    for f in listdir:
+        if f.endswith(".pkl"):
+            aT = re.search('aT_(.*)_aM_', f).group(1) if re.search('aT_(.*)_aM_', f) else np.nan
+            cond1 = re.search('aM_(.*)_asd_', f)
+            cond2 = re.search('aM_(.*)_aE_', f)
+            aM = re.search('aM_(.*)_asd_', f).group(1) if cond1 else re.search('aM_(.*)_aE_', f).group(
+                1) if cond2 else np.nan
+            asd = re.search('asd_(.*)_aE_', f).group(1) if re.search('asd_(.*)_aE_', f) else aM
+            aE = re.search('aE_(.*)_aME_', f).group(1) if re.search('aE_(.*)_aME_', f) else np.nan
+            aME = re.search('aME_(.*)_lambda_ME_T', f).group(1) if re.search('aME_(.*)_lambda_ME_T', f) else np.nan
+            lambda_ME_T = re.search('lambda_ME_T_(.*)_lambda_tune', f).group(1) if re.search(
+                'lambda_ME_T_(.*)_lambda_tune', f) else np.nan
+            lambda_ME_M = re.search('lambda_ME_M_(.*)_lambda', f).group(1) if re.search('lambda_ME_M_(.*)_lambda',
+                                                                                        f) else np.nan
+            lambda_tune_ME_T = re.search('lambda_tune_ME_T_(.*)_lambda_ME_M', f).group(1) if re.search(
+                'lambda_tune_ME_T_(.*)_lambda_ME_M', f) else np.nan
+            aug_dec = re.search('aug_dec_(.*)_Enoise', f).group(1) if re.search('aug_dec_(.*)_Enoise', f) else np.nan
+            cond1 = re.search('lambda_ME_E_(.*)_aug_dec', f)
+            cond2 = re.search('lambda_ME_E_(.*)_Enoise', f)
+            lambda_ME_E = re.search('lambda_ME_E_(.*)_aug_dec', f).group(1) if cond1 else re.search(
+                'lambda_ME_E_(.*)_Enoise', f).group(1) if cond2 else np.nan
+            latent_dim = re.search('ld_(.*)_ne', f).group(1) if re.search('ld_(.*)_ne', f) else np.nan
+            fold = re.search('fold_(.*).pkl', f).group(1) if re.search('fold_(.*).pkl', f) else np.nan
+
+            dir = parent_dir_path + f
+
+            output[(aT, aE, aM, asd, aME, lambda_ME_T, lambda_tune_ME_T, lambda_ME_M, lambda_ME_E, latent_dim, aug_dec,
+                    fold)] = ut.loadpkl(dir)
+            classification_acc_zt = output[(
+            aT, aE, aM, asd, aME, lambda_ME_T, lambda_tune_ME_T, lambda_ME_M, lambda_ME_E, latent_dim, aug_dec, fold)][
+                'classification_acc_zt']
+            classification_acc_ze = output[(
+            aT, aE, aM, asd, aME, lambda_ME_T, lambda_tune_ME_T, lambda_ME_M, lambda_ME_E, latent_dim, aug_dec, fold)][
+                'classification_acc_ze']
+            classification_acc_zme = output[(
+            aT, aE, aM, asd, aME, lambda_ME_T, lambda_tune_ME_T, lambda_ME_M, lambda_ME_E, latent_dim, aug_dec, fold)][
+                'classification_acc_zme']
+            classification_acc_zm = output[(
+            aT, aE, aM, asd, aME, lambda_ME_T, lambda_tune_ME_T, lambda_ME_M, lambda_ME_E, latent_dim, aug_dec, fold)][
+                'classification_acc_zm']
+
+            df1 = pd.DataFrame({
+                'aT': [float(aT.replace("-", "."))],
+                "aE": [float(aE.replace("-", "."))],
+                "aM": [float(aM.replace("-", "."))],
+                "asd": [float(asd.replace("-", "."))],
+                "aME": [float(aME.replace("-", "."))],
+                "lambda_ME_T": [float(lambda_ME_T.replace("-", "."))],
+                "lambda_ME_M": [float(lambda_ME_M.replace("-", "."))],
+                "lambda_ME_E": [float(lambda_ME_E.replace("-", "."))],
+                "lambda_tune_ME_T": [float(lambda_tune_ME_T.replace("-", "."))],
+                "latent_dim": [int(latent_dim)],
+                "aug_dec": [float(aug_dec)],
+                "fold": [int(fold)],
+                "classification_acc_zt": [float(classification_acc_zt)],
+                "classification_acc_ze": [float(classification_acc_ze)],
+                "classification_acc_zm": [float(classification_acc_zm)],
+                "classification_acc_zme": [float(classification_acc_zme)]})
 
             df = pd.concat([df, df1], ignore_index=True)
 
