@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from functools import partial
 import torch.nn.functional as F
+from timebudget import timebudget
 from cplAE_MET.models.torch_helpers import astensor
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -341,7 +342,7 @@ class Encoder_E_shared(nn.Module):
     """
 
     def __init__(self,
-                 in_dim=134,
+                 in_dim=130,
                  int_dim=40,
                  E_noise=None,
                  dropout_p=0.1):
@@ -442,7 +443,7 @@ class Decoder_E_shared(nn.Module):
     """
     Shared module of decoder E is used when we are reconstructing XrE or XrE_from_zme(cross modal reconstruction of XE).
     The architecture is hard-coded.
-    The input is of the size: (batch_size x 40) and the output is XrE_from_zme with dimension: (batch_size x 134)
+    The input is of the size: (batch_size x 40) and the output is XrE_from_zme with dimension: (batch_size x E_features)
     Args:
         int_dim: number of units in hidden layers
         out_dim: number of outputs
@@ -450,7 +451,7 @@ class Decoder_E_shared(nn.Module):
 
     def __init__(self,
                  int_dim=40,
-                 out_dim=134):
+                 out_dim=130):
 
         super(Decoder_E_shared, self).__init__()
         self.fc0 = nn.Linear(int_dim, int_dim)
@@ -557,6 +558,7 @@ class Model_T_ME(nn.Module):
         E_noise: standard deviation of additive gaussian noise for E data
         M_noise: standard deviation of additive gaussian noise for M data
         latent_dim: dim for representations
+        E_features: number of E features
     """
 
     def __init__(self,
@@ -574,7 +576,8 @@ class Model_T_ME(nn.Module):
                  scale_factor=0.,
                  E_noise=None,
                  M_noise=0.,
-                 latent_dim=5):
+                 latent_dim=5,
+                 E_features=130):
 
         super(Model_T_ME, self).__init__()
         self.alpha_T = alpha_T
@@ -592,6 +595,7 @@ class Model_T_ME(nn.Module):
         self.M_noise = M_noise
         self.E_noise = E_noise
         self.latent_dim = latent_dim
+        self.E_features = E_features
 
         # T
         self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
@@ -606,11 +610,11 @@ class Model_T_ME(nn.Module):
 
 
         # E
-        self.eE_shared = Encoder_E_shared(E_noise=self.E_noise)
+        self.eE_shared = Encoder_E_shared(E_noise=self.E_noise, in_dim=self.E_features)
         self.eE_specific = Encoder_E_specific(latent_dim=self.latent_dim)
         self.dE_specific = Decoder_E_specific(in_dim=self.latent_dim)
-        self.dE_shared = Decoder_E_shared()
-        self.dE_shared_copy = Decoder_E_shared() #Will share weights with self.DE_shared
+        self.dE_shared = Decoder_E_shared(out_dim=self.E_features)
+        self.dE_shared_copy = Decoder_E_shared(out_dim=self.E_features) #Will share weights with self.DE_shared
 
 
         # ME
@@ -1265,4 +1269,4 @@ def get_1D_mask(x):
 
 
 def get_output_dict(out_list, key_list):
-    return dict(zip(key_list,out_list))
+    return dict(zip(key_list, out_list))

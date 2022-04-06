@@ -1,9 +1,12 @@
 from typing import Dict, Any
 
+import os
 import torch
 import argparse
+import shutil
 from pathlib import Path
 from functools import partial
+from timebudget import timebudget
 
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
@@ -33,7 +36,7 @@ parser.add_argument('--scale_factor',    default=0.3,          type=float, help=
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
 parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
-parser.add_argument('--n_epochs',        default=20000,        type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=10,        type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',          default=2,            type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
 parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
@@ -87,42 +90,31 @@ def main(alpha_T=1.0,
 
     # Convert int to boolean
     augment_decoders = augment_decoders > 0
-    alpha_tune_ME = 0.25 if augment_decoders else 1.0
+    alpha_tune_ME = 0.5 if augment_decoders else 1.0
 
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
         # Run the model in the evaluation mode
         model.eval()
+
+        XT = astensor_(data['XT'])
+        XM = astensor_(data['XM'])
+        Xsd = astensor_(data['Xsd'])
+        XE = astensor_(data['XE'])
+
         with torch.no_grad():
-            loss_dict, z_dict, xr_dict, mask_dict = model((astensor_(data['XT']),
-                                                           astensor_(data['XM']),
-                                                           astensor_(data['Xsd']),
-                                                           astensor_(data['XE'])))
+            loss_dict, z_dict, xr_dict, mask_dict = model((XT, XM, Xsd, XE))
 
             # We need to get xm_aug and pool_inds for the following loss calculations
-            xm_aug, _, pool_ind1, pool_ind2, _ = model.eM_shared(astensor_(data['XM'])[mask_dict['M_tot']],
-                                                                 astensor_(data['Xsd'])[mask_dict['M_tot']])
+            xm_aug, _, pool_ind1, pool_ind2, _ = model.eM_shared(XM[mask_dict['M_tot']],
+                                                                 Xsd[mask_dict['M_tot']])
 
-
-            recon_loss_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['T_tot']], xr_dict['XrT'])
-            recon_loss_xe = mean_sq_diff(astensor_(data['XE'])[mask_dict['E_tot']], xr_dict['XrE'])
+            recon_loss_xt = mean_sq_diff(XT[mask_dict['T_tot']], xr_dict['XrT'])
+            recon_loss_xe = mean_sq_diff(XE[mask_dict['E_tot']], xr_dict['XrE'])
             recon_loss_xme = mean_sq_diff(xm_aug[mask_dict['ME_M']], xr_dict['XrM_from_zme']) + \
-                             mean_sq_diff(astensor_(data['Xsd'])[mask_dict['ME_tot']], xr_dict['Xrsd_from_zme']) + \
-                             mean_sq_diff(astensor_(data['XE'])[mask_dict['ME_tot']], xr_dict['XrE_from_zme'])
-            recon_loss_xm = mean_sq_diff(astensor_(data['XM'])[mask_dict['M_tot']], xr_dict['XrM'])
-            recon_loss_xsd = mean_sq_diff(astensor_(data['Xsd'])[mask_dict['M_tot']], xr_dict['Xrsd'])
-
-            # if (model.augment_decoders):
-            #     aug_XrT = model.dT(z_dict['zme'][mask_dict['MET_ME']])
-            #     aug_XrME_inter = model.dME(z_dict['zt'][mask_dict['MET_T']])
-            #     aug_XrM, aug_Xrsd = model.dM_shared(aug_XrME_inter[:, :11],
-            #                                         pool_ind1[mask_dict['MET_M']],
-            #                                         pool_ind2[mask_dict['MET_M']])
-            #     aug_XrE = model.dE_shared(aug_XrME_inter[:, 11:])
-            #     recon_loss_aug_xt = mean_sq_diff(astensor_(data['XT'])[mask_dict['MET_T']], aug_XrT)
-            #     recon_loss_aug_xme = mean_sq_diff(xm_aug[mask_dict['MET_M']], aug_XrM) + \
-            #                          mean_sq_diff(astensor_(data['Xsd'])[mask_dict['MET_tot']], aug_Xrsd) + \
-            #                          mean_sq_diff(astensor_(data['XE'])[mask_dict['MET_tot']], aug_XrE)
-
+                             mean_sq_diff(Xsd[mask_dict['ME_tot']], xr_dict['Xrsd_from_zme']) + \
+                             mean_sq_diff(XE[mask_dict['ME_tot']], xr_dict['XrE_from_zme'])
+            recon_loss_xm = mean_sq_diff(XM[mask_dict['M_tot']], xr_dict['XrM'])
+            recon_loss_xsd = mean_sq_diff(Xsd[mask_dict['M_tot']], xr_dict['Xrsd'])
 
             # convert model output tensors to numpy
             for dict in [z_dict, xr_dict, mask_dict]:
@@ -148,7 +140,6 @@ def main(alpha_T=1.0,
                 tb_writer.add_scalar(out_key, classification_acc[key], epoch)
                 #(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
 
-
         model.train()
 
         savedict = {'XT': data['XT'],
@@ -165,8 +156,6 @@ def main(alpha_T=1.0,
                     'recon_loss_xm': tonumpy(recon_loss_xm),
                     'recon_loss_xsd': tonumpy(recon_loss_xsd),
                     'recon_loss_xme': tonumpy(recon_loss_xme),
-                    # 'recon_loss_aug_xt': tonumpy(recon_loss_aug_xt),
-                    # 'recon_loss_aug_xme': tonumpy(recon_loss_aug_xme),
                     'classification_acc_zt': classification_acc["zt"],
                     'classification_acc_zm': classification_acc["zm"],
                     'classification_acc_ze': classification_acc["ze"],
@@ -184,6 +173,12 @@ def main(alpha_T=1.0,
         savedict.update(splits[n_fold])
         savepkl(savedict, fname)
         return
+
+    def save_ckp(state, checkpoint_dir):
+        f_path = os.path.join(checkpoint_dir, 'checkpoint.pt')
+        torch.save(state, f_path)
+        best_fpath = os.path.join(checkpoint_dir, 'best_model.pt')
+        shutil.copyfile(f_path, best_fpath)
 
     def set_requires_grad(module, val):
         for p in module.parameters():
@@ -243,7 +238,8 @@ def main(alpha_T=1.0,
                        scale_factor=scale_factor,
                        E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0),
                        M_noise=M_noise,
-                       latent_dim=latent_dim)
+                       latent_dim=latent_dim,
+                       E_features=D['XE'].shape[1])
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -260,6 +256,7 @@ def main(alpha_T=1.0,
                 astensor_(batch['XM']),
                 astensor_(batch['Xsd']),
                 astensor_(batch['XE'])))
+
 
             loss = model.alpha_T * loss_dict['recon_T'] + \
                    model.alpha_M * loss_dict['recon_M'] + \
@@ -348,11 +345,18 @@ def main(alpha_T=1.0,
         tb_writer.add_scalar('Train/cpl_ME->E', train_loss['cpl_ME->E'], epoch)
         tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_ME->E'], epoch)
 
-
         #Save checkpoint
         if (epoch) % 1000 == 0:
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
             save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
+            #save model
+            checkpoint = {
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict()
+            }
+            save_ckp(checkpoint, dir_pth['result'])
+
 
     #Save final results
     fname = dir_pth['result'] + "exit_summary_" + fileid + ".pkl"

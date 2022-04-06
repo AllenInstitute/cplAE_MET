@@ -1,5 +1,9 @@
 # Ipfx features extraction
 
+To see the results of the ipfx extraction that Fahimeh ran on 30Mar22, navigate to the following path:
+   
+     /allen/programs/celltypes/workgroups/rnaseqanalysis/Fahimehb/git_workspace/ipfx/ipfx/bin
+
 1. Clone the ipfx repository from this link:
 
        https://github.com/AllenInstitute/ipfx.git
@@ -16,13 +20,15 @@
    
        pip install -e .
     
-5. Extract time seris and ipfx features. To do so, in your working directory, prepare the following files:
+5. Extract time seris and ipfx features. To do so, in your working directory, 
+   prepare the following files (the python codes are already inside ipfx repo,
+   you need to prepare the input json files and the specimen_id file):
    
-       run_feature_collection.py (a python code to exctract ephys features )
-       run_feature_vector_extraction.py (a python code to exctract ephys features )
-       specimen_ids.txt (contains all the cell specimen ids)
-       input_ephys_feature_vector.json (input file for run_feature_vector_extraction.py)
-       input_ephys_feature_collection.json (input file for run_feature_collection.py)
+       run_feature_collection.py  #the python code to exctract ephys features
+       run_feature_vector_extraction.py  #the python code to exctract time series
+       specimen_ids.txt #specimen id file
+       input_ephys_feature_vector.json  #input file for run_feature_vector_extraction.py
+       input_ephys_feature_collection.json #input file for run_feature_collection.py
    
 
 input_ephys_feature_vector.json has the following info:
@@ -31,7 +37,7 @@ input_ephys_feature_vector.json has the following info:
      "output_dir": "/<your working directory path>",
      "input": "/<your working directory path>/specimen_ids.txt"
      "data_source":"lims",
-     "output_code":"Ephys_timeseries",
+     "output_code":"fv_Ephys_timeseries",
      "output_file_type":"h5"
      }
 
@@ -46,7 +52,7 @@ input_ephys_feature_collection.json has the following info:
       "log_level":"DEBUG"
     }
 
-To run the these two python codes on slurm, the follwoing submit.sh can be used:
+To run the these two python codes on slurm, the following run_ipfx.sh can be used:
 
     #!/bin/bash
     #SBATCH --partition=celltypes
@@ -67,17 +73,17 @@ To run the these two python codes on slurm, the follwoing submit.sh can be used:
 
     python -m run_feature_vector_extraction --input_json input_ephys_feature_vector.json
     
-in order to submit this job on slurm, the follwoing command can be used:
+in order to submit this job on slurm, the following command can be used:
 
-    sbatch submit.sh
+    sbatch run_ipfx.sh
 
-The last line of the submit.sh can be modified to run the other python code as:
+The last line of the run_ipfx.sh can be modified to run the other python code as:
 
-    python -m run_feature_vector_collection --input_json input_ephys_feature_collection.json
+    python -m run_feature_collection --input_json input_ephys_feature_collection.json
 
 The output of these two runs will be two files:
 
-    Ephys_timeseries.h5
+    fv_Ephys_timeseries.h5
     ipfx_features.csv
     
 To prepare the transcriptomic and ephys data ready for training, read ET_model_input_preparation.md
