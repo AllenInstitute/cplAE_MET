@@ -75,49 +75,50 @@ def main(config_file='config_preproc.toml'):
 
     dir_pth = set_paths(config_file=config_file)
     m_anno_path = dir_pth['m_anno']
-    t_anno_path = dir_pth['t_anno']
+    # t_anno_path = dir_pth['t_anno']
     hist2d_120x4_path = dir_pth["hist2d_120x4"]
 
     ################## Reading m_anno and finding cells with few nonzero pixels
-    ids = pd.read_csv(dir_pth['specimen_ids'], header=None)
-    specimen_ids = ids[0].tolist()
+    ids = pd.read_csv(dir_pth['specimen_ids'])
+    specimen_ids = ids['specimen_id'].tolist()
     m_anno = pd.read_csv(m_anno_path) #This is used for soma depth and class type
     ab_spec_id = get_cell_ids_of_abnormal_images(specimen_ids, hist2d_120x4_path, m_anno,  min_nonzero_pixels=5)
     print(len(ab_spec_id), "cells will be dropped because of the few non zero pixels")
+    drop_spec_id = ab_spec_id
 
     ################## Read the t data and find the cells with poor Q
-    t_anno = feather.read_dataframe(t_anno_path)
-    t_anno = t_anno.rename(columns={"spec_id_label": "specimen_id"})
-    t_anno['specimen_id'] = t_anno['specimen_id'].astype(int)
+    # t_anno = feather.read_dataframe(t_anno_path)
+    # t_anno = t_anno.rename(columns={"spec_id_label": "specimen_id"})
+    #t_anno['specimen_id'] = t_anno['specimen_id'].astype(int)
 
-    t_poorQ_ids = t_anno[(t_anno["Tree_call_label"] == "PoorQ")]["specimen_id"].to_list()
-    t_poorQ_ids = [i for i in t_poorQ_ids if i in specimen_ids]
-    drop_spec_id = ab_spec_id + t_poorQ_ids
+    #t_poorQ_ids = t_anno[(t_anno["Tree_call_label"] == "PoorQ")]["specimen_id"].to_list()
+    #t_poorQ_ids = [i for i in t_poorQ_ids if i in specimen_ids]
+    #drop_spec_id = ab_spec_id + t_poorQ_ids
 
     ################## Find small clusters to remove from m data
-    specimen_ids = [i for i in specimen_ids if i not in drop_spec_id]
-    sub_t_anno = t_anno[t_anno["specimen_id"].isin(specimen_ids)]
-    rm_small_clusters = [k for k, v in Counter(sub_t_anno['Tree_first_cl_label']).items() if v <= 5]
-    small_cluster_cells = sub_t_anno[sub_t_anno["Tree_first_cl_label"].isin(rm_small_clusters)]['specimen_id'].to_list()
-    drop_spec_id = np.unique(drop_spec_id + small_cluster_cells)
-    print(len(drop_spec_id),"in total this amount of cells will be dropped from m data")
+    #specimen_ids = [i for i in specimen_ids if i not in drop_spec_id]
+    #sub_t_anno = t_anno[t_anno["specimen_id"].isin(specimen_ids)]
+    #rm_small_clusters = [k for k, v in Counter(sub_t_anno['Tree_first_cl_label']).items() if v <= 5]
+    #small_cluster_cells = sub_t_anno[sub_t_anno["Tree_first_cl_label"].isin(rm_small_clusters)]['specimen_id'].to_list()
+    #drop_spec_id = np.unique(drop_spec_id + small_cluster_cells)
+    #print(len(drop_spec_id),"in total this amount of cells will be dropped from m data")
 
     ################## Drop those ids from the anno file
-    specimen_ids = [i for i in specimen_ids if i not in drop_spec_id]
+    # specimen_ids = [i for i in specimen_ids if i not in drop_spec_id]
+    # df_spec = pd.DataFrame(specimen_ids, columns=["specimen_id"])
 
     ################## Merge with t_anno and make sure the order is the same as in the specimen id file
-    df_spec = pd.DataFrame(specimen_ids, columns=["specimen_id"])
-    t_anno = t_anno.merge(df_spec, on="specimen_id", how='right')
-    t_anno = t_anno[["specimen_id", "Tree_first_cl_label", "Tree_first_cl_color", "Tree_first_cl_id"]]
+    # t_anno = t_anno.merge(df_spec, on="specimen_id", how='right')
+    # t_anno = t_anno[["specimen_id", "Tree_first_cl_label", "Tree_first_cl_color", "Tree_first_cl_id"]]
 
     print("...................................................")
     print("Generating image for all the locked dataset, for those that we dont have M, we put nan")
     hist_shape = (1, 120, 4, 1)
     im_shape = (1, 120, 4, 4)
-    im = np.zeros((t_anno.shape[0], 120, 4, 4), dtype=float)
-    soma_depth = np.zeros((t_anno.shape[0],))
+    im = np.zeros((ids.shape[0], 120, 4, 4), dtype=float)
+    soma_depth = np.zeros((ids.shape[0],))
     c = 0
-    for i, spec_id in tqdm(enumerate(t_anno['specimen_id'])):
+    for i, spec_id in tqdm(enumerate(ids['specimen_id'])):
         if spec_id in drop_spec_id:
             im[i, ...] = np.full(im_shape, np.nan)
             soma_depth[i] = np.nan
@@ -155,20 +156,14 @@ def main(config_file='config_preproc.toml'):
                 im[i, ...] = np.full(im_shape, np.nan)
                 soma_depth[i] = np.nan
 
-    print("in total", c, "cells have m data available")
+    print("so far in total", c, "cells have m data available")
 
     sio.savemat(dir_pth['output'], {'hist_ax_de_api_bas': im,
                                     'soma_depth': soma_depth,
-                                    'cluster_label': t_anno.Tree_first_cl_label.to_list(),
-                                    'cluster_color': t_anno.Tree_first_cl_color.to_list(),
-                                    'cluster_id': t_anno.Tree_first_cl_id.to_list(),
-                                    'specimen_id': t_anno.specimen_id.to_list()}, do_compression=True)
+                                    'specimen_id': ids['specimen_id'].to_list()}, do_compression=True)
+
     return
 
 if __name__ == '__main__':
     args = parser.parse_args()
     main(**vars(args))
-
-# merge_exc_inh_M_dataset("/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/inh_M_120x4x4_09Feb22.mat",
-#                         "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/exc_M_120x4x4_09Feb22.mat",
-#                         "/Users/fahimehb/Documents/git-workspace/cplAE_MET/data/proc/inh_exc_M_120x4x4_09Feb22.mat" )

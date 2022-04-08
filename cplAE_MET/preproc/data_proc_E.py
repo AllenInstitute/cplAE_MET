@@ -36,8 +36,8 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
 
     dir_pth = set_paths(config_file=config_file)
 
-    ids = pd.read_csv(dir_pth['specimen_ids'], header=None)
-    specimen_ids = ids[0].tolist()
+    ids = pd.read_csv(dir_pth['specimen_ids'])
+    specimen_ids = ids['specimen_id'].tolist()
     print("...................................................")
     print("There are", len(specimen_ids), "sample_ids in the locked dataset")
 
@@ -202,6 +202,9 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     df_merged['specimen_id'] = df_merged['specimen_id'].astype(np.int64)
     df_merged = df_merged.merge(pd.DataFrame(specimen_ids, columns=["specimen_id"]), on="specimen_id", how='right')
 
+    # Make sure the order is the same as th
+    df_merged = df_merged.set_index('specimen_id')
+    df_merged = df_merged.loc[specimen_ids].reset_index()
     df_merged.to_csv(dir_pth['e_output'], index=False)
 
     f = df_merged
@@ -209,7 +212,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     sns.catplot(x="variable", y="value", kind='box', data=df, palette=sns.color_palette(["skyblue"]), aspect=4.4)
     ax = plt.gca()
     ax.set(**{'title': 'Scaled sPC features', 'xlabel': '', 'ylabel': ''})
-    ax.set_xticklabels(ax.get_xticklabels(),rotation=90)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
     plt.show()
 
     print("Size of Merged E features:", df_merged.shape)

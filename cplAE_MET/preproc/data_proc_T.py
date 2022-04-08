@@ -48,8 +48,10 @@ def main(config_file='config_preproc.toml', beta_threshold=0.4):
     T_dat = feather.read_dataframe(dir_pth['t_data'])
     T_ann = feather.read_dataframe(dir_pth['t_anno'])
 
-    ids = pd.read_csv(dir_pth['specimen_ids'], header=None)
-    specimen_ids = ids[0].tolist()
+    ids = pd.read_csv(dir_pth['specimen_ids'])
+    t_cells = ids[ids['T_cell']==1]['specimen_id'].to_list()
+    specimen_ids = ids['specimen_id'].tolist()
+    not_t_cells = [i for i in specimen_ids if i not in t_cells]
     print("...................................................")
     print("There are", len(specimen_ids), "sample_ids in the locked dataset")
 
@@ -85,16 +87,26 @@ def main(config_file='config_preproc.toml', beta_threshold=0.4):
     T_dat = T_dat.set_index("specimen_id")
     T_dat = T_dat.reset_index()
 
-
+    print("...................................................")
+    print("set the cpm values for non tcells to nan")
+    T_dat = T_dat.set_index("specimen_id")
+    T_ann = T_ann.set_index("specimen_id")
+    T_dat.loc[not_t_cells] = np.nan
+    T_ann.loc[not_t_cells] = np.nan
 
     print("...................................................")
-    print("Apply log2 to cpm values")
-    T_dat[keep_gene_id] = np.log(T_dat[keep_gene_id]+1)
+    print("Apply log2 to cpm values for t_cells only")
+    T_dat.loc[t_cells][keep_gene_id] = np.log(T_dat.loc[t_cells][keep_gene_id]+1)
 
 
-    assert (T_dat['specimen_id'].to_list() == T_ann['specimen_id'].to_list()), \
-        'Order of annotation and data samples is different!'
+    assert (T_dat.index.to_list() == specimen_ids), \
+        'Order of data samples and id list is different!'
 
+    assert (T_ann.index.to_list() == specimen_ids), \
+        'Order of annotation id list is different!'
+
+    T_dat = T_dat.reset_index()
+    T_ann = T_ann.reset_index()
     print("annotation file size:", T_ann.shape)
     print("logcpm file size:", T_dat.shape)
 

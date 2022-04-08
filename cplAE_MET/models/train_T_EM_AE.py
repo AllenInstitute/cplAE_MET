@@ -37,7 +37,7 @@ parser.add_argument('--latent_dim',      default=5,            type=int,   help=
 parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
 parser.add_argument('--n_epochs',        default=10,        type=int,   help='Number of epochs to train')
-parser.add_argument('--n_fold',          default=2,            type=int,   help='kth fold in 10-fold CV splits')
+parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
 parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
 parser.add_argument('--model_id',        default='ME_T',       type=str,   help='Model-specific id')
@@ -126,8 +126,8 @@ def main(alpha_T=1.0,
             classification_acc = {}
             n_class = {}
             for (z, mask, key) in zip(
-                            [z_dict['zt'], z_dict['zm'], z_dict['ze'], z_dict['zme']],
-                            [mask_dict['T_tot'], mask_dict['M_tot'], mask_dict['E_tot'], mask_dict['ME_tot']],
+                            [z_dict['zt'], z_dict['zm'][mask_dict['MT_M']], z_dict['ze'][mask_dict['TE_E']], z_dict['zme'][mask_dict['MET_ME']]],
+                            [mask_dict['T_tot'], mask_dict['MT_tot'], mask_dict['TE_tot'], mask_dict['MET_tot']],
                             ["zt", "zm", "ze", "zme"]):
 
                 classification_acc[key], n_class[key] = run_QDA(X=z,
@@ -174,10 +174,12 @@ def main(alpha_T=1.0,
         savepkl(savedict, fname)
         return
 
-    def save_ckp(state, checkpoint_dir):
-        f_path = os.path.join(checkpoint_dir, 'checkpoint.pt')
+    def save_ckp(state, checkpoint_dir, n_fold):
+        filename = 'checkpoint_' + str(n_fold) + '.pt'
+        f_path = os.path.join(checkpoint_dir, filename)
         torch.save(state, f_path)
-        best_fpath = os.path.join(checkpoint_dir, 'best_model.pt')
+        filename = 'best_model_' + str(n_fold) + '.pt'
+        best_fpath = os.path.join(checkpoint_dir, filename)
         shutil.copyfile(f_path, best_fpath)
 
     def set_requires_grad(module, val):
@@ -195,7 +197,7 @@ def main(alpha_T=1.0,
     # Data selection============================
     D = load_MET_dataset(dir_pth['MET_data'])
     D['XM'] = np.expand_dims(D['XM'], axis=1)
-    D['Xsd'] = np.expand_dims(D['X_sd'], axis=1)
+    D['Xsd'] = np.expand_dims(D['Xsd'], axis=1)
 
     # soma depth is range (0,1) <-- check this
     pad = 60
@@ -355,7 +357,7 @@ def main(alpha_T=1.0,
                 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict()
             }
-            save_ckp(checkpoint, dir_pth['result'])
+            save_ckp(checkpoint, dir_pth['result'], n_fold)
 
 
     #Save final results
