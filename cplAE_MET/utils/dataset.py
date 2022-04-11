@@ -83,9 +83,9 @@ def load_MET_dataset(data_path, verbose=False):
     D['XE'] = data['E_dat']
     D['XM'] = data['M_dat']
     D['Xsd'] = data['soma_depth']
-    D['cluster_label'] = [mystr.replace(" ", "") for mystr in data['cluster_label']]
+    D['cluster_label'] = np.array([mystr.replace(" ", "") for mystr in data['cluster_label']])
     D['cluster_id'] = data['cluster_id'].astype(int)
-    D['cluster_color'] = [mystr.replace(" ", "") for mystr in data['cluster_color']]
+    D['cluster_color'] = np.array([mystr.replace(" ", "") for mystr in data['cluster_color']])
     D['specimen_id'] = data['specimen_id']
     D['gene_ids'] = data['gene_ids']
     return D
