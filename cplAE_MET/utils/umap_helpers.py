@@ -2,9 +2,9 @@ import umap
 import numpy as np
 import matplotlib.pyplot as plt
 
-def get_T_ME_model_umap_relation_dict(model_output):
+def get_T_ME_model_umap_relation_list(model_output):
     '''
-    Takes the masks of the T_ME coupled AE and create relation dictionary between the following
+    Takes the model of the T_ME coupled AE and create relation dictionary between the following
     embeddings consecutively: zt, ze, zme, zm
     The first relation is between zt and ze, next is between ze and zme and the last is between zme and zm
     '''
@@ -22,7 +22,14 @@ def get_T_ME_model_umap_relation_dict(model_output):
     return [relation_dict['T_E'], relation_dict['E_ME'], relation_dict['ME_M']]
 
 
-def get_T_ME_model_umap_colors(model_output):
+def get_T_ME_model_emb_list(model_output):
+    '''
+    Takes the model and put the embeddings of zt, ze, zme and zm in this order in a list
+    '''
+    return [model_output['zt'], model_output['ze'], model_output['zme'], model_output['zm'][model_output['MT_M']]]
+
+
+def get_T_ME_model_umap_colors_list(model_output):
     '''
     Takes the model output and return the Ttype colors for zt, ze, zme and zm in this order
     '''
