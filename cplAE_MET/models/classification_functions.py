@@ -58,11 +58,11 @@ def run_QDA(X, y, test_size, min_label_size=7):
     '''
     small_types_mask = get_small_types_mask(y, min_label_size)
     X = X[small_types_mask]
-    _, y = np.unique(y[small_types_mask], return_inverse=True)
+    labels, y = np.unique(y[small_types_mask], return_inverse=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
 
     clf = QuadraticDiscriminantAnalysis()
     clf.fit(X_train, y_train)
     classification_acc = clf.score(X_test, y_test) * 100
     n_class = len(Counter(y_test))
-    return classification_acc, n_class
+    return classification_acc, n_class, labels, clf

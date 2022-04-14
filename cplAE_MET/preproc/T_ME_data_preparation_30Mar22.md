@@ -16,6 +16,10 @@
       "VISpl6b"   "VISpm1"    "VISpm2/3"  "VISpm4"    "VISpm5"    "VISpm6a"   "VISpm6b"   "VISpor1"   "VISpor2/3" "VISpor4"   "VISpor5"   "VISpor6a"  "VISpor6b"
       "VISrl2/3"  "VISrl4"    "VISrl5"    "VISrl6a"  
 
+- At the end, cells that have M data available but they were poorQ cells, were added back to the dataset because we are going 
+  to treat these cells as M_only cells with no E and T. In total 64 cells were added back to the above cells (6574). For E cells 
+  we dont do this because as of now, E cells that have PoorQ T type, are not reliable.
+  
 - Specimen_id of these cells were saved in the following path:
 
       "/allen/programs/celltypes/workgroups/rnaseqanalysis/Fahimehb/git_workspace/cplAE_MET/data/proc/exc_inh_specimen_ids_30Mar22.txt

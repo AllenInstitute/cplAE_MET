@@ -96,7 +96,7 @@ def main(config_file='config_preproc.toml', beta_threshold=0.4):
 
     print("...................................................")
     print("Apply log2 to cpm values for t_cells only")
-    T_dat.loc[t_cells][keep_gene_id] = np.log(T_dat.loc[t_cells][keep_gene_id]+1)
+    T_dat[keep_gene_id] = np.log(T_dat[keep_gene_id]+1)
 
 
     assert (T_dat.index.to_list() == specimen_ids), \

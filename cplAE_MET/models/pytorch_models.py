@@ -805,6 +805,257 @@ class Model_T_ME(nn.Module):
         return loss_dict, z_dict, xr_dict, mask
 
 
+class Model_T_ME_version_1(nn.Module):
+    """T, ME autoencoder
+
+    Args:
+        alpha_T: T reconstruction loss weight
+        alpha_M: M reconstruction loss weight
+        alpha_sd: soma depth reconstruction loss weight
+        alpha_E: E reconstruction loss weight
+        alpha_ME: ME reconstruction loss weight
+        lambda_ME_T: coupling loss weight between ME and T
+        lambda_E_T: coupling loss weight between E and T
+        lambda_M_T: coupling loss weight between M and T
+        lambda_tune_ME_T: tuning parameter for bidirectional coupling term between ME and T arms
+        scale_factor: scaling factor for arbor density image augmentation
+        E_noise: standard deviation of additive gaussian noise for E data
+        M_noise: standard deviation of additive gaussian noise for M data
+        latent_dim: dim for representations
+        E_features: number of E features
+    """
+
+    def __init__(self,
+                 alpha_T=1.0,
+                 alpha_M=1.0,
+                 alpha_sd=1.0,
+                 alpha_E=1.0,
+                 alpha_ME=1.0,
+                 lambda_ME_T=1.0,
+                 lambda_E_T=1.0,
+                 lambda_M_T=1.0,
+                 lambda_tune_ME_T=1.0,
+                 augment_decoders=True,
+                 scale_factor=0.,
+                 E_noise=None,
+                 M_noise=0.,
+                 latent_dim=5,
+                 E_features=130):
+
+        super(Model_T_ME_version_1, self).__init__()
+        self.alpha_T = alpha_T
+        self.alpha_M = alpha_M
+        self.alpha_sd = alpha_sd
+        self.alpha_E = alpha_E
+        self.alpha_ME = alpha_ME
+        self.lambda_ME_T = lambda_ME_T
+        self.lambda_E_T = lambda_E_T
+        self.lambda_M_T = lambda_M_T
+        self.lambda_tune_ME_T = lambda_tune_ME_T
+        self.augment_decoders = augment_decoders
+        self.scale_factor = scale_factor
+        self.M_noise = M_noise
+        self.E_noise = E_noise
+        self.latent_dim = latent_dim
+        self.E_features = E_features
+
+        # T
+        self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
+        self.dT = Decoder_T_specific(in_dim=self.latent_dim)
+
+        # M
+        self.eM_shared = Encoder_M_shared(M_noise=self.M_noise, scale_factor=self.scale_factor)
+        self.eM_specific = Encoder_M_specific(latent_dim=self.latent_dim)
+        self.dM_specific = Decoder_M_specific(in_dim=self.latent_dim)
+        self.dM_shared = Decoder_M_shared()
+        self.dM_shared_copy = Decoder_M_shared() #Will share weights with self.DM_shared
+
+
+        # E
+        self.eE_shared = Encoder_E_shared(E_noise=self.E_noise, in_dim=self.E_features)
+        self.eE_specific = Encoder_E_specific(latent_dim=self.latent_dim)
+        self.dE_specific = Decoder_E_specific(in_dim=self.latent_dim)
+        self.dE_shared = Decoder_E_shared(out_dim=self.E_features)
+        self.dE_shared_copy = Decoder_E_shared(out_dim=self.E_features) #Will share weights with self.DE_shared
+
+
+        # ME
+        self.eME = Encoder_ME_specific(in_dim=51, int_dim=20, latent_dim=self.latent_dim)
+        self.dME = Decoder_ME_specific(in_dim=self.latent_dim, int_dim=20, out_dim=51)
+        return
+
+    def get_hparams(self):
+        hparam_dict = {}
+        hparam_dict['alpha_T'] = self.alpha_T
+        hparam_dict['alpha_M'] = self.alpha_M
+        hparam_dict['alpha_sd'] = self.alpha_sd
+        hparam_dict['alpha_E'] = self.alpha_E
+        hparam_dict['alpha_ME'] = self.alpha_ME
+        hparam_dict['lambda_ME_T'] = self.lambda_ME_T
+        hparam_dict['lambda_E_T'] = self.lambda_E_T
+        hparam_dict['lambda_M_T'] = self.lambda_M_T
+        hparam_dict['lambda_tune_ME_T'] = self.lambda_tune_ME_T
+        hparam_dict['augment_decoders'] = self.augment_decoders
+        hparam_dict['scale_factor'] = self.scale_factor
+        hparam_dict['M_noise'] = self.M_noise
+        hparam_dict['E_noise'] = self.E_noise
+        hparam_dict['latent_dim'] = self.latent_dim
+        return
+
+    def forward(self, inputs):
+        # inputs
+        XT = inputs[0]
+        XM = inputs[1]
+        Xsd = inputs[2]
+        XE = inputs[3]
+
+        ############################## masks
+        ## masks with the size of the whole batch (4921)
+        mask = {}
+        mask['T_tot'] = get_1D_mask(XT)
+        mask['M_tot'] = get_1D_mask(XM)
+        mask['E_tot'] = get_1D_mask(XE)
+        mask['sd_tot'] = mask['M_tot']
+        mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
+        mask['TE_tot'] = torch.where((mask['T_tot']) & (mask['E_tot']), True, False)
+        mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
+        mask['MT_tot'] = torch.where((mask['M_tot']) & (mask['T_tot']), True, False)
+        mask['MET_tot'] = torch.where((mask['M_tot']) & (mask['E_tot']) & (mask['T_tot']), True, False)
+
+        ## masks with the size of T data
+        mask['TE_T'] = mask['TE_tot'][mask['T_tot']]
+        mask['MT_T'] = mask['MT_tot'][mask['T_tot']]
+        mask['MET_T'] = mask['MET_tot'][mask['T_tot']]
+
+        ## masks with the size of E data
+        mask['TE_E'] = mask['TE_tot'][mask['E_tot']]
+        mask['ME_E'] = mask['ME_tot'][mask['E_tot']]
+        mask['MET_E'] = mask['MET_tot'][mask['E_tot']]
+
+        ## masks with the size of M data
+        mask['MT_M'] = mask['MT_tot'][mask['M_tot']]
+        mask['ME_M'] = mask['ME_tot'][mask['M_tot']]
+        mask['MET_M'] = mask['MET_tot'][mask['M_tot']]
+
+        ## masks with the size of ME data
+        mask['MET_ME'] = mask['MET_tot'][mask['ME_tot']]
+
+        ## removing nans
+        XT = XT[mask['T_tot']]
+        XM = XM[mask['M_tot']]
+        Xsd = Xsd[mask['M_tot']]
+        XE = XE[mask['E_tot']]
+
+        ############################## ENCODERS
+        ## T
+        zt = self.eT(XT)
+
+        ## M
+        xm_aug, _, pool_ind1, pool_ind2, xmsd_inter = self.eM_shared(XM, Xsd)
+        zmsd = self.eM_specific(xmsd_inter.detach())
+
+        ## E
+        xe_inter = self.eE_shared(XE)
+        ze = self.eE_specific(xe_inter.detach())
+
+        ## ME
+        XME_inter = torch.cat(tensors=(xmsd_inter[mask['ME_M']], xe_inter[mask['ME_E']]), dim=1)
+        zme = self.eME(XME_inter)
+
+        ############################## DECODERS
+        ## T
+        XrT = self.dT(zt)
+
+        ## M
+        Xrmsd_inter = self.dM_specific(zmsd)
+        XrM, Xrsd = self.dM_shared_copy(Xrmsd_inter, pool_ind1, pool_ind2)
+
+        ## E
+        XrE_inter = self.dE_specific(ze)
+        XrE = self.dE_shared_copy(XrE_inter)
+
+        ## ME
+        XrME_inter = self.dME(zme)
+        ## decoder M for me inputs
+        XrM_from_zme, Xrsd_from_zme = self.dM_shared(XrME_inter[:, :11],
+                                                     pool_ind1[mask['ME_M']],
+                                                     pool_ind2[mask['ME_M']])
+        ## E for me inputs
+        XrE_from_zme = self.dE_shared(XrME_inter[:, 11:])
+
+        ############################## Loss calculations
+        loss_dict = {}
+        loss_dict['recon_T'] = mean_sq_diff(XT, XrT)
+        loss_dict['recon_E'] = mean_sq_diff(XE, XrE)
+        loss_dict['recon_M'] = mean_sq_diff(xm_aug, XrM)
+        loss_dict['recon_sd'] = mean_sq_diff(Xsd, Xrsd)
+        loss_dict['recon_ME'] = mean_sq_diff(xm_aug[mask['ME_M']], XrM_from_zme) + \
+                                mean_sq_diff(Xsd[mask['ME_M']], Xrsd_from_zme) + \
+                                mean_sq_diff(XE[mask['ME_E']], XrE_from_zme)
+
+        loss_dict['cpl_T->ME'] = min_var_loss(zt[mask['MET_T']].detach(), zme[mask['MET_ME']])
+        loss_dict['cpl_ME->T'] = min_var_loss(zt[mask['MET_T']], zme[mask['MET_ME']].detach())
+        loss_dict['cpl_T->E'] = min_var_loss(zt[mask['TE_T']].detach(), ze[mask['TE_E']])
+        loss_dict['cpl_T->M'] = min_var_loss(zt[mask['MT_T']].detach(), zmsd[mask['MT_M']])
+
+        if (self.training) & (self.augment_decoders):
+            ######### Aug decoders for ME and T coupling
+            # passing zme to decoder T
+            aug_XrT_from_zme_cpl_ME_T = self.dT(zme[mask['MET_ME']].detach())
+            # passing zt to decoder ME and then shared_E and shared_M
+            aug_XrME_inter_cpl_ME_T = self.dME(zt[mask['MET_T']].detach())
+            aug_XrE_from_zt_cpl_ME_T = self.dE_shared(aug_XrME_inter_cpl_ME_T[:, 11:])
+            aug_XrM_from_zt_cpl_ME_T, aug_Xrsd_from_zt_cpl_ME_T = self.dM_shared(aug_XrME_inter_cpl_ME_T[:, :11],
+                                                                                 pool_ind1[mask['MET_M']],
+                                                                                 pool_ind2[mask['MET_M']])
+
+            ######### Aug decoders for E and T coupling
+            # passing ze to decoder T
+            aug_XrT_from_ze_cpl_E_T = self.dT(ze[mask['TE_E']].detach())
+            # passing zt to decoder E
+            aug_XrE_inter_cpl_E_T = self.dE_specific(zt[mask['TE_T']].detach())
+            aug_XrE_from_zt_cpl_E_T = self.dE_shared(aug_XrE_inter_cpl_E_T)
+
+
+            ######### Aug decoders for M and T coupling
+            # passing zm to decoder T
+            aug_XrT_from_zm_cpl_M_T = self.dT(zmsd[mask['MT_M']].detach())
+
+            # passing zt to decoder M
+            aug_XrM_inter_cpl_M_T = self.dM_specific(zt[mask['MT_T']].detach())
+            aug_XrM_from_zt_cpl_M_T, aug_Xrsd_from_zt_cpl_M_T = self.dM_shared(aug_XrM_inter_cpl_M_T,
+                                                                               pool_ind1[mask['MT_M']],
+                                                                               pool_ind2[mask['MT_M']])
+
+            ######### Aug decoders losses
+            # aug loss for ME and T coupling
+            loss_dict['aug_recon_T_from_zme'] = mean_sq_diff(XT[mask['MET_T']], aug_XrT_from_zme_cpl_ME_T)
+            loss_dict['aug_recon_ME_from_zt'] = mean_sq_diff(xm_aug[mask['MET_M']], aug_XrM_from_zt_cpl_ME_T) + \
+                                                mean_sq_diff(Xsd[mask['MET_M']], aug_Xrsd_from_zt_cpl_ME_T) + \
+                                                mean_sq_diff(XE[mask['MET_E']], aug_XrE_from_zt_cpl_ME_T)
+
+            # aug loss for E and T coupling
+            loss_dict['aug_recon_E_from_zt'] = mean_sq_diff(XE[mask['TE_E']], aug_XrE_from_zt_cpl_E_T)
+            loss_dict['aug_recon_T_from_ze'] = mean_sq_diff(XT[mask['TE_T']], aug_XrT_from_ze_cpl_E_T)
+
+            # aug loss for M and T coupling
+            loss_dict['aug_recon_M_from_zt'] = mean_sq_diff(xm_aug[mask['MT_M']], aug_XrM_from_zt_cpl_M_T)
+            loss_dict['aug_recon_sd_from_zt'] = mean_sq_diff(Xsd[mask['MT_M']], aug_Xrsd_from_zt_cpl_M_T)
+            loss_dict['aug_recon_T_from_zm'] = mean_sq_diff(XT[mask['MT_T']], aug_XrT_from_zm_cpl_M_T)
+
+
+
+
+            ############################## get output dicts
+        z_dict = get_output_dict([zt, zmsd, ze, zme],
+                                 ["zt", "zm", "ze", "zme"])
+
+        xr_dict = get_output_dict([XrT, XrM, Xrsd, XrE, XrM_from_zme, Xrsd_from_zme, XrE_from_zme],
+                                  ["XrT", "XrM", "Xrsd", "XrE", "XrM_from_zme", "Xrsd_from_zme", "XrE_from_zme"])
+
+        return loss_dict, z_dict, xr_dict, mask
+
+
 class Model_T_M_E(nn.Module):
     """T, M, E autoencoder
 

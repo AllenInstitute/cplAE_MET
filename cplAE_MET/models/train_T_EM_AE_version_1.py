@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from cplAE_MET.utils.utils import savepkl
 from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.load_config import load_config
-from cplAE_MET.models.pytorch_models import Model_T_ME, mean_sq_diff
+from cplAE_MET.models.pytorch_models import Model_T_ME_version_1, mean_sq_diff
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
 from cplAE_MET.utils.dataset import T_ME_Dataset, load_MET_dataset, partitions
@@ -28,9 +28,9 @@ parser.add_argument('--alpha_sd',        default=1.0,          type=float, help=
 parser.add_argument('--alpha_E',         default=1.0,          type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',        default=1.0,          type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_ME_T',     default=1.0,          type=float, help='coupling loss weight between ME and T')
+parser.add_argument('--lambda_E_T',     default=1.0,          type=float, help='coupling loss weight between E and T')
+parser.add_argument('--lambda_M_T',     default=1.0,          type=float, help='coupling loss weight between M and T')
 parser.add_argument('--lambda_tune_ME_T',default=0.5,          type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_ME_M',     default=1.0,          type=float, help='coupling loss weight between ME and M')
-parser.add_argument('--lambda_ME_E',     default=1.0,          type=float, help='coupling loss weight between ME and E')
 parser.add_argument("--augment_decoders",default=1,            type=int,   help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument('--scale_factor',    default=0.3,          type=float, help='scaling factor for M_data interpolation')
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
@@ -60,9 +60,9 @@ def main(alpha_T=1.0,
          alpha_E=1.0,
          alpha_ME=1.0,
          lambda_ME_T=1.0,
+         lambda_E_T=1.0,
+         lambda_M_T=1.0,
          lambda_tune_ME_T=1.0,
-         lambda_ME_M=1.0,
-         lambda_ME_E=1.0,
          augment_decoders=1.0,
          scale_factor=0.3,
          M_noise=0.0,
@@ -83,19 +83,19 @@ def main(alpha_T=1.0,
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
 
     fileid = (model_id + f'_aT_{str(alpha_T)}_aM_{str(alpha_M)}_asd_{str(alpha_sd)}_aE_{str(alpha_E)}_aME_{str(alpha_ME)}_' +
-              f'lambda_ME_T_{str(lambda_ME_T)}_lambda_tune_ME_T_{str(lambda_tune_ME_T)}_lambda_ME_M_{str(lambda_ME_M)}_'
-              f'lambda_ME_E_{str(lambda_ME_E)}_aug_dec_{str(augment_decoders)}_' +
+              f'lambda_ME_T_{str(lambda_ME_T)}_lambda_E_T_{str(lambda_E_T)}_lambda_M_T_{str(lambda_M_T)}_' +
+              f'lambda_tune_ME_T_{str(lambda_tune_ME_T)}_' +
+              f'aug_dec_{str(augment_decoders)}_' +
               f'Enoise_{str(E_noise)}_Mnoise_{str(M_noise)}_scale_{str(scale_factor)}_' +
               f'ld_{latent_dim:d}_ne_{n_epochs:d}_ri_{run_iter:d}_fold_{n_fold:d}').replace('.', '-')
 
     # Convert int to boolean
     augment_decoders = augment_decoders > 0
-    alpha_tune_ME = 0.5 if augment_decoders else 1.0
 
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
+
         # Run the model in the evaluation mode
         model.eval()
-
         XT = astensor_(data['XT'])
         XM = astensor_(data['XM'])
         Xsd = astensor_(data['Xsd'])
@@ -103,10 +103,6 @@ def main(alpha_T=1.0,
 
         with torch.no_grad():
             loss_dict, z_dict, xr_dict, mask_dict = model((XT, XM, Xsd, XE))
-
-            # We need to get xm_aug and pool_inds for the following loss calculations
-            xm_aug, _, pool_ind1, pool_ind2, _ = model.eM_shared(XM[mask_dict['M_tot']],
-                                                                 Xsd[mask_dict['M_tot']])
 
             # convert model output tensors to numpy
             for dict in [z_dict, xr_dict, mask_dict]:
@@ -132,6 +128,7 @@ def main(alpha_T=1.0,
                 tb_writer.add_scalar(out_key, classification_acc[key], epoch)
                 #(f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
 
+
         savedict = {'XT': data['XT'],
                     'XM': data['XM'],
                     'Xsd': data['Xsd'],
@@ -140,7 +137,7 @@ def main(alpha_T=1.0,
                     'cluster_label': np.array([mystr.rstrip() for mystr in data['cluster_label']]),
                     'cluster_color': np.array([mystr.rstrip() for mystr in data['cluster_color']]),
                     'cluster_id': data['cluster_id'],
-                    'gene_ids': data['gene_ids'],
+                    'gene_ids': np.array([mystr.rstrip() for mystr in data['gene_ids']]),
                     'recon_loss_xt': tonumpy(loss_dict['recon_T']),
                     'recon_loss_xe': tonumpy(loss_dict['recon_E']),
                     'recon_loss_xm': tonumpy(loss_dict['recon_M']),
@@ -218,22 +215,21 @@ def main(alpha_T=1.0,
     train_dataloader = DataLoader(train_dataset, batch_size=batchsize, shuffle=True)
 
     # Model ============================
-    model = Model_T_ME(alpha_T=alpha_T,
-                       alpha_M=alpha_M,
-                       alpha_sd=alpha_sd,
-                       alpha_E=alpha_E,
-                       alpha_ME=alpha_ME,
-                       alpha_tune_ME=alpha_tune_ME,
-                       lambda_ME_T=lambda_ME_T,
-                       lambda_ME_M=lambda_ME_M,
-                       lambda_ME_E=lambda_ME_E,
-                       lambda_tune_ME_T=lambda_tune_ME_T,
-                       augment_decoders=augment_decoders,
-                       scale_factor=scale_factor,
-                       E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0),
-                       M_noise=M_noise,
-                       latent_dim=latent_dim,
-                       E_features=D['XE'].shape[1])
+    model = Model_T_ME_version_1(alpha_T=alpha_T,
+                                 alpha_M=alpha_M,
+                                 alpha_sd=alpha_sd,
+                                 alpha_E=alpha_E,
+                                 alpha_ME=alpha_ME,
+                                 lambda_ME_T=lambda_ME_T,
+                                 lambda_E_T=lambda_E_T,
+                                 lambda_M_T=lambda_M_T,
+                                 lambda_tune_ME_T=lambda_tune_ME_T,
+                                 augment_decoders=augment_decoders,
+                                 scale_factor=scale_factor,
+                                 E_noise=E_noise * np.nanstd(train_dataset.XE, axis=0),
+                                 M_noise=M_noise,
+                                 latent_dim=latent_dim,
+                                 E_features=D['XE'].shape[1])
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -256,20 +252,16 @@ def main(alpha_T=1.0,
                    model.alpha_M * loss_dict['recon_M'] + \
                    model.alpha_sd * loss_dict['recon_sd'] + \
                    model.alpha_E * loss_dict['recon_E'] + \
-                   model.alpha_ME * model.alpha_tune_ME * loss_dict['recon_ME'] + \
+                   model.alpha_ME * loss_dict['recon_ME'] + \
                    model.lambda_ME_T * model.lambda_tune_ME_T * loss_dict['cpl_T->ME'] + \
-                   model.lambda_ME_T * (1 - model.lambda_tune_ME_T) * loss_dict['cpl_ME->T'] + \
-                   model.lambda_ME_M * loss_dict['cpl_ME->M'] + \
-                   model.lambda_ME_E * loss_dict['cpl_ME->E']
+                   model.lambda_ME_T * (1 - model.lambda_tune_ME_T) * loss_dict['cpl_ME->T']
 
             if model.augment_decoders:
                 loss += model.alpha_T * loss_dict['aug_recon_T_from_zme'] + \
-                        model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_zt'] + \
-                        model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_ze'] + \
-                        model.alpha_ME * alpha_tune_ME * loss_dict['aug_recon_ME_from_zm'] + \
-                        model.alpha_M * loss_dict['aug_recon_M_from_zme'] + \
-                        model.alpha_sd * loss_dict['aug_recon_sd_from_zme'] + \
-                        model.alpha_E * loss_dict['aug_recon_E_from_zme']
+                        model.alpha_ME * loss_dict['aug_recon_ME_from_zt'] + \
+                        model.alpha_M * loss_dict['aug_recon_M_from_zt'] + \
+                        model.alpha_sd * loss_dict['aug_recon_sd_from_zt'] + \
+                        model.alpha_E * loss_dict['aug_recon_E_from_zt']
 
             # set require grad for the shared module in the M and in the E equal to False
             # This way, we will not update shared modules in the M or in the E autoencoder
@@ -315,7 +307,7 @@ def main(alpha_T=1.0,
         # printing logs
         # for k, v in train_loss.items():
         #     print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
-
+        #
         # for k, v in val_loss.items():
         #     print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
 
@@ -334,10 +326,10 @@ def main(alpha_T=1.0,
         tb_writer.add_scalar('Validation/cpl_ME->T', val_loss['cpl_ME->T'], epoch)
         tb_writer.add_scalar('Train/cpl_T->ME', train_loss['cpl_T->ME'], epoch)
         tb_writer.add_scalar('Validation/cpl_T->ME', val_loss['cpl_T->ME'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME->M', train_loss['cpl_ME->M'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME->M', val_loss['cpl_ME->M'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME->E', train_loss['cpl_ME->E'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_ME->E'], epoch)
+        tb_writer.add_scalar('Train/cpl_T->E', train_loss['cpl_T->E'], epoch)
+        tb_writer.add_scalar('Validation/cpl_T->E', val_loss['cpl_T->E'], epoch)
+        tb_writer.add_scalar('Train/cpl_T->M', train_loss['cpl_T->M'], epoch)
+        tb_writer.add_scalar('Validation/cpl_T->M', val_loss['cpl_T->M'], epoch)
 
         #Save checkpoint
         if (epoch) % 1000 == 0:
