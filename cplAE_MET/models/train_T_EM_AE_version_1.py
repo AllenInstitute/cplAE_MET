@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from cplAE_MET.utils.utils import savepkl
 from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.load_config import load_config
-from cplAE_MET.models.pytorch_models import Model_T_ME_version_1, mean_sq_diff
+from cplAE_MET.models.pytorch_models import Model_T_ME_version_1
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
 from cplAE_MET.utils.dataset import T_ME_Dataset, load_MET_dataset, partitions
@@ -91,7 +91,7 @@ def main(alpha_T=1.0,
 
     # Convert int to boolean
     augment_decoders = augment_decoders > 0
-
+    alpha_tune_T = 0.5 if augment_decoders else 1.0
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
 
         # Run the model in the evaluation mode
@@ -248,7 +248,7 @@ def main(alpha_T=1.0,
                 astensor_(batch['XE'])))
 
 
-            loss = model.alpha_T * loss_dict['recon_T'] + \
+            loss = model.alpha_T * alpha_tune_T * loss_dict['recon_T'] + \
                    model.alpha_M * loss_dict['recon_M'] + \
                    model.alpha_sd * loss_dict['recon_sd'] + \
                    model.alpha_E * loss_dict['recon_E'] + \
@@ -257,7 +257,9 @@ def main(alpha_T=1.0,
                    model.lambda_ME_T * (1 - model.lambda_tune_ME_T) * loss_dict['cpl_ME->T']
 
             if model.augment_decoders:
-                loss += model.alpha_T * loss_dict['aug_recon_T_from_zme'] + \
+                loss += model.alpha_T * alpha_tune_T * loss_dict['aug_recon_T_from_zme'] + \
+                        model.alpha_T * alpha_tune_T * loss_dict['aug_recon_T_from_zm'] + \
+                        model.alpha_T * alpha_tune_T * loss_dict['aug_recon_T_from_ze'] + \
                         model.alpha_ME * loss_dict['aug_recon_ME_from_zt'] + \
                         model.alpha_M * loss_dict['aug_recon_M_from_zt'] + \
                         model.alpha_sd * loss_dict['aug_recon_sd_from_zt'] + \
