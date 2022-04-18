@@ -51,3 +51,29 @@ Test set: 5 cells from 14 t-types that have > 15 M samples
 package_dir = '/Local/code/cplAE_MET/'
 MET_inh_data = '/Local/data/inh_MET_model_input_mat.mat'
 ```
+
+
+### Config_preproc
+```toml
+package_dir = '/Users/fahimehb/Documents/git-workspace/cplAE_MET/'
+
+#For T
+specimen_ids_file = "exc_inh_specimen_ids_30Mar22.txt"
+gene_file = "good_genes_beta_score.csv"
+t_data_output_file = "T_data_30Mar22.csv"
+t_anno_output_file = "T_anno_30Mar22.csv"
+gene_id_output_file = "gene_ids_30Mar22.csv"
+
+#For M
+m_data_folder = 'm_data'
+m_anno = 'm_anno.csv'
+hist2d_120x4_folder = 'hist2d_120x4'
+m_output_file = 'M_data_30Mar22.mat'
+
+#For E
+E_timeseries_file = "fv_Ephys_timeseries_30Mar22.h5"
+ipfx_features_file = "ipfx_features_30Mar22.csv"
+e_output_file = "E_data_30Mar22.csv"
+
+#For MET
+met_output_file = "MET_data_30Mar22.mat"

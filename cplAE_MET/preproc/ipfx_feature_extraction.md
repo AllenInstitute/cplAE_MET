@@ -1,9 +1,5 @@
 # Ipfx features extraction
 
-To see the results of the ipfx extraction that Fahimeh ran on 30Mar22, navigate to the following path:
-   
-     /allen/programs/celltypes/workgroups/rnaseqanalysis/Fahimehb/git_workspace/ipfx/ipfx/bin
-
 1. Clone the ipfx repository from this link:
 
        https://github.com/AllenInstitute/ipfx.git
