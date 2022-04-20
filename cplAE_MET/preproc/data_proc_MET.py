@@ -81,9 +81,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     model_input_mat["cluster_id"] = result.Tree_first_cl_id.to_list()
     model_input_mat["cluster_color"] = result.Tree_first_cl_color.to_list()
     model_input_mat["cluster_label"] = result.Tree_first_cl_label.to_list()
-    # model_input_mat["T_cell"] = result.T_cell.to_list()
-    # model_input_mat["E_cell"] = result.E_cell.to_list()
-    # model_input_mat["M_cell"] = result.M_cell.to_list()
+
 
     #Saving input mat
     print("Size of M data:", model_input_mat['M_dat'].shape)

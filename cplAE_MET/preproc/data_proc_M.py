@@ -2,14 +2,12 @@
 ################ Preprocessing M data ###################
 #########################################################
 import os
-import feather
 import argparse
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import scipy.io as sio
-from collections import Counter
-from cplAE_MET.models.augmentations import undone_radial_correction, do_radial_correction
+from cplAE_MET.models.augmentations import undo_radial_correction, do_radial_correction
 from cplAE_MET.utils.load_config import load_config
 
 
@@ -132,8 +130,8 @@ def main(config_file='config_preproc.toml'):
                     im1 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[1]}_{spec_id}.csv', header=None).values
 
                     #convert arbor density to arbor mass
-                    mass0 = undone_radial_correction(im0)
-                    mass1 = undone_radial_correction(im1)
+                    mass0 = undo_radial_correction(im0)
+                    mass1 = undo_radial_correction(im1)
 
                     # Normalize so that the mass sum is 350
                     mass0 = mass0 * 350 / np.sum(mass0)

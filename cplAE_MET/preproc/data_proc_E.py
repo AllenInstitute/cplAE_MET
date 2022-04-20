@@ -1,5 +1,5 @@
 #########################################################
-############ Preprocessing T and E data #################
+################ Preprocessing E data ###################
 #########################################################
 import h5py
 import argparse
@@ -43,7 +43,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
 
 
     print("...................................................")
-    print("Loading E data")
+    print("Loading E data time series")
     hf = h5py.File(dir_pth['E_timeseries'], 'r')
 
     h5_ids = np.array(hf.get("ids"))
@@ -53,12 +53,12 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     print(len([i for i in specimen_ids if i not in h5_ids]), "cells do not have time series data!")
 
     print("...................................................")
-    print("keeping only ids that are inside the lockdown dataset")
+    print("keeping only ids that are inside specimen id list")
     mask_h5_ids = [True if i in specimen_ids else False for i in h5_ids]
     h5_ids = h5_ids[mask_h5_ids]
     print("In total remains this amount of cells:", sum(mask_h5_ids))
 
-    #Read time series into a dictionary and masking them for only the ids that exist in the locked dataset
+    #Read time series into a dictionary and masking them for only the ids that exist in the dataset
     time_series = {}
     for k in hf.keys():
         time_series[k] = np.array(hf.get(k))[mask_h5_ids]

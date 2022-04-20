@@ -93,12 +93,11 @@ def do_radial_correction(image):
     return raw_image
 
 
-def undone_radial_correction(image):
+def undo_radial_correction(image):
     """
     Takes the image and undo the radial correction.
     Radial correction was performed by Olga
     Pixels along the W axis were divided by pi*(r2^2 - r1^2)
-    TODO: change name to undo_radial_correction
     Args:
         image:images with the shape of (120, 4)
     """
