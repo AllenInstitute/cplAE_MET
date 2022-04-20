@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from cplAE_MET.utils.utils import savepkl
 from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.load_config import load_config
-from cplAE_MET.models.pytorch_models import Model_T_ME, mean_sq_diff
+from cplAE_MET.models.pytorch_models import Model_T_ME
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
 from cplAE_MET.utils.dataset import T_ME_Dataset, load_MET_dataset, partitions
@@ -36,7 +36,7 @@ parser.add_argument('--scale_factor',    default=0.3,          type=float, help=
 parser.add_argument('--latent_dim',      default=5,            type=int,   help='Number of latent dims')
 parser.add_argument('--M_noise',         default=0.0,          type=float, help='std of the gaussian noise added to M data')
 parser.add_argument('--E_noise',         default=0.05,         type=float, help='std of the gaussian noise added to E data')
-parser.add_argument('--n_epochs',        default=10,        type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=10,           type=int,   help='Number of epochs to train')
 parser.add_argument('--n_fold',          default=0,            type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--run_iter',        default=0,            type=int,   help='Run-specific id')
 parser.add_argument('--config_file',     default='config.toml',type=str,   help='config file with data paths')
@@ -104,15 +104,10 @@ def main(alpha_T=1.0,
         with torch.no_grad():
             loss_dict, z_dict, xr_dict, mask_dict = model((XT, XM, Xsd, XE))
 
-            # We need to get xm_aug and pool_inds for the following loss calculations
-            xm_aug, _, pool_ind1, pool_ind2, _ = model.eM_shared(XM[mask_dict['M_tot']],
-                                                                 Xsd[mask_dict['M_tot']])
-
             # convert model output tensors to numpy
             for dict in [z_dict, xr_dict, mask_dict]:
                 for k, v in dict.items():
                     dict[k] = tonumpy(v)
-
 
             # Run classification task
             classification_acc = {}
@@ -122,10 +117,28 @@ def main(alpha_T=1.0,
                             [mask_dict['T_tot'], mask_dict['MT_tot'], mask_dict['TE_tot'], mask_dict['MET_tot']],
                             ["zt", "zm", "ze", "zme"]):
 
-                classification_acc[key], n_class[key], _, _ = run_QDA(X=z,
-                                                                      y=data['cluster_label'][mask],
-                                                                      test_size=0.1,
-                                                                      min_label_size=7)
+                # index of specific modality cells out of all cells
+                MET_cell_ind_tot = np.where(mask)[0]
+
+                # index of the train or val cells out of all cells
+                train_cell_ind_tot = splits[n_fold]['train']
+                val_cell_ind_tot = splits[n_fold]['val']
+
+                # index of train or val cells of the specific modality out of all cells
+                MET_train_cell_ind_tot = np.array([i for i in MET_cell_ind_tot if i in train_cell_ind_tot])
+                MET_val_cell_ind_tot = np.array([i for i in MET_cell_ind_tot if i in val_cell_ind_tot])
+
+                # index of train cells of the specific modality out of that modality cells
+                MET_train_cell_ind_modality = [np.where(MET_cell_ind_tot == i)[0][0] for i in MET_train_cell_ind_tot]
+                MET_val_cell_ind_modality = [np.where(MET_cell_ind_tot == i)[0][0] for i in MET_val_cell_ind_tot]
+
+                train_test_ids = {"train": MET_train_cell_ind_modality, "val": MET_val_cell_ind_modality}
+
+                classification_acc[key], n_class[key], _ = run_QDA(X=z,
+                                                                   y=data['cluster_label'][mask],
+                                                                   test_size=0.1,
+                                                                   min_label_size=7,
+                                                                   train_test_ids=train_test_ids)
 
                 # Logging
                 out_key = "Classification_acc_" + key
@@ -315,7 +328,7 @@ def main(alpha_T=1.0,
         # printing logs
         # for k, v in train_loss.items():
         #     print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
-
+        #
         # for k, v in val_loss.items():
         #     print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
 

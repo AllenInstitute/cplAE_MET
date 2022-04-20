@@ -145,7 +145,7 @@ def main(alpha_T=1.0,
                 # Logging
                 out_key = "Classification_acc_" + key
                 tb_writer.add_scalar(out_key, classification_acc[key], epoch)
-                (f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
+                # (f'epoch {epoch:04d} ----- {out_key} {classification_acc[key]:.2f} ----- Number of types {n_class[key]}')
 
 
         savedict = {'XT': data['XT'],
@@ -353,7 +353,7 @@ def main(alpha_T=1.0,
         tb_writer.add_scalar('Validation/cpl_T->M', val_loss['cpl_T->M'], epoch)
 
         #Save checkpoint
-        if (epoch) % 100 == 0:
+        if (epoch) % 1000 == 0:
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid + ".pkl"
             save_results(model, D, fname, n_fold, splits, tb_writer, epoch)
             #save model
