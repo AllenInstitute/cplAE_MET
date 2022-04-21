@@ -2,6 +2,8 @@
 # This code is for training Model_T_ME in which T arm is coupled with ME and ME is coupled with E and with M,
 # The newest part that I was trying to implement was to have the same set of validation cells in the model
 # and the T_type classifier. This is being implemented inside the save_results function.
+# Also I just realized I did not copy the E-features name in the output, for example we have gene ids and all
+# the T metadata copied to the output but not the E-features name. Rohan please do this.
 ############################################################################################################
 
 import os

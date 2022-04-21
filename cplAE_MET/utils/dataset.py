@@ -103,7 +103,7 @@ def MET_data_summary(data):
     print(f"T shape {data['XT'].shape}")
     print(f"E shape {data['XE'].shape}")
     print(f"M shape {data['XM'].shape}")
-    print(f"sd shape {data['X_sd'].shape}")
+    print(f"sd shape {data['Xsd'].shape}")
 
     # find all-nan samples boolean
     def allnans(x): return np.all(
@@ -116,7 +116,7 @@ def MET_data_summary(data):
     m_T = ~allnans(data['XT'])
     m_E = ~allnans(data['XE'])
     m_M = ~allnans(data['XM'])
-    m_sd = ~allnans(data['X_sd'])
+    m_sd = ~allnans(data['Xsd'])
 
     def paired(x, y): return np.sum(np.logical_and(x, y))
     print('\nPaired samples, allowing for nans in some features')
@@ -127,7 +127,7 @@ def MET_data_summary(data):
     m_T = ~anynans(data['XT'])
     m_E = ~anynans(data['XE'])
     m_M = ~anynans(data['XM'])
-    m_sd = ~anynans(data['X_sd'])
+    m_sd = ~anynans(data['Xsd'])
 
     print('\nPaired samples, without nans in any feature (strict)')
     print(f'{paired(m_T,m_E)} cells paired in T and E')

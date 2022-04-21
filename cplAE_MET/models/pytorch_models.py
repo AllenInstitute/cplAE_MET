@@ -1,3 +1,7 @@
+################################################ Models ###################################################
+# Here are all the models that were used in T_ME version_0.0 and version_1.0
+############################################################################################################
+
 import torch
 import torch.nn as nn
 from functools import partial
