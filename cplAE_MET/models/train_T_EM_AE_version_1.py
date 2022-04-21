@@ -1,4 +1,7 @@
-from typing import Dict, Any
+########################################## T_ME_version_1.0 ################################################
+# This code is for training Model_T_ME in which T arm is coupled with ME and E and M and there is no coupling
+# between ME and E or ME and M.
+############################################################################################################
 
 import os
 import torch
@@ -6,17 +9,16 @@ import argparse
 import shutil
 from pathlib import Path
 from functools import partial
-from timebudget import timebudget
 
-from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from cplAE_MET.utils.utils import savepkl
-from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.load_config import load_config
-from cplAE_MET.models.pytorch_models import Model_T_ME_version_1
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
+from cplAE_MET.models.pytorch_models import Model_T_ME_version_1
+from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.dataset import T_ME_Dataset, load_MET_dataset, partitions
 from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 

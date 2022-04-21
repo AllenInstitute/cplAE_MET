@@ -51,20 +51,26 @@ def run_QDA(X, y, test_size, min_label_size=7, train_test_ids=None):
         y: labels for each X entry with the size of (n_cells, )
         test_size: float value for the split
         min_label_size: all clusters with less than min_label_size number of members will be removed
-
+        train_test_ids: the indices of the train and test cells to be used in the classifier
     Returns:
-        accuracy of the classification task
+        accuracy of the classification task, number of classes and the classifier object
 
     '''
+    # We need to remove the cells that are within T types with small number of cells
     small_types_mask = get_small_types_mask(y, min_label_size)
 
     if train_test_ids:
+        # first we remove the small type cells from the train and test/val cells
         train_mask = [i for i in train_test_ids['train'] if i in np.where(small_types_mask)[0]]
         test_mask = [i for i in train_test_ids['val'] if i in np.where(small_types_mask)[0]]
+
+        # apply the mask
         X_train = X[train_mask]
         X_test = X[test_mask]
         y_train = y[train_mask]
         y_test = y[test_mask]
+
+        # we need to factorize the y as they are not numbers but are cluster labels
         y_train_test = np.append(y_train, y_test)
         _, y_train_test = np.unique(y_train_test, return_inverse=True)
         y_test = y_train_test[-len(y_test):]

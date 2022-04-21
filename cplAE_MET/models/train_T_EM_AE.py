@@ -1,22 +1,25 @@
-from typing import Dict, Any
+########################################## T_ME_version_0.0 ################################################
+# This code is for training Model_T_ME in which T arm is coupled with ME and ME is coupled with E and with M,
+# The newest part that I was trying to implement was to have the same set of validation cells in the model
+# and the T_type classifier. This is being implemented inside the save_results function.
+############################################################################################################
 
 import os
 import torch
-import argparse
 import shutil
+import argparse
 from pathlib import Path
 from functools import partial
-from timebudget import timebudget
 
-from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from cplAE_MET.utils.utils import savepkl
-from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.load_config import load_config
 from cplAE_MET.models.pytorch_models import Model_T_ME
 from cplAE_MET.models.classification_functions import *
 from cplAE_MET.models.torch_helpers import astensor, tonumpy
+from cplAE_MET.utils.log_helpers import Log_model_weights_histogram
 from cplAE_MET.utils.dataset import T_ME_Dataset, load_MET_dataset, partitions
 from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 
@@ -90,9 +93,17 @@ def main(alpha_T=1.0,
 
     # Convert int to boolean
     augment_decoders = augment_decoders > 0
+    # alpha_tune_ME is a factor that will be used to make everything symmetric in the loss function. If augment
+    # decoder is on, then we will have 2 terms for T, 2 terms of M and 2 terms for E reconstruction error. However
+    # we have 4 terms for ME recon loss. For that we multiply that term by 0.5 to make everything symmetric.
     alpha_tune_ME = 0.5 if augment_decoders else 1.0
 
+    # TODO: this function is too big now
     def save_results(model, data, fname, n_fold, splits, tb_writer, epoch):
+        '''
+        Takes the model, run it in the evaluation mode to calculate the embeddings and reconstructions for printing out.
+        Also classification is run inside this function
+        '''
         # Run the model in the evaluation mode
         model.eval()
 
@@ -109,6 +120,7 @@ def main(alpha_T=1.0,
                 for k, v in dict.items():
                     dict[k] = tonumpy(v)
 
+            # This part is new:
             # Run classification task
             classification_acc = {}
             n_class = {}
@@ -117,20 +129,22 @@ def main(alpha_T=1.0,
                             [mask_dict['T_tot'], mask_dict['MT_tot'], mask_dict['TE_tot'], mask_dict['MET_tot']],
                             ["zt", "zm", "ze", "zme"]):
 
-                # index of specific modality cells out of all cells
+                # in the next steps, create a dictionary that has the train and test cells indices for a specific modality such as M, E or T
+                # For now the indices of the train and test cells are for all the data and not the specific modality
+                # 1- index of specific modality cells out of all cells
                 MET_cell_ind_tot = np.where(mask)[0]
 
-                # index of the train or val cells out of all cells
+                # 2- index of the train or val cells out of all cells
                 train_cell_ind_tot = splits[n_fold]['train']
                 val_cell_ind_tot = splits[n_fold]['val']
 
-                # index of train or val cells of the specific modality out of all cells
+                # 3- index of train or val cells of the specific modality out of all cells
                 MET_train_cell_ind_tot = np.array([i for i in MET_cell_ind_tot if i in train_cell_ind_tot])
                 MET_val_cell_ind_tot = np.array([i for i in MET_cell_ind_tot if i in val_cell_ind_tot])
 
-                # index of train cells of the specific modality out of that modality cells
-                MET_train_cell_ind_modality = [np.where(MET_cell_ind_tot == i)[0][0] for i in MET_train_cell_ind_tot]
-                MET_val_cell_ind_modality = [np.where(MET_cell_ind_tot == i)[0][0] for i in MET_val_cell_ind_tot]
+                # 4- index of train cells of the specific modality out of that modality cells
+                MET_train_cell_ind_modality = np.array([np.where(MET_cell_ind_tot == i)[0][0] for i in MET_train_cell_ind_tot])
+                MET_val_cell_ind_modality = np.array([np.where(MET_cell_ind_tot == i)[0][0] for i in MET_val_cell_ind_tot])
 
                 train_test_ids = {"train": MET_train_cell_ind_modality, "val": MET_val_cell_ind_modality}
 
@@ -205,6 +219,15 @@ def main(alpha_T=1.0,
     D['Xsd'] = np.expand_dims(D['Xsd'], axis=1)
 
     # soma depth is range (0,1) <-- check this
+    # check out augmentation_debug.ipynb
+    # We are adding a pad of 60 pixels on the top and 60 pixels on the bottom of each arbor density image
+    # so the height is going to be 240 instead of 120, this is becasue we are going to stretch or squeeze
+    # the image during augmentation and we do not want that image get out of the frame
+    #
+    # next, we are soma centering the images. For that we need to now the exact location of soma, Olga said
+    # we need to multiply the soma depth values by 100 to get the correct soma depth value. If she gave us new
+    # cells we need to double check if the soma depth has been calculated as the previous cells or not to know
+    # if we have to multiply their soma depth with 100 or 120
     pad = 60
     norm2pixel_factor = 100
     padded_soma_coord = np.squeeze(D['Xsd'] * norm2pixel_factor + pad)
@@ -285,7 +308,7 @@ def main(alpha_T=1.0,
                         model.alpha_E * loss_dict['aug_recon_E_from_zme']
 
             # set require grad for the shared module in the M and in the E equal to False
-            # This way, we will not update shared modules in the M or in the E autoencoder
+            # This way, we will not update shared modules in the M or in the E autoencoders
             set_requires_grad(model.dE_shared_copy, False)
             set_requires_grad(model.dM_shared_copy, False)
 
