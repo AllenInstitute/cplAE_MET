@@ -543,6 +543,10 @@ class Decoder_ME_specific(nn.Module):
 
 class Model_T_ME(nn.Module):
     """T, ME autoencoder
+    In this version the couplings are the following:
+    T <--> ME  (bidirectional coupling of T and ME)
+    ME --> E   (one directional coupling of ME to E)
+    ME --> M   (one directional coupling of ME to M)
 
     Args:
         alpha_T: T reconstruction loss weight
@@ -807,6 +811,10 @@ class Model_T_ME(nn.Module):
 
 class Model_T_ME_version_1(nn.Module):
     """T, ME autoencoder
+    In this version the couplings are the following:
+    T <--> ME  (bidirectional coupling of T and ME)
+    T --> E   (one directional coupling of T to E)
+    T --> M   (one directional coupling of T to M)
 
     Args:
         alpha_T: T reconstruction loss weight
