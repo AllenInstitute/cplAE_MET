@@ -18,7 +18,7 @@ conda create -n cplAE_MET
 conda activate cplAE_MET
 conda install python=3.8
 conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch #see system specific instructions
-pip install scikit-learn jupyterlab seaborn pandas rich tqdm timebudget statsmodels
+pip install scikit-learn jupyterlab seaborn pandas rich tqdm timebudget statsmodels umap-learn
 pip install tensorboard
 ```
 3. Install the development version of this repository
@@ -41,6 +41,8 @@ Test set: 5 cells from 14 t-types that have > 15 M samples
 `/data/results/:`
 `MET_3819_e1`: decoders were not augmented - leads to worse than possible reconstruction errors
 `MET_3819_e1_aug`: Augmented decoders, some improvement in reconstructions. Experiments with different parameter sets. 
+
+exit_summary = "T_ME_aT_5-0_aM_5-0_asd_1-0_aE_5-0_aME_5-0_lambda_ME_T_1-0_lambda_tune_ME_T_0-75_lambda_ME_M_1-0_lambda_ME_E_1-0_aug_dec_1_Enoise_0-05_Mnoise_0-0_scale_0-3_ld_5_ne_50000_ri_0_fold_2.pkl"
 
 ### Additional repositories
  - [celltype_hierarchy](https://github.com/AllenInstitute/celltype_hierarchy) - Helpers for dendrogram manipulation

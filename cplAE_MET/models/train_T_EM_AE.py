@@ -12,6 +12,7 @@ import shutil
 import argparse
 from pathlib import Path
 from functools import partial
+from torch import profiler
 
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -283,11 +284,12 @@ def main(alpha_T=1.0,
         for step, batch in enumerate(iter(train_dataloader)):
             # zero + forward + backward + update
             optimizer.zero_grad()
-            loss_dict, *_ = model((
-                astensor_(batch['XT']),
-                astensor_(batch['XM']),
-                astensor_(batch['Xsd']),
-                astensor_(batch['XE'])))
+            with profiler.profile(with_stack=True, profile_memory=True) as prof:
+                loss_dict, *_ = model((
+                    astensor_(batch['XT']),
+                    astensor_(batch['XM']),
+                    astensor_(batch['Xsd']),
+                    astensor_(batch['XE'])))
 
 
             loss = model.alpha_T * loss_dict['recon_T'] + \
@@ -351,11 +353,11 @@ def main(alpha_T=1.0,
             train_loss[k] = train_loss[k] / len(train_dataloader)
 
         # printing logs
-        # for k, v in train_loss.items():
-        #     print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
-        #
-        # for k, v in val_loss.items():
-        #     print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
+        for k, v in train_loss.items():
+            print(f'epoch {epoch:04d},  Train {k}: {v:.5f}')
+        
+        for k, v in val_loss.items():
+            print(f'epoch {epoch:04d} ----- Val {k}: {v:.5f}')
 
         # Logging ==============
         tb_writer.add_scalar('Train/MSE_XT', train_loss['recon_T'], epoch)
@@ -389,6 +391,8 @@ def main(alpha_T=1.0,
             }
             save_ckp(checkpoint, dir_pth['result'], n_fold)
 
+
+    print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=1000))
 
     #Save final results
     fname = dir_pth['result'] + "exit_summary_" + fileid + ".pkl"

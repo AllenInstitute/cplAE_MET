@@ -9,10 +9,9 @@ from collections import Counter
 from cplAE_MET.utils.load_config import load_config
 
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',    default='config_preproc.toml', type=str,   help='config file with data paths')
-parser.add_argument('--beta_threshold',     default=0.4,  type=float,   help='beta threshold for removing genes')
+parser.add_argument('--beta_threshold', default=0.4,                   type=float, help='beta threshold for removing genes')
 
 
 

@@ -8,6 +8,7 @@ from functools import partial
 import torch.nn.functional as F
 from timebudget import timebudget
 from cplAE_MET.models.torch_helpers import astensor
+from torch import profiler
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 astensor_ = partial(astensor, device=device)
@@ -494,7 +495,7 @@ class Encoder_ME_specific(nn.Module):
 
         self.fc0 = nn.Linear(in_dim, int_dim)
         self.fc1 = nn.Linear(int_dim, int_dim)
-        self.fc2 = nn.Linear(int_dim, latent_dim)
+        self.fc2 = nn.Linear(int_dim, latent_dim,bias=False)
         self.bn = nn.BatchNorm1d(latent_dim, affine=False, eps=1e-10,
                                  momentum=0.05, track_running_stats=True)
         self.elu = nn.ELU()
@@ -503,12 +504,9 @@ class Encoder_ME_specific(nn.Module):
 
 
     def forward(self, x):
-
         x = self.elu(self.fc0(x))
         x = self.elu(self.fc1(x))
-        x = self.elu(self.fc2(x))
-        zme = self.bn(x)
-
+        zme = self.bn(self.fc2(x))
         return zme
 
 
@@ -605,7 +603,6 @@ class Model_T_ME(nn.Module):
         self.latent_dim = latent_dim
         self.E_features = E_features
 
-        # T
         self.eT = Encoder_T_specific(latent_dim=self.latent_dim)
         self.dT = Decoder_T_specific(in_dim=self.latent_dim)
 
@@ -656,42 +653,43 @@ class Model_T_ME(nn.Module):
         Xsd = inputs[2]
         XE = inputs[3]
 
-        ############################## masks
-        ## masks with the size of the whole batch (4921)
-        mask = {}
-        mask['T_tot'] = get_1D_mask(XT)
-        mask['M_tot'] = get_1D_mask(XM)
-        mask['E_tot'] = get_1D_mask(XE)
-        mask['sd_tot'] = mask['M_tot']
-        mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
-        mask['TE_tot'] = torch.where((mask['T_tot']) & (mask['E_tot']), True, False)
-        mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
-        mask['MT_tot'] = torch.where((mask['M_tot']) & (mask['T_tot']), True, False)
-        mask['MET_tot'] = torch.where((mask['M_tot']) & (mask['E_tot']) & (mask['T_tot']), True, False)
+        with profiler.record_function("MASKING"):
+            ############################## masks
+            ## masks with the size of the whole batch (4921)
+            mask = {}
+            mask['T_tot'] = get_1D_mask(XT)
+            mask['M_tot'] = get_1D_mask(XM)
+            mask['E_tot'] = get_1D_mask(XE)
+            mask['sd_tot'] = mask['M_tot']
+            mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
+            mask['TE_tot'] = torch.where((mask['T_tot']) & (mask['E_tot']), True, False)
+            mask['ME_tot'] = torch.where((mask['E_tot']) & (mask['M_tot']), True, False)
+            mask['MT_tot'] = torch.where((mask['M_tot']) & (mask['T_tot']), True, False)
+            mask['MET_tot'] = torch.where((mask['M_tot']) & (mask['E_tot']) & (mask['T_tot']), True, False)
 
-        ## masks with the size of T data
-        mask['TE_T'] = mask['TE_tot'][mask['T_tot']]
-        mask['MT_T'] = mask['MT_tot'][mask['T_tot']]
-        mask['MET_T'] = mask['MET_tot'][mask['T_tot']]
+            ## masks with the size of T data
+            mask['TE_T'] = mask['TE_tot'][mask['T_tot']]
+            mask['MT_T'] = mask['MT_tot'][mask['T_tot']]
+            mask['MET_T'] = mask['MET_tot'][mask['T_tot']]
 
-        ## masks with the size of E data
-        mask['TE_E'] = mask['TE_tot'][mask['E_tot']]
-        mask['ME_E'] = mask['ME_tot'][mask['E_tot']]
-        mask['MET_E'] = mask['MET_tot'][mask['E_tot']]
+            ## masks with the size of E data
+            mask['TE_E'] = mask['TE_tot'][mask['E_tot']]
+            mask['ME_E'] = mask['ME_tot'][mask['E_tot']]
+            mask['MET_E'] = mask['MET_tot'][mask['E_tot']]
 
-        ## masks with the size of M data
-        mask['MT_M'] = mask['MT_tot'][mask['M_tot']]
-        mask['ME_M'] = mask['ME_tot'][mask['M_tot']]
-        mask['MET_M'] = mask['MET_tot'][mask['M_tot']]
+            ## masks with the size of M data
+            mask['MT_M'] = mask['MT_tot'][mask['M_tot']]
+            mask['ME_M'] = mask['ME_tot'][mask['M_tot']]
+            mask['MET_M'] = mask['MET_tot'][mask['M_tot']]
 
-        ## masks with the size of ME data
-        mask['MET_ME'] = mask['MET_tot'][mask['ME_tot']]
+            ## masks with the size of ME data
+            mask['MET_ME'] = mask['MET_tot'][mask['ME_tot']]
 
-        ## removing nans
-        XT = XT[mask['T_tot']]
-        XM = XM[mask['M_tot']]
-        Xsd = Xsd[mask['M_tot']]
-        XE = XE[mask['E_tot']]
+            ## removing nans
+            XT = XT[mask['T_tot']]
+            XM = XM[mask['M_tot']]
+            Xsd = Xsd[mask['M_tot']]
+            XE = XE[mask['E_tot']]
 
         ############################## ENCODERS
         ## T

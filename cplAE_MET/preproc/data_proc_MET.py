@@ -11,8 +11,8 @@ from cplAE_MET.utils.load_config import load_config
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',    default='config_preproc.toml', type=str,   help='config file with data paths')
-parser.add_argument('--pca_th',     default=0.97,  type=float,   help='threshold for pca component')
+parser.add_argument('--config_file', default='config_preproc.toml', type=str,   help='config file with data paths')
+parser.add_argument('--pca_th',      default=0.97,                  type=float, help='threshold for pca component')
 
 
 def set_paths(config_file=None):
