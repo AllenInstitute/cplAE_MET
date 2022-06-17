@@ -25,7 +25,7 @@ pip install tensorboard
 ```bash
 pip install -e .
 ```
-4. Install the `cplAE_TE` repository. Directly installing from github through pip doesn't work as expected. 
+4. Install the `cplAE_TE` repository after cloning it.
 ```bash
 # can do this within any directory on local machine
 git clone https://github.com/AllenInstitute/coupledAE-patchseq
@@ -34,15 +34,7 @@ pip install -e .
 ```
 
 ### Experiments
-
-Performed on v2 dataset: 3819 T & E cells out of which 721 have M reconstructions
-Test set: 5 cells from 14 t-types that have > 15 M samples
-
-`/data/results/:`
-`MET_3819_e1`: decoders were not augmented - leads to worse than possible reconstruction errors
-`MET_3819_e1_aug`: Augmented decoders, some improvement in reconstructions. Experiments with different parameter sets. 
-
-exit_summary = "T_ME_aT_5-0_aM_5-0_asd_1-0_aE_5-0_aME_5-0_lambda_ME_T_1-0_lambda_tune_ME_T_0-75_lambda_ME_M_1-0_lambda_ME_E_1-0_aug_dec_1_Enoise_0-05_Mnoise_0-0_scale_0-3_ld_5_ne_50000_ri_0_fold_2.pkl"
+"T_ME_aT_5-0_aM_5-0_asd_1-0_aE_5-0_aME_5-0_lambda_ME_T_1-0_lambda_tune_ME_T_0-75_lambda_ME_M_1-0_lambda_ME_E_1-0_aug_dec_1_Enoise_0-05_Mnoise_0-0_scale_0-3_ld_5_ne_50000_ri_0_fold_2.pkl"
 
 ### Additional repositories
  - [celltype_hierarchy](https://github.com/AllenInstitute/celltype_hierarchy) - Helpers for dendrogram manipulation
@@ -50,13 +42,13 @@ exit_summary = "T_ME_aT_5-0_aM_5-0_asd_1-0_aE_5-0_aME_5-0_lambda_ME_T_1-0_lambda
 
 ### Config
 ```toml
+# config.toml contents
 package_dir = '/Local/code/cplAE_MET/'
 MET_inh_data = '/Local/data/inh_MET_model_input_mat.mat'
 ```
 
-
-### Config_preproc
-```toml
+```
+# config_preproc.toml contents
 package_dir = '/Users/fahimehb/Documents/git-workspace/cplAE_MET/'
 
 #For T
@@ -79,3 +71,7 @@ e_output_file = "E_data_30Mar22.csv"
 
 #For MET
 met_output_file = "MET_data_30Mar22.mat"
+```
+
+### Contributors
+Fahimeh Baftizadeh, Rohan Gala
