@@ -1,6 +1,7 @@
 import json
 import torch
 import numpy as np
+import pandas as pd
 import scipy.io as sio
 from sklearn.model_selection import StratifiedKFold
 
@@ -95,6 +96,12 @@ def load_MET_dataset(data_path, verbose=False):
     D['cluster_color'] = np.array([c.strip() for c in D['cluster_color']])
     D['gene_ids'] = np.array([c.strip() for c in D['gene_ids']])
     D['E_features'] = np.array([c.strip() for c in D['E_features']])
+
+    # convention for annotations
+    isnan = D['cluster_label']=='nan'
+    D['cluster_label'][isnan] = 'NA'
+    D['cluster_id'][isnan] = np.max(D['cluster_id']) + 1
+    D['cluster_color'][isnan] = '#888888'
     return D
 
 
@@ -281,3 +288,63 @@ class E_AE_Dataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.n_samples
+
+
+def get_MET_fold(dat, fold, thr=10, n_folds=10, seed=0, verbose=False):
+    """ Validation strategy
+    - we want to test performance based on classification and cross-modal reconstruction.
+    - to have ground truth for comparison, we require cells with (T,M and E) measurements
+    - Moreover, evaluation of classification performance requires well-sampled t-types (to train the classifier)
+    - there are 1297 such samples (cells)
+    - only 38 t-types have >10 such cells
+
+    Select only from these well-sampled t-types using a stratified k-fold approach.
+
+    Args:
+        dat: output of load_MET_dataset()
+        fold (int): fold id
+        thr (int, optional): minimum number of cells within t-type that is included in validation set. Defaults to 10.
+        n_folds (int, optional): max number of splits. Defaults to 10.
+        seed (int): For reproducibility. Defaults to 0.
+        verbose (bool): print summary
+
+    Returns:
+        train_ind, val_ind: indices to use for training and validation sets
+    """
+
+    assert fold < n_folds, f"fold must be int <= {n_folds}"
+
+    def valid_data(x):
+        return np.sum(np.isnan(x).reshape(x.shape[0], -1), axis=1) == 0
+
+    isM = valid_data(dat['XM'])
+    isE = valid_data(dat['XE'])
+    isT = valid_data(dat['XT'])
+
+    # step 1: rename t-types for samples that do not have all measurements
+    new_labels = dat['cluster_label'].copy()
+    isMET = np.logical_and(np.logical_and(isT, isE), isM)
+    new_labels[~isMET] = 'NA'
+
+    # step 2: rename low-sampled t-types
+    for cluster in np.unique(new_labels):
+        if np.sum(new_labels == cluster) < thr:
+            new_labels[new_labels == cluster] = 'NA'
+
+    # summary
+    df = pd.DataFrame({'cluster_labels': new_labels})
+    df = df.value_counts().to_frame().rename(columns={0: 'counts'}).reset_index()
+    df = df.loc[df['cluster_labels'] != 'NA']
+    if verbose:
+        print(f'Validation samples to be picked from {df["counts"].sum()} cells across {df.shape[0]} well-sampled t-types')
+
+    # splits
+    splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=0)
+    inds = list(splitter.split(X=np.arange(new_labels.size), y=new_labels))
+    train_ind, val_ind = inds[fold]
+
+    # remove any samples with 'NA' from validation set, and place them in training set
+    exclude_ind = val_ind[new_labels[val_ind] == 'NA']
+    val_ind = val_ind[~np.isin(val_ind, exclude_ind)]
+    train_ind = np.concatenate([train_ind, exclude_ind])
+    return train_ind, val_ind
