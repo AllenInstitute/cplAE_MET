@@ -88,7 +88,13 @@ def load_MET_dataset(data_path, verbose=False):
     D['cluster_color'] = data['cluster_color']
     D['specimen_id'] = data['specimen_id']
     D['gene_ids'] = data['gene_ids']
+    D['E_features'] = data['E_features']
 
+    # removing extra whitespaces from strings
+    D['cluster_label'] = np.array([c.strip() for c in D['cluster_label']])
+    D['cluster_color'] = np.array([c.strip() for c in D['cluster_color']])
+    D['gene_ids'] = np.array([c.strip() for c in D['gene_ids']])
+    D['E_features'] = np.array([c.strip() for c in D['E_features']])
     return D
 
 

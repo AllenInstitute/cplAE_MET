@@ -401,6 +401,6 @@ def main(alpha_T=1.0,
     return
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':``
     args = parser.parse_args()
     main(**vars(args))
