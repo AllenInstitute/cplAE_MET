@@ -102,6 +102,10 @@ def load_MET_dataset(data_path, verbose=False):
     D['cluster_label'][isnan] = 'NA'
     D['cluster_id'][isnan] = np.max(D['cluster_id']) + 1
     D['cluster_color'][isnan] = '#888888'
+
+    # conversion factor to plot soma depth onto density maps
+    # in pixel space, 0=pia, 100=white matter; density maps extend below white matter.
+    D['norm2px'] = 100 
     return D
 
 

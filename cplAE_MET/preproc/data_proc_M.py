@@ -70,7 +70,6 @@ def get_cell_ids_of_abnormal_images(specimen_ids, image_path, m_anno,  min_nonze
 
 def main(config_file='config_preproc.toml'):
 
-
     dir_pth = set_paths(config_file=config_file)
     m_anno_path = dir_pth['m_anno']
     # t_anno_path = dir_pth['t_anno']
@@ -83,31 +82,6 @@ def main(config_file='config_preproc.toml'):
     ab_spec_id = get_cell_ids_of_abnormal_images(specimen_ids, hist2d_120x4_path, m_anno,  min_nonzero_pixels=5)
     print(len(ab_spec_id), "cells will be dropped because of the few non zero pixels")
     drop_spec_id = ab_spec_id
-
-    ################## Read the t data and find the cells with poor Q
-    # t_anno = feather.read_dataframe(t_anno_path)
-    # t_anno = t_anno.rename(columns={"spec_id_label": "specimen_id"})
-    #t_anno['specimen_id'] = t_anno['specimen_id'].astype(int)
-
-    #t_poorQ_ids = t_anno[(t_anno["Tree_call_label"] == "PoorQ")]["specimen_id"].to_list()
-    #t_poorQ_ids = [i for i in t_poorQ_ids if i in specimen_ids]
-    #drop_spec_id = ab_spec_id + t_poorQ_ids
-
-    ################## Find small clusters to remove from m data
-    #specimen_ids = [i for i in specimen_ids if i not in drop_spec_id]
-    #sub_t_anno = t_anno[t_anno["specimen_id"].isin(specimen_ids)]
-    #rm_small_clusters = [k for k, v in Counter(sub_t_anno['Tree_first_cl_label']).items() if v <= 5]
-    #small_cluster_cells = sub_t_anno[sub_t_anno["Tree_first_cl_label"].isin(rm_small_clusters)]['specimen_id'].to_list()
-    #drop_spec_id = np.unique(drop_spec_id + small_cluster_cells)
-    #print(len(drop_spec_id),"in total this amount of cells will be dropped from m data")
-
-    ################## Drop those ids from the anno file
-    # specimen_ids = [i for i in specimen_ids if i not in drop_spec_id]
-    # df_spec = pd.DataFrame(specimen_ids, columns=["specimen_id"])
-
-    ################## Merge with t_anno and make sure the order is the same as in the specimen id file
-    # t_anno = t_anno.merge(df_spec, on="specimen_id", how='right')
-    # t_anno = t_anno[["specimen_id", "Tree_first_cl_label", "Tree_first_cl_color", "Tree_first_cl_id"]]
 
     print("...................................................")
     print("Generating image for all the locked dataset, for those that we dont have M, we put nan")
