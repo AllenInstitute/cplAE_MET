@@ -42,8 +42,8 @@ class Dec_zme_to_zme_int(nn.Module):
 class AE_ME_int(nn.Module):
     def __init__(self, config):
         super(AE_ME_int, self).__init__()
-        self.enc_zme_int_to_zme = Enc_zme_int_to_zme()
-        self.dec_zme_to_zme_int = Dec_zme_to_zme_int()
+        self.enc_zme_int_to_zme = Enc_zme_int_to_zme(out_dim=config['latent_dim'])
+        self.dec_zme_to_zme_int = Dec_zme_to_zme_int(in_dim=config['latent_dim'])
         return
 
     def forward(self, xm_int, xe_int):
