@@ -4,7 +4,7 @@ class Enc_xt_to_zt(nn.Module):
     def __init__(self, dropout_p=0.2, in_dim=1252, out_dim=3):
         super(Enc_xt_to_zt, self).__init__()
         self.drp = nn.Dropout(p=dropout_p)
-        self.fc_0 = nn.Linear(in_dim, 50)
+        self.fc_0 = nn.Linear(in_dim, 20)
         self.fc_1 = nn.Linear(20, 20)
         self.fc_2 = nn.Linear(20, 20)
         self.fc_3 = nn.Linear(20, 20)
@@ -34,7 +34,7 @@ class Dec_zt_to_xt(nn.Module):
         self.fc_1 = nn.Linear(20, 20)
         self.fc_2 = nn.Linear(20, 20)
         self.fc_3 = nn.Linear(20, 20)
-        self.fc_4 = nn.Linear(50, out_dim)
+        self.fc_4 = nn.Linear(20, out_dim)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
         return
