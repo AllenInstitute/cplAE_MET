@@ -5,8 +5,7 @@ from sklearn.model_selection import StratifiedKFold
 
 
 class MET_exc_inh(object):
-    def __init__(self, data_path):
-        dat = self.load(data_path)
+    def __init__(self, dat):
         self.XT = dat['XT']
         self.XE = dat['XE']
         self.XM = dat['XM']
@@ -18,6 +17,12 @@ class MET_exc_inh(object):
         self.gene_ids = dat['gene_ids']
         self.E_features = dat['E_features']
         self.norm2px = dat['norm2px']
+
+    @staticmethod
+    def from_file(data_path):
+        dat = MET_exc_inh.load(data_path)
+        dat = MET_exc_inh(dat)
+        return dat
 
     def __getitem__(self, inds):
         # convert a simple indsex x[y] to a tuple for consistency
