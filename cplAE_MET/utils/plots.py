@@ -108,37 +108,36 @@ def scatter3(X,col,xlims=(3,3),ylims=(3,3),zlims=(3,3),fig=None):
     return ax,sc
 
 
-def show_ax_de_maps(Left, Right=None):
-    """plots axon and dendrite density maps for comparison. Right image can be left empty.
+def plot_m(density_map,
+           soma_depth=None,
+           cluster_label='',
+           channel=['Axon', 'Dendrite', 'Apical dendrite', 'Basal dendrite'],
+           vmin=0,
+           vmax=20):
+    """plot for each channel of the arbor density.
 
     Args:
-        Left: Data image with shape (120, 4, 2)
-        Right: Predicted image with shape (120, 4, 2)
+        density_map (np.array): size is 120 x 4 x channels (H,W,C)
+        soma_depth (float): co-ordinates of soma to overlay on density map
+        cluster_label (str, optional): Defaults to ''.
+        channel (list, optional): Names of channels in the density maps. Defaults to ['Axon', 'Dendrite', 'Apical dendrite', 'Basal dendrite'].
+        vmin: min of color bar
+        vmax: max of color bar
     """
-    if Right is None:
-        Right = np.zeros_like(Left)
-
-    plt.figure(figsize=(9, 12))
-
-    plt.subplot(221)
-    sns.heatmap(np.squeeze(Left[..., 0]), vmin=0, vmax=np.max(Left[..., 0]), cbar=False)
-    plt.gca().set(**{'title': r'$X_m$', 'ylabel': 'Dendrite map', 'xticks': [], 'yticks': []})
-    plt.grid(False)
-
-    plt.subplot(222)
-    sns.heatmap(np.squeeze(Right[..., 0]), vmin=0, vmax=np.max(Right[..., 1]), cbar=False)
-    plt.gca().set(**{'title': r'$Xrm-from-zM$', 'xticks': [], 'yticks': []})
-    plt.grid(False)
-
-    plt.subplot(223)
-    sns.heatmap(np.squeeze(Left[..., 1]), vmin=0, vmax=np.max(Left[..., 0]), cbar=False)
-    plt.gca().set(**{'ylabel': 'Axon map', 'xticks': [], 'yticks': []})
-    plt.grid(False)
-
-    plt.subplot(224)
-    sns.heatmap(np.squeeze(Right[..., 1]), vmin=0, vmax=np.max(Right[..., 1]), cbar=False)
-    plt.gca().set(**{'xticks': [], 'yticks': []})
-    plt.grid(False)
+    n_channels = len(channel)
+    f, ax = plt.subplots(1, n_channels, figsize=(8, n_channels))
+    for i in range(len(ax)):
+        ax[i].imshow(np.squeeze(density_map[:, :, i]),
+                     aspect='auto',
+                     vmin=vmin, vmax=vmax,
+                     interpolation="nearest",
+                     cmap=sns.color_palette("light:k", as_cmap=True))
+        if soma_depth is not None:
+            ax[i].plot([-0.5,3.5], [soma_depth]*2, '--r')
+        ax[i].set(title=f'{cluster_label} \n {channel[i]}')
+        ax[i].grid(False)
+    plt.tight_layout()
+    plt.show()
     return
 
 
@@ -416,5 +415,3 @@ def plot_multiple_embeddings(left, right, figsize, plot_dim, left_color=None, ri
 
     plt.legend()
     plt.show()
-
-
