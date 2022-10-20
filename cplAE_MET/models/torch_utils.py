@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 
@@ -35,6 +36,61 @@ def min_var_loss(zi, zj):
     zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
     return loss_ij
+
+
+def add_noise(x, sd=0.1, clamp_min=None, clamp_max=None, scale_by_x=False):
+    """
+    Args:
+        x: torch.tensor 
+        sd: standard deviation of additive gaussian noise
+        clamp_min: clamps min value of output
+        clamp_max: clamps max value of output
+        scale_by_x: boolean. Multiplies gaussian noise by value of x (element-wise) if True. 
+    """
+    noise = (torch.randn(x.shape) * sd).to(device=x.device)
+    if scale_by_x:
+        noise = torch.mul(noise, x)
+    x = torch.where(x > 0, x + noise, x)
+    x = torch.clamp(x, min=clamp_min, max=clamp_max)
+    return x
+
+
+def scale_depth(x, scale_by=None, random=False, interpolation_mode="nearest"):
+    """
+    Takes the 5D input tensors and scale them along dim=2
+    Args:
+        x: 5D input tensor
+        scale_by: scaling is done as (1 +/- scale_by) if random, else used as is.
+        random: boolean
+        interpolation_mode: torch interpolation algorithm 
+    """
+    if random:
+        scale_by = 1 + (2*(torch.rand(1) - 1) * scale_by).item()
+    x_scaled = F.interpolate(x.float(), scale_factor=(
+        scale_by, 1, 1), mode=interpolation_mode)
+    return scale_by, x_scaled
+
+
+def center_resize(x, target_size):
+    """ 
+    Center and resize x
+    Args:
+        x: 3D tensor
+        target_size: tuple with volumetric output size
+    """
+    target_H = target_size[0]
+    H = x.shape[0]
+    y_center = target_H // 2
+    x_center = H // 2
+    y = torch.zeros(target_size)
+
+    if x_center < y_center:
+        y[y_center-x_center:y_center, :, :] = x[:x_center, :, :]
+        y[y_center: y_center + H - x_center, :, :] = x[x_center:, :, :]
+    else:
+        y[:y_center, :, :] = x[x_center-y_center:x_center, :, :]
+        y[y_center:, :, :] = x[x_center:x_center + target_H - y_center, :, :]
+    return y
 
 
 class MET_dataset(Dataset):
