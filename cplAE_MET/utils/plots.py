@@ -141,6 +141,36 @@ def plot_m(density_map,
     return
 
 
+def plot_z(output, xlim=(-5, 5), ylim=(-5, 5), zme_paired=None):
+    """plots M,E,T representations
+
+    Args:
+        zm (np.array):
+        ze (np.array):
+        zt (np.array):
+        dat (cluster_color):
+        xlim (tuple): plot limits. Defaults to (-5, 5).
+        ylim (tuple): plot limits. Defaults to (-5, 5).
+    """
+    is_me_1d = np.logical_and(output['is_e_1d'], output['is_m_1d'])
+    is_mt_1d = np.logical_and(output['is_m_1d'], output['is_t_1d'])
+    f,ax = plt.subplots(1,4, figsize=(15,4))
+    ax[0].scatter(output['zm'][output['is_m_1d']][:,0],output['zm'][output['is_m_1d']][:,1],c=output['cluster_color'][output['is_m_1d']],s=1)
+    ax[0].set(title='M')
+    ax[1].scatter(output['ze'][output['is_e_1d']][:,0],output['ze'][output['is_e_1d']][:,1],c=output['cluster_color'][output['is_e_1d']],s=1)
+    ax[1].set(title='E')
+    ax[2].scatter(output['zt'][output['is_t_1d']][:,0],output['zt'][output['is_t_1d']][:,1],c=output['cluster_color'][output['is_t_1d']],s=1)
+    ax[2].set(title='T')
+    ax[3].scatter(output['zme_paired'][is_me_1d][:,0],output['zme_paired'][is_me_1d][:,1],c=output['cluster_color'][is_me_1d],s=1)
+    ax[3].set(title='ME')
+
+    for a in ax:
+        a.set(xlim=xlim, ylim=ylim)
+    plt.tight_layout()
+    plt.show()
+    return
+
+
 def plot3D_embedding(emb_array, color_list, **kwargs):
     """Takes embedding nparray and list of colors for all the points and plot3d the embedding
 
