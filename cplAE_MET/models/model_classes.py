@@ -2,6 +2,7 @@
 from xml.sax import xmlreader
 import torch
 import torch.nn as nn
+import torch.functional as F
 from cplAE_MET.models.subnetworks_M import AE_M, Dec_zm_int_to_xm, Enc_xm_to_zm_int
 from cplAE_MET.models.subnetworks_E import AE_E, Dec_ze_int_to_xe, Enc_xe_to_ze_int
 from cplAE_MET.models.subnetworks_T import AE_T
@@ -36,6 +37,10 @@ class Model_ME_T(nn.Module):
     def compute_rec_loss(self, x, xr, valid_x):
         return torch.mean(torch.masked_select(torch.square(x-xr), valid_x))
     
+    # def compute_rec_loss(self, x, xr, valid_x):
+    #     LOSS = torch.nn.MSELoss(reduction='sum')
+    #     return LOSS(x[valid_x], xr[valid_x])/(xr[valid_x].size(0))
+    
     def compute_cpl_loss(self, z1_paired, z2_paired):
         return min_var_loss(z1_paired, z2_paired)
     
@@ -49,6 +54,8 @@ class Model_ME_T(nn.Module):
         valid_xsd=input['valid_xsd']
         valid_xe=input['valid_xe']
         valid_xt=input['valid_xt']
+        is_te_1d=torch.logical_and(input['is_t_1d'], input['is_e_1d'])
+        is_tm_1d=torch.logical_and(input['is_t_1d'], input['is_m_1d'])
         is_me_1d=torch.logical_and(input['is_m_1d'], input['is_e_1d'])
         is_met_1d=torch.logical_and(is_me_1d, input['is_t_1d'])
 
@@ -86,9 +93,33 @@ class Model_ME_T(nn.Module):
         loss_dict['rec_sd_me'] = self.compute_rec_loss(xsd[is_me_1d, ...], xrsd_me_paired[is_me_1d, ...], valid_xsd[is_me_1d, ...])
         loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...])
 
-        loss_dict['cpl_me_t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...])
-        loss_dict['cpl_me_m'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), zm[is_me_1d, ...])
-        loss_dict['cpl_me_e'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), ze[is_me_1d, ...])
+        loss_dict['cpl_me->t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
+        loss_dict['cpl_t->me'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
+
+        loss_dict['cpl_me->m'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), zm[is_me_1d, ...])
+        loss_dict['cpl_m->me'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...], zm[is_me_1d, ...].detach())
+
+        loss_dict['cpl_me->e'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), ze[is_me_1d, ...])
+        loss_dict['cpl_e->me'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...], ze[is_me_1d, ...].detach())
+
+        loss_dict['cpl_t->e'] = self.compute_cpl_loss(zt[is_te_1d, ...].detach(), ze[is_te_1d, ...])
+        loss_dict['cpl_e->t'] = self.compute_cpl_loss(zt[is_te_1d, ...], ze[is_te_1d, ...].detach())
+
+        loss_dict['cpl_t->m'] = self.compute_cpl_loss(zt[is_tm_1d, ...].detach(), zm[is_tm_1d, ...])
+        loss_dict['cpl_m->t'] = self.compute_cpl_loss(zt[is_tm_1d, ...], zm[is_tm_1d, ...].detach())
+
+        loss_dict['cpl_m->e'] = self.compute_cpl_loss(zm[is_me_1d, ...].detach(), ze[is_me_1d, ...])
+        loss_dict['cpl_e->m'] = self.compute_cpl_loss(zm[is_me_1d, ...], ze[is_me_1d, ...].detach())
+
+
+        # # Augment decoders
+        # zm_int_dec_paired_from_zt, ze_int_dec_paired_from_zt = self.ae_me.dec_zme_to_zme_int(zt)
+        # xre_me_paired_from_zt = self.me_e_decoder(ze_int_dec_paired_from_zt)
+        # xrm_me_paired_from_zt, xrsd_me_paired_from_zt = self.me_m_decoder(zm_int_dec_paired_from_zt,
+        #                                                                   self.me_m_encoder.pool_0_ind,
+        #                                                                   self.me_m_encoder.pool_1_ind)
+
+        # loss_dict['rec_e_from_zt'] = self.compute_rec_loss(xe, xre_me_paired_from_zt, valid_xe)
 
         ############################## get output dicts
         z_dict = get_output_dict([zm, ze, zt, zme_paired], 

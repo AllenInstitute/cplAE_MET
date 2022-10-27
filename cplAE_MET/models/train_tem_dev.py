@@ -8,6 +8,7 @@ from pathlib import Path
 
 from torch.utils.data import DataLoader
 from cplAE_MET.models.model_classes import Model_ME_T
+from cplAE_MET.models.torch_utils import MET_dataset
 from cplAE_MET.utils.load_config import load_config
 from cplAE_MET.utils.dataset import MET_exc_inh
 from cplAE_MET.utils.utils import savepkl
@@ -15,23 +16,33 @@ from torch_utils import add_noise, scale_depth, center_resize, tonumpy
 
 from torch.utils.tensorboard import SummaryWriter
 
-from cplAE_MET.models.torch_utils import MET_dataset
 
 parser = argparse.ArgumentParser()
 # TODO
-parser.add_argument('--exp_name',        default='T_ME_M_ME_E_ME_separate_decoders_symT_ME_v1',    type=str,   help='Experiment set')
+parser.add_argument('--exp_name',        default='all_connected_v0',  type=str,   help='Experiment set')
 parser.add_argument('--alpha_T',         default=1.0,                         type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',         default=1.0,                         type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_sd',        default=1.0,                         type=float, help='soma depth reconstruction loss weight')
 parser.add_argument('--alpha_E',         default=1.0,                         type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',        default=1.0,                         type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_TE',       default=0.0,                         type=float, help='coupling loss weight between T and E')
-parser.add_argument('--lambda_TM',       default=0.0,                         type=float, help='coupling loss weight between T and M')
-parser.add_argument('--lambda_ME',       default=0.0,                         type=float, help='coupling loss weight between M and E')
+parser.add_argument('--lambda_TE',       default=1.0,                         type=float, help='coupling loss weight between T and E')
+parser.add_argument('--lambda_TM',       default=1.0,                         type=float, help='coupling loss weight between T and M')
+parser.add_argument('--lambda_ME',       default=1.0,                         type=float, help='coupling loss weight between M and E')
 parser.add_argument('--lambda_ME_T',     default=1.0,                         type=float, help='coupling loss weight between ME and T')
-parser.add_argument('--lambda_tune_ME_T',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and T')
 parser.add_argument('--lambda_ME_M',     default=1.0,                         type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',     default=1.0,                         type=float, help='coupling loss weight between ME and E')
+parser.add_argument('--lambda_tune_T_E', default=1.0,                         type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_E_T', default=0.0,                         type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_T_M', default=1.0,                         type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_M_T', default=0.0,                         type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_E_M', default=1.0,                         type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_M_E', default=0.0,                         type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_T_ME',default=0.9,                         type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_T',default=0.3,                         type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_M',default=1.0,                         type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_M_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_E',default=1.0,                         type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_E_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and E')
 parser.add_argument("--augment_decoders",default=0,                           type=int,   help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument('--scale_by',        default=0.3,                         type=float, help='scaling factor for M_data interpolation')
 parser.add_argument('--config_file',     default='config.toml',               type=str,   help='config file with data paths')
@@ -102,9 +113,18 @@ def save_results(model, dataloader, dat, fname):
                 'loss_rec_xm': tonumpy(loss_dict['rec_m']),
                 'loss_rec_xsd': tonumpy(loss_dict['rec_sd']),
                 'loss_rec_xme_paired': tonumpy(loss_dict['rec_m_me']+loss_dict['rec_e_me']+loss_dict['rec_sd_me']),
-                'loss_cpl_me_t': tonumpy(loss_dict['cpl_me_t']),
-                'loss_cpl_me_m': tonumpy(loss_dict['cpl_me_m']),
-                'loss_cpl_me_e': tonumpy(loss_dict['cpl_me_e']),
+                'loss_cpl_me->t': tonumpy(loss_dict['cpl_me->t']),
+                'loss_cpl_t->me': tonumpy(loss_dict['cpl_t->me']),
+                'loss_cpl_me->m': tonumpy(loss_dict['cpl_me->m']),
+                'loss_cpl_m->me': tonumpy(loss_dict['cpl_m->me']),
+                'loss_cpl_me->e': tonumpy(loss_dict['cpl_me->e']),
+                'loss_cpl_e->me': tonumpy(loss_dict['cpl_e->me']),
+                'loss_cpl_t->e': tonumpy(loss_dict['cpl_t->e']),
+                'loss_cpl_e->t': tonumpy(loss_dict['cpl_e->t']),
+                'loss_cpl_t->m': tonumpy(loss_dict['cpl_t->m']),
+                'loss_cpl_m->t': tonumpy(loss_dict['cpl_m->t']),
+                'loss_cpl_e->m': tonumpy(loss_dict['cpl_e->m']),
+                'loss_cpl_m->e': tonumpy(loss_dict['cpl_m->e']),
                 'zm': tonumpy(z_dict['zm']),
                 'ze': tonumpy(z_dict['ze']),
                 'zt': tonumpy(z_dict['zt']),
@@ -148,9 +168,20 @@ def main(exp_name="DEBUG",
          lambda_TM=0.0,
          lambda_ME=0.0,
          lambda_ME_T=0.0,
-         lambda_tune_ME_T=0.0,
          lambda_ME_M=0.0,
          lambda_ME_E=0.0,
+         lambda_tune_T_E=0.0,
+         lambda_tune_E_T=0.0,
+         lambda_tune_T_M=0.0,
+         lambda_tune_M_T=0.0,
+         lambda_tune_M_E=0.0,
+         lambda_tune_E_M=0.0,
+         lambda_tune_ME_T=0.0,
+         lambda_tune_T_ME=0.0,
+         lambda_tune_ME_M=0.0,
+         lambda_tune_M_ME=0.0,
+         lambda_tune_ME_E=0.0,
+         lambda_tune_E_ME=0.0,
          augment_decoders=0,
          scale_by=0.1,
          latent_dim=2,
@@ -197,35 +228,47 @@ def main(exp_name="DEBUG",
                                random=True,
                                alpha_M=alpha_M,
                                alpha_sd=alpha_sd),
-                        TM=dict(lambda_TM=lambda_TM),
-                        TE=dict(lambda_TE=lambda_TE),
-                        ME=dict(alpha_ME=alpha_ME, lambda_ME=lambda_ME),
-                        ME_T=dict(lambda_ME_T=lambda_ME_T, 
-                                  lambda_tune_ME_T=lambda_tune_ME_T),
-                        ME_M=dict(lambda_ME_M=lambda_ME_M), 
-                        ME_E=dict(lambda_ME_E=lambda_ME_E),
+                        TE=dict(lambda_TE=lambda_TE, lambda_tune_T_E=lambda_tune_T_E, lambda_tune_E_T=lambda_tune_E_T),
+                        TM=dict(lambda_TM=lambda_TM, lambda_tune_T_M=lambda_tune_T_M, lambda_tune_M_T=lambda_tune_M_T),
+                        ME=dict(alpha_ME=alpha_ME, lambda_ME=lambda_ME, lambda_tune_M_E=lambda_tune_M_E, lambda_tune_E_M=lambda_tune_E_M),
+                        ME_T=dict(lambda_ME_T=lambda_ME_T, lambda_tune_ME_T=lambda_tune_ME_T, lambda_tune_T_ME=lambda_tune_T_ME),
+                        ME_M=dict(lambda_ME_M=lambda_ME_M, lambda_tune_ME_M=lambda_tune_ME_M, lambda_tune_M_ME=lambda_tune_M_ME), 
+                        ME_E=dict(lambda_ME_E=lambda_ME_E, lambda_tune_ME_E=lambda_tune_ME_E, lambda_tune_E_ME=lambda_tune_E_ME),
                         )
     
     
     model = Model_ME_T(model_config)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # loaded_model = torch.load("/home/fahimehb/Local/code/cplAE_MET/data/results/T_ME_corrected_conv_v1/checkpoint_ep_49500_aT_1-0_aM_1-0_asd_1-0_aE_1-0_aME_1-0_lambda_ME_T_1-0_lambda_tune_ME_T_0-0_lambda_ME_M_0-0_lambda_ME_E_0-0_aug_dec_0_Enoise_0-05_Mnoise_0-1_Mscale_0-3_ld_2_ne_50000_fold_0.pt", map_location='cpu')
+    # loaded_model = torch.load("/home/fahimehb/Local/new_codes/cplAE_MET/data/results/connections_v0/checkpoint_ep_9500_test.pt", map_location='cpu')
     # model.load_state_dict(loaded_model['state_dict'])
     # optimizer.load_state_dict(loaded_model['optimizer'])
 
     model.to(device)
     # optimizer_to(optimizer,device)
 
-    fileid = ( f"aT_{str(model_config['T']['alpha_T'])}_aM_{str(model_config['M']['alpha_M'])}_" +
-               f"asd_{str(model_config['M']['alpha_sd'])}_aE_{str(model_config['E']['alpha_E'])}_"+
-               f"aME_{str(model_config['ME']['alpha_ME'])}_lambda_ME_T_{str(model_config['ME_T']['lambda_ME_T'])}_"+
-               f"lambda_tune_ME_T_{str(model_config['ME_T']['lambda_tune_ME_T'])}_"+
-               f"lambda_ME_M_{str(model_config['ME_M']['lambda_ME_M'])}_"+
-               f"lambda_ME_E_{str(model_config['ME_E']['lambda_ME_E'])}_aug_dec_{str(model_config['augment_decoders'])}_" +
-               f"Enoise_{str(model_config['E']['gnoise_std_frac'])}_Mnoise_{model_config['M']['gnoise_std_frac']}_"+
-               f"Mscale_{str(model_config['M']['scale_by'])}_ld_{model_config['latent_dim']:d}_ne_{n_epochs:d}_"+
-               f"fold_{fold_n:d}").replace('.', '-')
+    fileid = "test"
+    # fileid = ( f"aT_{str(model_config['T']['alpha_T'])}_" +
+    #            f"aM_{str(model_config['M']['alpha_M'])}_" +
+    #            f"asd_{str(model_config['M']['alpha_sd'])}_" +
+    #            f"aE_{str(model_config['E']['alpha_E'])}_"+
+    #            f"aME_{str(model_config['ME']['alpha_ME'])}_" +
+    #            f"lambda_ME_{str(model_config['ME']['lambda_ME'])}_" +
+    #            f"lambda_tune_ME_{str(model_config['ME']['lambda_tune_ME'])}_" +
+    #            f"lambda_TE_{str(model_config['TE']['lambda_TE'])}_" +
+    #            f"lambda_tune_TE_{str(model_config['TE']['lambda_tune_TE'])}_" +
+    #            f"lambda_TM_{str(model_config['TM']['lambda_TM'])}_" +
+    #            f"lambda_tune_TM_{str(model_config['TM']['lambda_tune_TM'])}_" +
+    #            f"lambda_ME_T_{str(model_config['ME_T']['lambda_ME_T'])}_"+
+    #            f"lambda_tune_ME_T_{str(model_config['ME_T']['lambda_tune_ME_T'])}_"+
+    #            f"lambda_ME_M_{str(model_config['ME_M']['lambda_ME_M'])}_"+
+    #            f"lambda_tune_ME_M_{str(model_config['ME_M']['lambda_tune_ME_M'])}_"+
+    #            f"lambda_ME_E_{str(model_config['ME_E']['lambda_ME_E'])}_"+
+    #            f"lambda_tune_ME_E_{str(model_config['ME_E']['lambda_tune_ME_E'])}_"+
+    #            f"aug_dec_{str(model_config['augment_decoders'])}_" +
+    #            f"Enoise_{str(model_config['E']['gnoise_std_frac'])}_Mnoise_{model_config['M']['gnoise_std_frac']}_"+
+    #            f"Mscale_{str(model_config['M']['scale_by'])}_ld_{model_config['latent_dim']:d}_ne_{n_epochs:d}_"+
+    #            f"fold_{fold_n:d}").replace('.', '-')
 
 
     # Training -----------
@@ -266,14 +309,18 @@ def main(exp_name="DEBUG",
                     model_config['M']['alpha_M'] * loss_dict['rec_m'] + \
                     model_config['M']['alpha_sd'] * loss_dict['rec_sd'] + \
                     model_config['ME']['alpha_ME'] * (loss_dict['rec_m_me'] + loss_dict['rec_e_me'] + loss_dict['rec_sd_me']) + \
-                    model_config['ME_T']['lambda_ME_T'] * loss_dict['cpl_me_t'] + \
-                    model_config['ME_M']['lambda_ME_M'] * loss_dict['cpl_me_m'] + \
-                    model_config['ME_E']['lambda_ME_E'] * loss_dict['cpl_me_e']
-
-            # if model_config['augment_decoders']:
-            #     loss = loss + model_config['ME_T']['lambda_ME_T'] * loss_dict['rec_t_from_zme_paired'] + \
-            #                   model_config['ME_T']['lambda_ME_T'] * loss_dict['rec_me_from_zt']
-       
+                    model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_T_E'] * loss_dict['cpl_t->e'] + \
+                    model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_E_T'] * loss_dict['cpl_e->t'] + \
+                    model_config['TM']['lambda_TM'] * model_config['TM']['lambda_tune_T_M'] * loss_dict['cpl_t->m'] + \
+                    model_config['TM']['lambda_TM'] * model_config['TM']['lambda_tune_M_T'] * loss_dict['cpl_m->t'] + \
+                    model_config['ME']['lambda_ME'] * model_config['ME']['lambda_tune_E_M'] * loss_dict['cpl_e->m'] + \
+                    model_config['ME']['lambda_ME'] * model_config['ME']['lambda_tune_M_E'] * loss_dict['cpl_m->e'] + \
+                    model_config['ME_T']['lambda_ME_T'] * model_config['ME_T']['lambda_tune_T_ME'] * loss_dict['cpl_t->me'] + \
+                    model_config['ME_T']['lambda_ME_T'] * model_config['ME_T']['lambda_tune_ME_T'] * loss_dict['cpl_me->t'] + \
+                    model_config['ME_M']['lambda_ME_M'] * model_config['ME_M']['lambda_tune_ME_M'] * loss_dict['cpl_me->m'] + \
+                    model_config['ME_M']['lambda_ME_M'] * model_config['ME_M']['lambda_tune_M_ME']*  loss_dict['cpl_m->me'] + \
+                    model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_ME_E'] * loss_dict['cpl_me->e'] + \
+                    model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_E_ME'] * loss_dict['cpl_e->me']     
 
             loss.backward()
             optimizer.step()
@@ -316,47 +363,30 @@ def main(exp_name="DEBUG",
         tb_writer.add_scalar('Validation/MSE_XE', val_loss['rec_e'], epoch)
         tb_writer.add_scalar('Train/MSE_XME', train_loss['rec_m_me']+ train_loss['rec_sd_me'] + train_loss['rec_e_me'], epoch)
         tb_writer.add_scalar('Validation/MSE_XME', val_loss['rec_m_me']+ val_loss['rec_sd_me'] + val_loss['rec_e_me'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME_T', train_loss['cpl_me_t'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME_T', val_loss['cpl_me_t'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME_M', train_loss['cpl_me_m'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME_M', val_loss['cpl_me_m'], epoch)
-        tb_writer.add_scalar('Train/cpl_ME_E', train_loss['cpl_me_e'], epoch)
-        tb_writer.add_scalar('Validation/cpl_ME_E', val_loss['cpl_me_e'], epoch)
-        # if model_config['augment_decoders']:
-        #     tb_writer.add_scalar('Train/MSE_XT_from_zme', train_loss['rec_t_from_zme_paired'], epoch)
-        #     tb_writer.add_scalar('Validation/MSE_XT_from_zme', val_loss['rec_t_from_zme_paired'], epoch)
-        #     tb_writer.add_scalar('Train/MSE_XME_from_zt', train_loss['rec_me_from_zt'], epoch)
-        #     tb_writer.add_scalar('Validation/MSE_XME_from_zt', val_loss['rec_me_from_zt'], epoch)
-
-        # tb_writer.add_histogram('eM/Weight/enc_xm_to_zm_int.fc_0', model.ae_m.enc_xm_to_zm_int.fc_0.weight, epoch)
-        # tb_writer.add_histogram('eM/Weight/enc_xm_to_zm_int.fc_1', model.ae_m.enc_xm_to_zm_int.fc_1.weight, epoch)
-        # tb_writer.add_histogram('eM/Weight/enc_xm_to_zm_int.conv_0', model.ae_m.enc_xm_to_zm_int.conv_0.weight, epoch)
-        # tb_writer.add_histogram('eM/Weight/enc_xm_to_zm_int.conv_1', model.ae_m.enc_xm_to_zm_int.conv_1.weight, epoch)
-
-        # tb_writer.add_histogram('eM/Weight/enc_zm_int_to_zm.fc_0', model.ae_m.enc_zm_int_to_zm.fc_0.weight, epoch)
-
-        # tb_writer.add_histogram('eM/Weight/dec_zm_to_zm_int.fc_0', model.ae_m.dec_zm_to_zm_int.fc_0.weight, epoch)
-        # tb_writer.add_histogram('eM/Weight/dec_zm_to_zm_int.fc_1', model.ae_m.dec_zm_to_zm_int.fc_1.weight, epoch)
-
-        # tb_writer.add_histogram('eM/Weight/dec_zm_int_to_xm.convT_0', model.ae_m.dec_zm_int_to_xm.convT_0.weight, epoch)
-        # tb_writer.add_histogram('eM/Weight/dec_zm_int_to_xm.convT_1', model.ae_m.dec_zm_int_to_xm.convT_1.weight, epoch)
-        # tb_writer.add_histogram('eM/Weight/dec_zm_int_to_xm.fc_0', model.ae_m.dec_zm_int_to_xm.fc_0.weight, epoch)
-
-        # tb_writer.add_histogram('eE/Weight/enc_xe_to_ze_int.fc_0', model.ae_e.enc_xe_to_ze_int.fc_0.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/enc_xe_to_ze_int.fc_1', model.ae_e.enc_xe_to_ze_int.fc_1.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/enc_xe_to_ze_int.fc_2', model.ae_e.enc_xe_to_ze_int.fc_2.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/enc_xe_to_ze_int.fc_3', model.ae_e.enc_xe_to_ze_int.fc_3.weight, epoch)
-
-        # tb_writer.add_histogram('eE/Weight/enc_ze_int_to_ze.fc_0', model.ae_e.enc_ze_int_to_ze.fc_0.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/enc_ze_int_to_ze.fc_1', model.ae_e.enc_ze_int_to_ze.fc_1.weight, epoch)
-
-        # tb_writer.add_histogram('eE/Weight/dec_ze_to_ze_int.fc_0', model.ae_e.dec_ze_to_ze_int.fc_0.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/dec_ze_to_ze_int.fc_1', model.ae_e.dec_ze_to_ze_int.fc_1.weight, epoch)
-
-        # tb_writer.add_histogram('eE/Weight/dec_ze_int_to_xe.fc_0', model.ae_e.dec_ze_int_to_xe.fc_0.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/dec_ze_int_to_xe.fc_1', model.ae_e.dec_ze_int_to_xe.fc_1.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/dec_ze_int_to_xe.fc_2', model.ae_e.dec_ze_int_to_xe.fc_2.weight, epoch)
-        # tb_writer.add_histogram('eE/Weight/dec_ze_int_to_xe.fc_3', model.ae_e.dec_ze_int_to_xe.fc_3.weight, epoch)
+        tb_writer.add_scalar('Train/cpl_T->E', train_loss['cpl_t->e'], epoch)
+        tb_writer.add_scalar('Validation/cpl_T->E', val_loss['cpl_t->e'], epoch)
+        tb_writer.add_scalar('Train/cpl_E->T', train_loss['cpl_e->t'], epoch)
+        tb_writer.add_scalar('Validation/cpl_E->T', val_loss['cpl_e->t'], epoch)
+        tb_writer.add_scalar('Train/cpl_T->M', train_loss['cpl_t->m'], epoch)
+        tb_writer.add_scalar('Validation/cpl_T->M', val_loss['cpl_t->m'], epoch)
+        tb_writer.add_scalar('Train/cpl_M->T', train_loss['cpl_m->t'], epoch)
+        tb_writer.add_scalar('Validation/cpl_M->T', val_loss['cpl_m->t'], epoch)
+        tb_writer.add_scalar('Train/cpl_M->E', train_loss['cpl_m->e'], epoch)
+        tb_writer.add_scalar('Validation/cpl_M->E', val_loss['cpl_m->e'], epoch)
+        tb_writer.add_scalar('Train/cpl_E->M', train_loss['cpl_e->m'], epoch)
+        tb_writer.add_scalar('Validation/cpl_E->M', val_loss['cpl_e->m'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME->T', train_loss['cpl_me->t'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME->T', val_loss['cpl_me->t'], epoch)
+        tb_writer.add_scalar('Train/cpl_T->ME', train_loss['cpl_t->me'], epoch)
+        tb_writer.add_scalar('Validation/cpl_T->ME', val_loss['cpl_t->me'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME->M', train_loss['cpl_me->m'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME->M', val_loss['cpl_me->m'], epoch)
+        tb_writer.add_scalar('Train/cpl_M->ME', train_loss['cpl_m->me'], epoch)
+        tb_writer.add_scalar('Validation/cpl_M->ME', val_loss['cpl_me->m'], epoch)
+        tb_writer.add_scalar('Train/cpl_ME->E', train_loss['cpl_me->e'], epoch)
+        tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)
+        tb_writer.add_scalar('Train/cpl_E->ME', train_loss['cpl_e->me'], epoch)
+        tb_writer.add_scalar('Validation/cpl_E->ME', val_loss['cpl_e->me'], epoch)
         
 
         # TODO

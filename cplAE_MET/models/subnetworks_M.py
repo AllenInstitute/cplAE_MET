@@ -83,7 +83,7 @@ class Dec_zm_int_to_xm(nn.Module):
 
     def forward(self, zm_int, enc_pool_0_ind, enc_pool_1_ind):
         x = zm_int[:, 0:10]
-        xrsd = torch.clamp(zm_int[:, 10].view(-1, 1), min=0, max=1)
+        xrsd = torch.clamp(zm_int[:, 10].view(-1), min=0, max=1)
         x = self.elu(self.fc_0(x))
         x = x.view(-1, 20, 15, 4, 4)
         x = self.elu(self.unpool_0(x, enc_pool_1_ind))

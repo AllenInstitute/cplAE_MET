@@ -60,7 +60,6 @@ class Enc_ze_int_to_ze(nn.Module):
         ze = self.bn(self.fc_0(ze_int))
         return ze
 
-
 class Dec_ze_to_ze_int(nn.Module):
     """Decodes `ze` into `ze_int`
     """
