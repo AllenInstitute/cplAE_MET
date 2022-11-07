@@ -46,7 +46,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     print("Loading E data time series")
     hf = h5py.File(dir_pth['E_timeseries'], 'r')
 
-    h5_ids = np.array(hf.get("ids"))
+    h5_ids = [str(i) for i in np.array(hf.get("ids"))]
     print("Number of cells in h5(time series file):", len(h5_ids))
 
     print("...................................................")
@@ -55,7 +55,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     print("...................................................")
     print("keeping only ids that are inside specimen id list")
     mask_h5_ids = [True if i in specimen_ids else False for i in h5_ids]
-    h5_ids = h5_ids[mask_h5_ids]
+    h5_ids = [b for a, b in zip(mask_h5_ids, h5_ids) if a]
     print("In total remains this amount of cells:", sum(mask_h5_ids))
 
     #Read time series into a dictionary and masking them for only the ids that exist in the dataset
@@ -91,6 +91,8 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
             #If number of components are zero, then use 1
             if n_comp_at_thr == 0:
                 number_of_components[k] = 1
+            if n_comp_at_thr > 10:
+                number_of_components[k] = 10
             else:
                 number_of_components[k] = n_comp_at_thr
 
@@ -199,7 +201,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
 
     data_frames = [Scaled_PCs, ipfx_norm]
     df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='inner'), data_frames)
-    df_merged['specimen_id'] = df_merged['specimen_id'].astype(np.int64)
+    df_merged['specimen_id'] = df_merged['specimen_id']
     df_merged = df_merged.merge(pd.DataFrame(specimen_ids, columns=["specimen_id"]), on="specimen_id", how='right')
 
     # Make sure the order is the same as th
