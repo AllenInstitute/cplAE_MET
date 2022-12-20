@@ -19,34 +19,34 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 # TODO
-parser.add_argument('--exp_name',        default='all_connected_v0',  type=str,   help='Experiment set')
+parser.add_argument('--exp_name',        default='Tonly_Eonly_Monly_8643_MNarbor_l2_v0',  type=str,   help='Experiment set')
 parser.add_argument('--alpha_T',         default=1.0,                         type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',         default=1.0,                         type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_sd',        default=1.0,                         type=float, help='soma depth reconstruction loss weight')
 parser.add_argument('--alpha_E',         default=1.0,                         type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',        default=1.0,                         type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_TE',       default=1.0,                         type=float, help='coupling loss weight between T and E')
-parser.add_argument('--lambda_TM',       default=1.0,                         type=float, help='coupling loss weight between T and M')
-parser.add_argument('--lambda_ME',       default=1.0,                         type=float, help='coupling loss weight between M and E')
-parser.add_argument('--lambda_ME_T',     default=1.0,                         type=float, help='coupling loss weight between ME and T')
-parser.add_argument('--lambda_ME_M',     default=1.0,                         type=float, help='coupling loss weight between ME and M')
-parser.add_argument('--lambda_ME_E',     default=1.0,                         type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_T_E', default=1.0,                         type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_TE',       default=0.0,                         type=float, help='coupling loss weight between T and E')
+parser.add_argument('--lambda_TM',       default=0.0,                         type=float, help='coupling loss weight between T and M')
+parser.add_argument('--lambda_ME',       default=0.0,                         type=float, help='coupling loss weight between M and E')
+parser.add_argument('--lambda_ME_T',     default=0.0,                         type=float, help='coupling loss weight between ME and T')
+parser.add_argument('--lambda_ME_M',     default=0.0,                         type=float, help='coupling loss weight between ME and M')
+parser.add_argument('--lambda_ME_E',     default=0.0,                         type=float, help='coupling loss weight between ME and E')
+parser.add_argument('--lambda_tune_T_E', default=0.0,                         type=float, help='Tune the directionality of coupling between T and E')
 parser.add_argument('--lambda_tune_E_T', default=0.0,                         type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_T_M', default=1.0,                         type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_T_M', default=0.0,                         type=float, help='Tune the directionality of coupling between T and M')
 parser.add_argument('--lambda_tune_M_T', default=0.0,                         type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_E_M', default=1.0,                         type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_E_M', default=0.0,                         type=float, help='Tune the directionality of coupling between M and E')
 parser.add_argument('--lambda_tune_M_E', default=0.0,                         type=float, help='Tune the directionality of coupling between M and E')
-parser.add_argument('--lambda_tune_T_ME',default=0.9,                         type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_ME_T',default=0.3,                         type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_ME_M',default=1.0,                         type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_T_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_T',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_M',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and M')
 parser.add_argument('--lambda_tune_M_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_E',default=1.0,                         type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_ME_E',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and E')
 parser.add_argument('--lambda_tune_E_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and E')
 parser.add_argument("--augment_decoders",default=0,                           type=int,   help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument('--scale_by',        default=0.3,                         type=float, help='scaling factor for M_data interpolation')
 parser.add_argument('--config_file',     default='config.toml',               type=str,   help='config file with data paths')
-parser.add_argument('--n_epochs',        default=50000,                       type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=10000,                       type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',          default=0,                           type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',      default=2,                           type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',      default=1000,                        type=int,   help='Batch size')
@@ -188,7 +188,7 @@ def main(exp_name="DEBUG",
          batch_size=1000):
 
     # Set the device -----------
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n)
@@ -282,13 +282,10 @@ def main(exp_name="DEBUG",
             optimizer.zero_grad()
 
             # apply M augmentations on m_cells ----------- 
-            noisy_xsd = add_noise(xsd, clamp_min=0.)
-            noisy_xm = add_noise(xm, sd=model_config['M']['gnoise_std_frac'], clamp_min=0., scale_by_x=True)
-
             aug_xm_mcells = torch.zeros(xm[is_m_1d].shape).to(device=device)
             target_size = xm.shape[2:]
             for sample in range(is_m_1d.sum()):
-                _, scaled_xm = scale_depth(torch.unsqueeze(noisy_xm[is_m_1d][sample, ...], dim=0), 
+                _, scaled_xm = scale_depth(torch.unsqueeze(xm[is_m_1d][sample, ...], dim=0), 
                                            scale_by= model_config['M']['scale_by'], 
                                            interpolation_mode=model_config['M']['interpolation_mode'],
                                            random=model_config['M']['random'])
@@ -297,7 +294,11 @@ def main(exp_name="DEBUG",
             aug_xm = torch.zeros(xm.shape).to(device=device)
             aug_xm[is_m_1d] = aug_xm_mcells
 
+            noisy_aug_xm = add_noise(aug_xm, sd=model_config['M']['gnoise_std_frac'], clamp_min=0., scale_by_x=True)
+            noisy_xsd = add_noise(xsd, clamp_min=0.)
+            
             batch['aug_xm'] = aug_xm
+            batch['noisy_aug_xm'] = noisy_aug_xm
             batch['noisy_xsd'] = noisy_xsd
             
             # TODO
@@ -320,7 +321,20 @@ def main(exp_name="DEBUG",
                     model_config['ME_M']['lambda_ME_M'] * model_config['ME_M']['lambda_tune_ME_M'] * loss_dict['cpl_me->m'] + \
                     model_config['ME_M']['lambda_ME_M'] * model_config['ME_M']['lambda_tune_M_ME']*  loss_dict['cpl_m->me'] + \
                     model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_ME_E'] * loss_dict['cpl_me->e'] + \
-                    model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_E_ME'] * loss_dict['cpl_e->me']     
+                    model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_E_ME'] * loss_dict['cpl_e->me']    
+
+            if model_config['augment_decoders']:
+                loss =  loss + model_config['T']['alpha_T'] * loss_dict['rec_t_from_zme_paired'] + \
+                        model_config['E']['alpha_E'] * loss_dict['rec_e_from_zt'] + \
+                        model_config['E']['alpha_E'] * loss_dict['rec_e_from_zme_paired'] + \
+                        model_config['M']['alpha_M'] * loss_dict['rec_m_from_zme_paired'] + \
+                        model_config['M']['alpha_M'] * loss_dict['rec_m_from_ze'] + \
+                        model_config['M']['alpha_M'] * loss_dict['rec_m_from_zt'] + \
+                        model_config['M']['alpha_sd'] * loss_dict['rec_sd_from_zme_paired'] + \
+                        model_config['M']['alpha_sd'] * loss_dict['rec_sd_from_ze'] + \
+                        model_config['M']['alpha_sd'] * loss_dict['rec_sd_from_zt'] + \
+                        model_config['ME']['alpha_ME'] * (loss_dict['rec_e_me_paired_from_zt'] + loss_dict['rec_m_me_paired_from_zt'] + loss_dict['rec_sd_me_paired_from_zt']) 
+
 
             loss.backward()
             optimizer.step()
@@ -387,7 +401,17 @@ def main(exp_name="DEBUG",
         tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)
         tb_writer.add_scalar('Train/cpl_E->ME', train_loss['cpl_e->me'], epoch)
         tb_writer.add_scalar('Validation/cpl_E->ME', val_loss['cpl_e->me'], epoch)
-        
+        if model_config['augment_decoders']:
+            tb_writer.add_scalar('Train/MSE_XT_from_zme_paired', train_loss['rec_t_from_zme_paired'], epoch)
+            tb_writer.add_scalar('Train/MSE_XE_from_zme_paired', train_loss['rec_e_from_zme_paired'], epoch)
+            tb_writer.add_scalar('Train/MSE_XE_from_zt', train_loss['rec_e_from_zt'], epoch)
+            tb_writer.add_scalar('Train/MSE_XM_from_zme_paired', train_loss['rec_m_from_zme_paired'], epoch)
+            tb_writer.add_scalar('Train/MSE_XM_from_zt', train_loss['rec_m_from_zt'], epoch)
+            tb_writer.add_scalar('Train/MSE_XM_from_ze', train_loss['rec_m_from_ze'], epoch)
+            tb_writer.add_scalar('Train/MSE_Xsd_from_zme_paired', train_loss['rec_sd_from_zme_paired'], epoch)
+            tb_writer.add_scalar('Train/MSE_Xsd_from_zt', train_loss['rec_sd_from_zt'], epoch)
+            tb_writer.add_scalar('Train/MSE_Xsd_from_ze', train_loss['rec_sd_from_ze'], epoch)
+            tb_writer.add_scalar('Train/MSE_XME_paired_from_zt', (train_loss['rec_e_me_paired_from_zt'] + train_loss['rec_m_me_paired_from_zt'] + train_loss['rec_sd_me_paired_from_zt']), epoch)
 
         # TODO
         # save model -----------

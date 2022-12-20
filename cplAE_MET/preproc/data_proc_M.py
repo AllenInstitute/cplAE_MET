@@ -2,6 +2,7 @@
 ################ Preprocessing M data ###################
 #########################################################
 import os
+import feather
 import argparse
 import pandas as pd
 import numpy as np
@@ -18,8 +19,9 @@ parser.add_argument('--config_file',    default='config_preproc.toml', type=str,
 
 def set_paths(config_file=None):
     paths = load_config(config_file=config_file, verbose=False)
-    paths['input'] = f'{str(paths["package_dir"] / "data/proc/")}'
-    paths['output'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
+    paths['input'] = f'{str(paths["data_dir"])}'
+    paths['arbor_density_file'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
+    paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
 
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
     paths['m_data_folder'] = f'{paths["input"]}/{str(paths["m_data_folder"])}'
@@ -79,12 +81,13 @@ def main(config_file='config_preproc.toml'):
     ids = pd.read_csv(dir_pth['specimen_ids'])
     specimen_ids = ids['specimen_id'].tolist()
     m_anno = pd.read_csv(m_anno_path) #This is used for soma depth and class type
+    t_anno = feather.read_dataframe(dir_pth['t_anno'])
     ab_spec_id = get_cell_ids_of_abnormal_images(specimen_ids, hist2d_120x4_path, m_anno,  min_nonzero_pixels=5)
     print(len(ab_spec_id), "cells will be dropped because of the few non zero pixels")
     drop_spec_id = ab_spec_id
 
     print("...................................................")
-    print("Generating image for all the locked dataset, for those that we dont have M, we put nan")
+    print("Generating image for all the locked dataset, for those that we dont have M, we put zeros")
     hist_shape = (1, 120, 4, 1)
     im_shape = (1, 120, 4, 4)
     im = np.zeros((ids.shape[0], 120, 4, 4), dtype=float)
@@ -103,7 +106,7 @@ def main(config_file='config_preproc.toml'):
                     im0 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv', header=None).values
                     im1 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[1]}_{spec_id}.csv', header=None).values
 
-                    #convert arbor density to arbor mass
+                    # #convert arbor density to arbor mass
                     mass0 = undo_radial_correction(im0)
                     mass1 = undo_radial_correction(im1)
 
@@ -117,8 +120,10 @@ def main(config_file='config_preproc.toml'):
 
                     if exc_or_inh == "inh":
                         im[i, :, :, 0:2] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))
+                        im[i, :, :, 2:] = 0.
                     else:
                         im[i, :, :, 2:] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))
+                        im[i, :, :, 0:2] = 0.
 
                     soma_depth[i] = np.squeeze(m_anno.loc[m_anno['specimen_id'] == spec_id]['soma_depth'].values)
                 else:
@@ -130,7 +135,7 @@ def main(config_file='config_preproc.toml'):
 
     print("so far in total", c, "cells have m data available")
 
-    sio.savemat(dir_pth['output'], {'hist_ax_de_api_bas': im,
+    sio.savemat(dir_pth['arbor_density_file'], {'hist_ax_de_api_bas': im,
                                     'soma_depth': soma_depth,
                                     'specimen_id': ids['specimen_id'].to_list()}, do_compression=True)
 

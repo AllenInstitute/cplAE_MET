@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import collections
 from functools import reduce
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
@@ -21,8 +22,9 @@ parser.add_argument('--pca_th',     default=0.97,  type=float,   help='threshold
 def set_paths(config_file=None):
     paths = load_config(config_file=config_file, verbose=False)
 
-    paths['input'] = f'{str(paths["package_dir"] / "data/proc/")}'
-    paths['output'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
+    paths['input'] = f'{str(paths["data_dir"])}'
+    paths['arbor_density_file'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
+    paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
 
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
 
@@ -48,6 +50,9 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
 
     h5_ids = [str(i) for i in np.array(hf.get("ids"))]
     print("Number of cells in h5(time series file):", len(h5_ids))
+
+    repeated_ids = ([item for item, count in collections.Counter(h5_ids).items() if count > 1])
+    print("We had some repeated ids in the timeseries and ipfx features:", len(repeated_ids))    
 
     print("...................................................")
     print(len([i for i in specimen_ids if i not in h5_ids]), "cells do not have time series data!")
@@ -119,6 +124,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     print("Removing outliers whithin 6 std from scaled PCs")
     #attaching specimen ids and removing outliers
     for k in PC.keys():
+        print(Scaled_PCs[k].shape)
         Scaled_PCs[k] = pd.DataFrame(Scaled_PCs[k])
         scaling_thr = np.abs(np.max(Scaled_PCs[k].std(axis=0, skipna=True, numeric_only=True)) * 6)
         Scaled_PCs[k] = Scaled_PCs[k][(Scaled_PCs[k] < scaling_thr) & (Scaled_PCs[k] > -1 * scaling_thr)]
@@ -128,7 +134,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
         else:
             Scaled_PCs[k]["specimen_id"] = np.delete(h5_ids, obj=dropped_cells[k])
 
-        Scaled_PCs[k]['specimen_id'] = Scaled_PCs[k]['specimen_id'].astype(str)
+        Scaled_PCs[k]['specimen_id'] = [str(i) for i in Scaled_PCs[k]['specimen_id']]
 
     #Merge all scaled PC features into one df
     data_frames = []
@@ -200,8 +206,8 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     print("Merging all E features together")
 
     data_frames = [Scaled_PCs, ipfx_norm]
-    df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='inner'), data_frames)
-    df_merged['specimen_id'] = df_merged['specimen_id']
+    df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='outer'), data_frames)
+    df_merged['specimen_id'] = df_merged['specimen_id'].astype(str)
     df_merged = df_merged.merge(pd.DataFrame(specimen_ids, columns=["specimen_id"]), on="specimen_id", how='right')
 
     # Make sure the order is the same as th

@@ -152,20 +152,113 @@ def plot_z(output, xlim=(-5, 5), ylim=(-5, 5), zme_paired=None):
         xlim (tuple): plot limits. Defaults to (-5, 5).
         ylim (tuple): plot limits. Defaults to (-5, 5).
     """
-    is_me_1d = np.logical_and(output['is_e_1d'], output['is_m_1d'])
-    is_mt_1d = np.logical_and(output['is_m_1d'], output['is_t_1d'])
+    is_t_1d = output['is_t_1d']
+    is_e_1d = output['is_e_1d']
+    is_m_1d = output['is_m_1d']
+    is_mt_1d = np.logical_and(is_m_1d, is_t_1d)
+    is_me_1d = np.logical_and(is_m_1d, is_e_1d)
+    is_met_1d = np.logical_and(is_t_1d, np.logical_and(is_m_1d, is_e_1d))
+    is_et_1d = np.logical_and(is_e_1d, is_t_1d)
     f,ax = plt.subplots(1,4, figsize=(15,4))
-    ax[0].scatter(output['zm'][output['is_m_1d']][:,0],output['zm'][output['is_m_1d']][:,1],c=output['cluster_color'][output['is_m_1d']],s=1)
-    ax[0].set(title='M')
-    ax[1].scatter(output['ze'][output['is_e_1d']][:,0],output['ze'][output['is_e_1d']][:,1],c=output['cluster_color'][output['is_e_1d']],s=1)
+    ax[0].scatter(output['zt'][is_t_1d][:,0],output['zt'][is_t_1d][:,1],c=output['cluster_color'][is_t_1d],s=1)
+    ax[0].set(title='T')
+    ax[1].scatter(output['ze'][is_et_1d][:,0],output['ze'][is_et_1d][:,1],c=output['cluster_color'][is_et_1d],s=1)
+    ax[1].set_yticklabels(labels=[])
     ax[1].set(title='E')
-    ax[2].scatter(output['zt'][output['is_t_1d']][:,0],output['zt'][output['is_t_1d']][:,1],c=output['cluster_color'][output['is_t_1d']],s=1)
+    ax[2].scatter(output['zme_paired'][is_met_1d][:,0],output['zme_paired'][is_met_1d][:,1],c=output['cluster_color'][is_met_1d],s=1)
+    ax[2].set_yticklabels(labels=[])
+    ax[2].set(title='ME')
+    ax[3].scatter(output['zm'][is_mt_1d][:,0],output['zm'][is_mt_1d][:,1],c=output['cluster_color'][is_mt_1d],s=1)
+    ax[3].set_yticklabels(labels=[])
+    ax[3].set(title='M')
+
+    for a in ax:
+        a.set(xlim=xlim, ylim=ylim)
+    plt.tight_layout()
+    plt.show()
+    return
+
+def plot_z_v2(output, xlim=(-5, 5), ylim=(-5, 5), zme_paired=None):
+    """plots M,E,T representations
+
+    Args:
+        zm (np.array):
+        ze (np.array):
+        zt (np.array):
+        dat (cluster_color):
+        xlim (tuple): plot limits. Defaults to (-5, 5).
+        ylim (tuple): plot limits. Defaults to (-5, 5).
+    """
+    is_t_1d = output['is_t_1d']
+    is_e_1d = output['is_e_1d']
+    is_m_1d = output['is_m_1d']
+    is_me_1d = np.logical_and(is_e_1d, is_m_1d)
+    is_et_1d = np.logical_and(is_e_1d, is_t_1d)
+    f,ax = plt.subplots(1,4, figsize=(15,4))
+    ax[0].scatter(output['zm'][is_m_1d][:,0],output['zm'][is_m_1d][:,1],c=output['cluster_color'][is_m_1d],s=1)
+    ax[0].set(title='M')
+    ax[1].scatter(output['ze'][is_et_1d][:,0],output['ze'][is_et_1d][:,1],c=output['cluster_color'][is_et_1d],s=1)
+    ax[1].set(title='E')
+    ax[2].scatter(output['zt'][is_et_1d][:,0],output['zt'][is_et_1d][:,1],c=output['cluster_color'][is_et_1d],s=1)
     ax[2].set(title='T')
-    ax[3].scatter(output['zme_paired'][is_me_1d][:,0],output['zme_paired'][is_me_1d][:,1],c=output['cluster_color'][is_me_1d],s=1)
+    ax[3].scatter(output['zme_paired'][is_et_1d][:,0],output['zme_paired'][is_et_1d][:,1],c=output['cluster_color'][is_et_1d],s=1)
     ax[3].set(title='ME')
 
     for a in ax:
         a.set(xlim=xlim, ylim=ylim)
+    plt.tight_layout()
+    plt.show()
+    return
+
+
+def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), zme_paired=None):
+    """plots M,E,T representations
+
+    Args:
+        zm (np.array):
+        ze (np.array):
+        zt (np.array):
+        dat (cluster_color):
+        xlim (tuple): plot limits. Defaults to (-5, 5).
+        ylim (tuple): plot limits. Defaults to (-5, 5).
+    """
+    is_me_1d = np.logical_and(output['is_e_1d'], output['is_m_1d'])
+
+    fig = plt.figure(figsize=(20,5))
+
+    ax = fig.add_subplot(141, projection='3d')
+    ax.scatter(output['zt'][output['is_t_1d']][:,2], output['zt'][output['is_t_1d']][:,1], 
+               output['zt'][output['is_t_1d']][:,0], c=output['cluster_color'][output['is_t_1d']],s=1)
+    ax.set(title='T', xlim=xlim, ylim=ylim, zlim=zlim)
+    # ax.set_xticklabels(labels=["-2", "" , "-1", "", "0", "", "1",""])
+    # ax.set_yticklabels(labels=["-1", "" , "0", "", "1", "", "2",""])
+
+
+
+    ax = fig.add_subplot(142, projection='3d')
+    ax.scatter(output['ze'][output['is_e_1d']][:,2], output['ze'][output['is_e_1d']][:,1], 
+               output['ze'][output['is_e_1d']][:,0], c=output['cluster_color'][output['is_e_1d']],s=1)
+    ax.set(title='E', xlim=xlim, ylim=ylim, zlim=zlim)
+    # ax.set_xticklabels(labels=[])
+    # ax.set_yticklabels(labels=[])
+    # ax.set_zticklabels(labels=[])
+
+    ax = fig.add_subplot(143, projection='3d')
+    ax.scatter(output['zme_paired'][is_me_1d][:,2], output['zme_paired'][is_me_1d][:,1], 
+               output['zme_paired'][is_me_1d][:,0], c=output['cluster_color'][is_me_1d],s=1)
+    ax.set(title='ME', xlim=xlim, ylim=ylim, zlim=zlim)
+    # ax.set_xticklabels(labels=[])
+    # ax.set_yticklabels(labels=[])
+    # ax.set_zticklabels(labels=[])
+
+    ax = fig.add_subplot(144, projection='3d')
+    ax.scatter(output['zm'][output['is_m_1d']][:,2], output['zm'][output['is_m_1d']][:,1], 
+               output['zm'][output['is_m_1d']][:,0], c=output['cluster_color'][output['is_m_1d']], s=1)
+    ax.set(title='M', xlim=xlim, ylim=ylim, zlim=zlim)
+    # ax.set_xticklabels(labels=[])
+    # ax.set_yticklabels(labels=[])
+    # ax.set_zticklabels(labels=[])
+    
     plt.tight_layout()
     plt.show()
     return

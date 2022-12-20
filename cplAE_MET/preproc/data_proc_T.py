@@ -18,8 +18,9 @@ parser.add_argument('--beta_threshold', default=0.4,                   type=floa
 def set_paths(config_file=None):
     paths = load_config(config_file=config_file, verbose=False)
 
-    paths['input'] = f'{str(paths["package_dir"] / "data/proc/")}'
-    paths['output'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
+    paths['input'] = f'{str(paths["data_dir"])}'
+    paths['arbor_density_file'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
+    paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
 
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
     paths['gene_file'] = f'{paths["input"]}/{str(paths["gene_file"])}'
@@ -48,7 +49,9 @@ def main(config_file='config_preproc.toml', beta_threshold=0.4):
     T_ann = feather.read_dataframe(dir_pth['t_anno'])
 
     ids = pd.read_csv(dir_pth['specimen_ids'])
-    t_cells = ids[ids['T_cell']==1]['specimen_id'].to_list()
+    ids['specimen_id'] = ids['specimen_id'].astype(str)
+    T_ann['spec_id_label'] = T_ann['spec_id_label'].astype(str)
+    t_cells = [i for i in ids['specimen_id'].to_list() if i in T_ann['spec_id_label'].to_list()]
     specimen_ids = ids['specimen_id'].tolist()
     not_t_cells = [i for i in specimen_ids if i not in t_cells]
     print("...................................................")
@@ -57,6 +60,8 @@ def main(config_file='config_preproc.toml', beta_threshold=0.4):
     T_ann['spec_id_label'] = T_ann['spec_id_label'].astype(np.int64)
     T_ann = T_ann.rename(columns={"spec_id_label": "specimen_id"})
     df_spec_id = pd.DataFrame(specimen_ids, columns=["specimen_id"])
+    df_spec_id['specimen_id'] = df_spec_id['specimen_id'].astype(str)
+    T_ann['specimen_id'] = T_ann['specimen_id'].astype(str)
     T_ann = T_ann.merge(df_spec_id, on="specimen_id", how='right')
     T_ann = T_ann[['specimen_id',
                    'sample_id',
@@ -70,7 +75,10 @@ def main(config_file='config_preproc.toml', beta_threshold=0.4):
     print("There are", counts['Core'] + counts['I1'], "highly consistent cells")
     print("There are", counts['I2'] + counts['I3'], "Moderately consistent cells")
     print("There are", counts['PoorQ'], "Inconsistent cells")
-
+    poorQ = T_ann[T_ann['Tree_call_label']=="PoorQ"]['specimen_id'].to_list()
+    t_cells = [i for i in t_cells if i not in poorQ]
+    not_t_cells = not_t_cells + poorQ
+    
     keep_gene_id = pd.read_csv(gene_file_path)
     keep_gene_id = keep_gene_id[keep_gene_id.BetaScore>beta_threshold]['Gene'].to_list()
 
