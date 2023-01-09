@@ -20,9 +20,9 @@ def set_paths(config_file=None):
 
  paths['input'] = f'{str(paths["data_dir"])}'
  paths['arbor_density_file'] = f'{str(paths["arbor_density_file"])}'
- paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
+#  paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
  paths['arbor_density_PC_vars_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_vars_file"])}'
- paths['arbor_density_PC_and_features_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_and_features_file"])}'
+ paths['m_output_file'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
 
  paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
 
@@ -48,7 +48,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     print("shape of E data:", E_data.shape)
     T_data = pd.read_csv(dir_pth['t_input'])
     print("shape of T data:", T_data.shape)
-    M_data = pd.read_csv(dir_pth['arbor_density_PC_and_features_file'])
+    M_data = pd.read_csv(dir_pth['m_output_file'])
     print("shape of m features data:", M_data.shape)
     M_pc_vars = pd.read_csv(dir_pth['arbor_density_PC_vars_file'])
     gene_id = pd.read_csv(dir_pth['gene_id_input'])
