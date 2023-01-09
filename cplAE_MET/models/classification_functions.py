@@ -2,7 +2,7 @@ import numpy as np
 from collections import Counter
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis, LinearDiscriminantAnalysis
 
 def get_small_types_mask(types, min_size):
     '''
@@ -40,10 +40,10 @@ def run_LogisticRegression(X, y, test_size, min_label_size=7):
     clf = LogisticRegression(random_state=0, max_iter=10000).fit(X_train, y_train)
     classification_acc = clf.score(X_test, y_test) * 100
     n_class = len(Counter(y_test))
-    return classification_acc, n_class
+    return classification_acc, n_class, clf
 
 
-def run_QDA(X, y, test_size, min_label_size=7, train_test_ids=None):
+def run_LDA(X, y, min_label_size=7, train_test_ids=None, test_size=None):
     '''
 
     Args:
@@ -70,18 +70,12 @@ def run_QDA(X, y, test_size, min_label_size=7, train_test_ids=None):
         y_train = y[train_mask]
         y_test = y[test_mask]
 
-        # we need to factorize the y as they are not numbers but are cluster labels
-        y_train_test = np.append(y_train, y_test)
-        _, y_train_test = np.unique(y_train_test, return_inverse=True)
-        y_test = y_train_test[-len(y_test):]
-        y_train = y_train_test[: len(y_train)]
     else:
         X = X[small_types_mask]
         y = y[small_types_mask]
-        _, y = np.unique(y, return_inverse=True)
         X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
 
-    clf = QuadraticDiscriminantAnalysis()
+    clf = LinearDiscriminantAnalysis()
     clf.fit(X_train, y_train)
     classification_acc = clf.score(X_test, y_test) * 100
     n_class = len(Counter(y_test))

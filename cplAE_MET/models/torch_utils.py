@@ -140,14 +140,15 @@ class MET_dataset(Dataset):
         xt = self.astensor(self.xt[idx, ...])
         valid_xt = ~torch.isnan(xt)
         xt = torch.nan_to_num(xt).float()
-
+        
+        
         is_m_1d = self.is_m_1d[idx]
         is_e_1d = self.is_e_1d[idx]
         is_t_1d = self.is_t_1d[idx]
         is_me_1d = self.is_me_1d[idx]
         is_met_1d = self.is_met_1d[idx]
 
-        return dict(xm=xm, xsd=xsd, xe=xe, xt=xt,
+        return dict(xm=xm, xsd=xsd, xe=xe, xt=xt, 
                     valid_xm=valid_xm, valid_xsd=valid_xsd,
                     valid_xe=valid_xe, valid_xt=valid_xt,
                     is_m_1d=is_m_1d, is_e_1d=is_e_1d, is_t_1d=is_t_1d,
@@ -184,6 +185,7 @@ class MET_dataset_v1(Dataset):
         self.is_me_1d = np.logical_and(self.is_m_1d, self.is_e_1d)
         self.is_met_1d = np.logical_and(self.is_me_1d, self.is_t_1d)
 
+
     def __len__(self):
         return self.xt.shape[0]
 
@@ -209,7 +211,7 @@ class MET_dataset_v1(Dataset):
         is_me_1d = self.is_me_1d[idx]
         is_met_1d = self.is_met_1d[idx]
 
-        return dict(xm=xm, xsd=xsd, xe=xe, xt=xt,
+        return dict(xm=xm, xsd=xsd, xe=xe, xt=xt, 
                     valid_xm=valid_xm, valid_xsd=valid_xsd,
                     valid_xe=valid_xe, valid_xt=valid_xt,
                     is_m_1d=is_m_1d, is_e_1d=is_e_1d, is_t_1d=is_t_1d,
