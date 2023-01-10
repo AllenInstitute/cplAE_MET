@@ -346,7 +346,7 @@ class Model_ME_T_v2(nn.Module):
                                              gnoise_std_frac=model_config['M']['gnoise_std_frac'],
                                              dropout_p=model_config['M']['dropout_p'])
         self.me_m_decoder = Dec_zm_int_to_xm()
-        self.augment_decoders = model_config['augment_decoders']
+        # self.augment_decoders = model_config['augment_decoders']
         return
     
 
@@ -413,50 +413,50 @@ class Model_ME_T_v2(nn.Module):
         loss_dict['cpl_e->m'] = self.compute_cpl_loss(zm[is_me_1d, ...], ze[is_me_1d, ...].detach())
 
 
-        # Augment decoders
-        if (self.training and self.augment_decoders):
-            # T and ME
-            zm_int_dec_paired_from_zt, ze_int_dec_paired_from_zt = self.ae_me.dec_zme_to_zme_int(zt.detach())
-            xre_me_paired_from_zt = self.me_e_decoder(ze_int_dec_paired_from_zt)
-            xrm_me_paired_from_zt = self.me_m_decoder(zm_int_dec_paired_from_zt)
+        # # Augment decoders
+        # if (self.training and self.augment_decoders):
+        #     # T and ME
+        #     zm_int_dec_paired_from_zt, ze_int_dec_paired_from_zt = self.ae_me.dec_zme_to_zme_int(zt.detach())
+        #     xre_me_paired_from_zt = self.me_e_decoder(ze_int_dec_paired_from_zt)
+        #     xrm_me_paired_from_zt = self.me_m_decoder(zm_int_dec_paired_from_zt)
 
-            xrt_from_zme_paired = self.ae_t.dec_zt_to_xt(zme_paired.detach())
+        #     xrt_from_zme_paired = self.ae_t.dec_zt_to_xt(zme_paired.detach())
 
-            # T and E
-            ze_int_dec_from_zt = self.ae_e.dec_ze_to_ze_int(zt.detach())
-            xre_from_zt = self.ae_e.dec_ze_int_to_xe(ze_int_dec_from_zt)
+        #     # T and E
+        #     ze_int_dec_from_zt = self.ae_e.dec_ze_to_ze_int(zt.detach())
+        #     xre_from_zt = self.ae_e.dec_ze_int_to_xe(ze_int_dec_from_zt)
 
-            # T and M
-            zm_int_dec_from_zt = self.ae_m.dec_zm_to_zm_int(zt.detach())
-            xrm_from_zt = self.ae_m.dec_zm_int_to_xm(zm_int_dec_from_zt)
+        #     # T and M
+        #     zm_int_dec_from_zt = self.ae_m.dec_zm_to_zm_int(zt.detach())
+        #     xrm_from_zt = self.ae_m.dec_zm_int_to_xm(zm_int_dec_from_zt)
 
-            # M and ME
-            zm_int_dec_from_zme_paired = self.ae_m.dec_zm_to_zm_int(zme_paired.detach())
-            xrm_from_zme_paired = self.ae_m.dec_zm_int_to_xm(zm_int_dec_from_zme_paired)
+        #     # M and ME
+        #     zm_int_dec_from_zme_paired = self.ae_m.dec_zm_to_zm_int(zme_paired.detach())
+        #     xrm_from_zme_paired = self.ae_m.dec_zm_int_to_xm(zm_int_dec_from_zme_paired)
 
-            # E and ME
-            ze_int_dec_from_zme_paired = self.ae_e.dec_ze_to_ze_int(zme_paired.detach())
-            xre_from_zme_paired = self.ae_e.dec_ze_int_to_xe(ze_int_dec_from_zme_paired)
+        #     # E and ME
+        #     ze_int_dec_from_zme_paired = self.ae_e.dec_ze_to_ze_int(zme_paired.detach())
+        #     xre_from_zme_paired = self.ae_e.dec_ze_int_to_xe(ze_int_dec_from_zme_paired)
 
-            # E and M
-            zm_int_dec_from_ze = self.ae_m.dec_zm_to_zm_int(ze.detach())
-            xrm_from_ze = self.ae_m.dec_zm_int_to_xm(zm_int_dec_from_ze)
+        #     # E and M
+        #     zm_int_dec_from_ze = self.ae_m.dec_zm_to_zm_int(ze.detach())
+        #     xrm_from_ze = self.ae_m.dec_zm_int_to_xm(zm_int_dec_from_ze)
 
 
-            # T and ME
-            loss_dict['rec_e_me_paired_from_zt'] = self.compute_rec_loss(xe[is_met_1d, ...], xre_me_paired_from_zt[is_met_1d, ...], valid_xe[is_met_1d, ...])
-            loss_dict['rec_m_me_paired_from_zt'] = self.compute_rec_loss(xm[is_met_1d, ...], xrm_me_paired_from_zt[is_met_1d, ...], valid_xm[is_met_1d, ...])
-            loss_dict['rec_t_from_zme_paired'] = self.compute_rec_loss(xt[is_met_1d, ...], xrt_from_zme_paired[is_met_1d, ...], valid_xt[is_met_1d, ...])
-            # T and E
-            loss_dict['rec_e_from_zt'] = self.compute_rec_loss(xe[is_te_1d, ...], xre_from_zt[is_te_1d, ...], valid_xe[is_te_1d, ...])
-            # T and M
-            loss_dict['rec_m_from_zt'] = self.compute_rec_loss(xm[is_tm_1d, ...], xrm_from_zt[is_tm_1d, ...], valid_xm[is_tm_1d, ...])
-            # M and ME
-            loss_dict['rec_m_from_zme_paired'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_from_zme_paired[is_me_1d, ...], valid_xm[is_me_1d, ...])
-            # E and ME
-            loss_dict['rec_e_from_zme_paired'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_from_zme_paired[is_me_1d, ...], valid_xe[is_me_1d, ...])
-            # M and E
-            loss_dict['rec_m_from_ze'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_from_ze[is_me_1d, ...], valid_xm[is_me_1d, ...])
+        #     # T and ME
+        #     loss_dict['rec_e_me_paired_from_zt'] = self.compute_rec_loss(xe[is_met_1d, ...], xre_me_paired_from_zt[is_met_1d, ...], valid_xe[is_met_1d, ...])
+        #     loss_dict['rec_m_me_paired_from_zt'] = self.compute_rec_loss(xm[is_met_1d, ...], xrm_me_paired_from_zt[is_met_1d, ...], valid_xm[is_met_1d, ...])
+        #     loss_dict['rec_t_from_zme_paired'] = self.compute_rec_loss(xt[is_met_1d, ...], xrt_from_zme_paired[is_met_1d, ...], valid_xt[is_met_1d, ...])
+        #     # T and E
+        #     loss_dict['rec_e_from_zt'] = self.compute_rec_loss(xe[is_te_1d, ...], xre_from_zt[is_te_1d, ...], valid_xe[is_te_1d, ...])
+        #     # T and M
+        #     loss_dict['rec_m_from_zt'] = self.compute_rec_loss(xm[is_tm_1d, ...], xrm_from_zt[is_tm_1d, ...], valid_xm[is_tm_1d, ...])
+        #     # M and ME
+        #     loss_dict['rec_m_from_zme_paired'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_from_zme_paired[is_me_1d, ...], valid_xm[is_me_1d, ...])
+        #     # E and ME
+        #     loss_dict['rec_e_from_zme_paired'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_from_zme_paired[is_me_1d, ...], valid_xe[is_me_1d, ...])
+        #     # M and E
+        #     loss_dict['rec_m_from_ze'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_from_ze[is_me_1d, ...], valid_xm[is_me_1d, ...])
 
         ############################## get output dicts
         z_dict = get_output_dict([zm, ze, zt, zme_paired], 

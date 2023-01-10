@@ -34,7 +34,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--exp_name',              default='optuna_all_connected_20trial_1000epochs',   type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='optuna_all_connected_100trial_1000epochs',   type=str,   help='Experiment set')
 parser.add_argument('--alpha_T',               default=1.0,      type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',               default=1.0,      type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_E',               default=1.0,      type=float, help='E reconstruction loss weight')
@@ -58,11 +58,12 @@ parser.add_argument('--lambda_tune_M_ME_range',default=(0,10),   type=float, hel
 parser.add_argument('--lambda_tune_ME_E_range',default=(0,10),   type=float, help='Tune the directionality of coupling between ME and E')
 parser.add_argument('--lambda_tune_E_ME_range',default=(0,10),   type=float, help='Tune the directionality of coupling between E and ME')
 parser.add_argument('--config_file',     default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--n_epochs',        default=1000,             type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=1000,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',          default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',      default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',      default=1000,           type=int,   help='Batch size')
-parser.add_argument('--n_trials',        default=20,              type=int,   help='number trials for bayesian optimization, if it is larger than 1')
+parser.add_argument('--n_trials',        default=100,             type=int,   help='number trials for bayesian optimization, if it is larger than 1')
+parser.add_argument('--opset',           default=0,              type=int,   help='round of operation with n_trials')
 
 
 def set_paths(config_file=None, exp_name='DEBUG', fold_n=0):
@@ -213,10 +214,10 @@ def main(exp_name="DEBUG",
          lambda_tune_M_ME_range=(0,10),
          lambda_tune_M_E_range=(0,10),
          lambda_tune_E_M_range=(0,10),
-         augment_decoders=0,
          latent_dim=2,
          batch_size=1000, 
-         n_trials=1):
+         n_trials=1,
+         opset=0):
 
     
     def build_model(params):
@@ -224,7 +225,6 @@ def main(exp_name="DEBUG",
 
         model_config = dict(latent_dim=latent_dim, 
                         batch_size=batch_size,
-                        augment_decoders=augment_decoders,
                         T=dict(dropout_p=0.2, 
                                 alpha_T=alpha_T),
                         E=dict(gnoise_std=train_dataset.gnoise_e_std,
@@ -260,7 +260,8 @@ def main(exp_name="DEBUG",
                      lambda_tune_ME_E_range=None,
                      lambda_tune_E_ME_range=None,
                      lambda_tune_ME_M_range=None,
-                     lambda_tune_M_ME_range=None):
+                     lambda_tune_M_ME_range=None, 
+                     previous_ML_model_weights_to_load=None):
 
             self.lambda_tune_T_E_range = lambda_tune_T_E_range
             self.lambda_tune_E_T_range = lambda_tune_E_T_range
@@ -274,6 +275,7 @@ def main(exp_name="DEBUG",
             self.lambda_tune_E_ME_range = lambda_tune_E_ME_range
             self.lambda_tune_ME_M_range = lambda_tune_ME_M_range
             self.lambda_tune_M_ME_range = lambda_tune_M_ME_range
+            self.previous_ML_model_weights_to_load = previous_ML_model_weights_to_load
 
 
 
@@ -291,9 +293,18 @@ def main(exp_name="DEBUG",
                       'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1]),
                       'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}
 
+           
             model, model_config = build_model(params)
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-            accuracy = train_and_evaluate(model_config, model, trial)
+            if self.previous_ML_model_weights_to_load is not None:
+                loaded_model = torch.load(self.previous_ML_model_weights_to_load, map_location='cpu')
+                model.load_state_dict(loaded_model['state_dict'])
+                optimizer.load_state_dict(loaded_model['optimizer'])
+                print("loaded previous best model weights and optimizer")
+                print(self.previous_ML_model_weights_to_load)
+
+            accuracy = train_and_evaluate(model_config, model, optimizer, trial)
 
             return accuracy
 
@@ -310,7 +321,7 @@ def main(exp_name="DEBUG",
         is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
         is_me_1d = np.logical_and(is_m_1d, is_e_1d)
         is_met_1d = np.logical_and(is_t_1d, is_me_1d)
-        T_labels = np.array(dat.cluster_label) #TODO this labels should
+        T_labels = np.array(dat.cluster_label) #TODO these labels should become part of dataloader
 
         zt = tonumpy(z_dict['zt'])
         ze = tonumpy(z_dict['ze'])
@@ -322,15 +333,15 @@ def main(exp_name="DEBUG",
                                                 train_test_ids={'train':[i for i in train_ind if is_t_1d[i]], 
                                                                 'val':[i for i in val_ind if is_t_1d[i]]})
 
-        print("acc on the zt:", zt_classification_acc, "number of classes:", n_class)
+        # print("acc on the zt:", zt_classification_acc, "number of classes:", n_class)
         
         te_cpl_score = clf.score(ze[is_te_1d], T_labels[is_te_1d]) * 100
         tm_cpl_score = clf.score(zm[is_tm_1d], T_labels[is_tm_1d]) * 100
         met_cpl_score = clf.score(zme_paired[is_met_1d], T_labels[is_met_1d]) * 100
 
-        print("acc on the ze:", te_cpl_score)
-        print("acc on the zm:", tm_cpl_score)
-        print("acc on the zme_paired:", met_cpl_score)
+        # print("acc on the ze:", te_cpl_score)
+        # print("acc on the zm:", tm_cpl_score)
+        # print("acc on the zme_paired:", met_cpl_score)
 
         model_score = np.mean([model_config['TE']['lambda_TE'] * te_cpl_score,
                       model_config['TM']['lambda_TM'] * tm_cpl_score,
@@ -340,10 +351,9 @@ def main(exp_name="DEBUG",
 
 # Train function ##########################################################
 
-    def train_and_evaluate(model_config, model, trial):
-
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    def train_and_evaluate(model_config, model, optimizer, trial):
         model.to(device)
+        optimizer_to(optimizer,device)
 
         # Training -----------
         for epoch in range(n_epochs):
@@ -364,31 +374,24 @@ def main(exp_name="DEBUG",
                 for k, v in loss_dict.items():
                     train_loss[k] += v
 
+            # Average losses over batches -----------
+            for k, v in train_loss.items():
+                train_loss[k] = train_loss[k] / len(train_dataloader)
+
             # Validation -----------
             with torch.no_grad():
                 for val_batch in iter(val_dataloader):
                     model.eval()
                     val_loss, _, _ = model(val_batch)
-            
-            
-            # Average losses over batches -----------
-            for k, v in train_loss.items():
-                train_loss[k] = train_loss[k] / len(train_dataloader)
                 
-        # Compute classification acc from the model latent dim for all data
-        with torch.no_grad():
-            
-            model_score = run_classification(model, model_config, dataloader)
-
-            print("model score is:", model_score)
-                    
-            # Prune if this trial is not good
-            trial.report(model_score, epoch) 
-            if trial.should_prune():
-                    raise optuna.exceptions.TrialPruned()    
-
+                model_score = run_classification(model, model_config, dataloader)
+                # Prune if this trial is not good
+                trial.report(model_score, epoch) 
+                if trial.should_prune():
+                    raise optuna.exceptions.TrialPruned()   
+    
         # save the model at the end of the trial
-        fname = dir_pth['result'] + f"model_trial_{trial.number}_epoch_{epoch+1}" 
+        fname = dir_pth['result'] + f"model_trial_{trial.number}_epoch_{epoch+1}_opset_{opset}" 
         checkpoint = {
             'epoch': epoch,
             'state_dict': model.state_dict(),
@@ -424,10 +427,23 @@ def main(exp_name="DEBUG",
 
     # Optimization -------------
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
+    # Load previous optimization study if exist
+    storage = 'sqlite:///'+exp_name+'.db'
 
-    study = optuna.create_study(direction="maximize", 
+    # optuna.delete_study(study_name=exp_name, storage=storage)        
+    
+    study = optuna.create_study(study_name=exp_name,
+                                direction="maximize", 
                                 sampler=optuna.samplers.TPESampler(),
-                                pruner=optuna.pruners.HyperbandPruner())
+                                pruner=optuna.pruners.HyperbandPruner(),
+                                storage=storage, 
+                                load_if_exists=True)
+    
+    if len(study.trials) > 0:
+        best_trial_number_to_load = study.best_trial.number 
+        model_name_to_load = dir_pth['result'] + f"model_trial_{str(best_trial_number_to_load)}_epoch_{n_epochs}_opset_{opset-1}.pt"
+    else:
+        model_name_to_load = None
 
     study.optimize(Objective(lambda_tune_T_E_range = lambda_tune_T_E_range, 
                              lambda_tune_E_T_range = lambda_tune_E_T_range, 
@@ -440,9 +456,10 @@ def main(exp_name="DEBUG",
                              lambda_tune_ME_M_range = lambda_tune_ME_M_range,
                              lambda_tune_M_ME_range = lambda_tune_M_ME_range,
                              lambda_tune_ME_E_range = lambda_tune_ME_E_range,
-                             lambda_tune_E_ME_range = lambda_tune_E_ME_range), n_trials=n_trials)
+                             lambda_tune_E_ME_range = lambda_tune_E_ME_range,
+                             previous_ML_model_weights_to_load = model_name_to_load), n_trials=n_trials)
 
-    fname = dir_pth['result'] + f"study_all_connected_{n_trials}trials.pkl" 
+    fname = dir_pth['result'] + f"{exp_name}_{opset}opset.pkl" 
 
     savepkl(study, fname)
 
