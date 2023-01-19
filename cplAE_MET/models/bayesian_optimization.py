@@ -29,7 +29,17 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--exp_name',              default='small_range_optuna_all_connected_gmm_10trial_2000epochs',   type=str,   help='Experiment set')
+parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
+parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
+parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
+parser.add_argument('--opset',                 default=1,              type=int,   help='round of operation with n_trials')
+parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
+parser.add_argument('--n_epochs',              default=2000,           type=int,   help='Number of epochs to train')
+parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
+parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
+parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',               default=1.0,            type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_E',               default=1.0,            type=float, help='E reconstruction loss weight')
@@ -40,30 +50,25 @@ parser.add_argument('--lambda_ME',             default=1.0,            type=floa
 parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
 parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_T_E_range', default=(0,2),          type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_E_T_range', default=(0,2),          type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_T_M_range', default=(0,2),          type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_M_T_range', default=(0,2),          type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_E_M_range', default=(0,2),          type=float, help='Tune the directionality of coupling between E and M')
-parser.add_argument('--lambda_tune_M_E_range', default=(0,2),          type=float, help='Tune the directionality of coupling between M and E')
-parser.add_argument('--lambda_tune_T_ME_range',default=(0,2),          type=float, help='Tune the directionality of coupling between T and ME')
-parser.add_argument('--lambda_tune_ME_T_range',default=(0,2),          type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_ME_M_range',default=(0,2),          type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_M_ME_range',default=(0,2),          type=float, help='Tune the directionality of coupling between M and ME')
-parser.add_argument('--lambda_tune_ME_E_range',default=(0,2),          type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_E_ME_range',default=(0,2),          type=float, help='Tune the directionality of coupling between E and ME')
-parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--n_epochs',              default=2000,           type=int,   help='Number of epochs to train')
-parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
-parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
-parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
-parser.add_argument('--n_trials',              default=10,            type=int,   help='number trials for bayesian optimization, if it is larger than 1')
-parser.add_argument('--opset',                 default=1,              type=int,   help='round of operation with n_trials')
+parser.add_argument('--lambda_tune_T_E_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_E_T_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_T_M_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_M_T_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between M and T')
+parser.add_argument('--lambda_tune_E_M_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between E and M')
+parser.add_argument('--lambda_tune_M_E_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_T_ME_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between T and ME')
+parser.add_argument('--lambda_tune_ME_T_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_M_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_M_ME_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between M and ME')
+parser.add_argument('--lambda_tune_ME_E_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_E_ME_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between E and ME')
 
 
-def set_paths(config_file=None, exp_name='DEBUG', fold_n=0):
+
+def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=0):
     paths = load_config(config_file=config_file, verbose=False)
     paths['result'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/'
+    paths['opt_storage_db'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/{opt_storage_db}'
     Path(paths['result']).mkdir(parents=False, exist_ok=True)
     paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
     if os.path.exists(paths['tb_logs']):
@@ -165,7 +170,11 @@ def Criterion(model_config, loss_dict):
 
 def denovo_clustering_gmm(X, n_components_range=np.arange(1,93), covariance_type="full", random_state=0):
 
-    models = [GaussianMixture(n, covariance_type=covariance_type, random_state=random_state).fit(X) 
+    models = [GaussianMixture(n, 
+                              covariance_type=covariance_type,
+                              random_state=random_state, 
+                              n_init=10, 
+                              reg_covar=1e-4).fit(X) 
                         for n in n_components_range]
     return np.argmin([m.bic(X) for m in models])
 
@@ -179,30 +188,27 @@ def run_gmm(model, dataloader):
     is_t_1d = tonumpy(all_data['is_t_1d'])
     is_e_1d = tonumpy(all_data['is_e_1d'])
     is_m_1d = tonumpy(all_data['is_m_1d'])
-    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
-    is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
     is_me_1d = np.logical_and(is_m_1d, is_e_1d)
     is_met_1d = np.logical_and(is_t_1d, is_me_1d)
 
     zt = tonumpy(z_dict['zt'])
-    ze = tonumpy(z_dict['ze'])
-    zm = tonumpy(z_dict['zm'])
     zme_paired = tonumpy(z_dict['zme_paired'])
     
     n_t_gmm_types = denovo_clustering_gmm(zt[is_t_1d])
-    n_e_gmm_types = denovo_clustering_gmm(ze[is_te_1d])
-    n_m_gmm_types = denovo_clustering_gmm(zm[is_tm_1d])
     n_me_gmm_types = denovo_clustering_gmm(zme_paired[is_met_1d])
     
-    print("n_t_gmm_types, n_e_gmm_types, n_m_gmm_types, n_me_gmm_types")
-    print(n_t_gmm_types, n_e_gmm_types, n_m_gmm_types, n_me_gmm_types)
-    model_score = np.min((n_t_gmm_types, n_e_gmm_types, n_m_gmm_types, n_me_gmm_types))
+    print("n_t_gmm_types, n_me_gmm_types")
+    print(n_t_gmm_types, n_me_gmm_types)
+    model_score = n_t_gmm_types * n_me_gmm_types
 
     print("model_score:", model_score)
     return model_score 
 
 
-def main(exp_name="DEBUG",
+def main(exp_name="TEST",
+         load_model=False,
+         opt_storage_db="test.db",
+         db_load_if_exist=True,
          config_file="config.toml", 
          n_epochs=10, 
          fold_n=0, 
@@ -230,7 +236,7 @@ def main(exp_name="DEBUG",
          lambda_tune_E_M_range=(0,2),
          latent_dim=2,
          batch_size=1000, 
-         n_trials=1,
+         opt_n_trials=1,
          opset=0):
 
     
@@ -352,17 +358,17 @@ def main(exp_name="DEBUG",
                     val_loss, _, _ = model(val_batch)
                 
 
-                if ((epoch>0) and ((epoch+1) % int(n_epochs/2)) == 0):
-                    print("time to check if the model can be pruned away at epoch:", epoch+1)
-                    model_score = run_gmm(model, dataloader)
-                    # model_score = 1
+                # if ((epoch % epochs_prune) == 0):
+                #     print("time to check if the model can be pruned away at epoch:", epoch+1)
+                #     model_score = run_gmm(model, dataloader)
                     
-                    # Prune if this trial is not good -----------
-                    if trial is not None:
-                        trial.report(model_score, epoch) 
-                        if trial.should_prune():
-                            raise optuna.exceptions.TrialPruned()   
+                #     # Prune if this trial is not good -----------
+                #     if trial is not None:
+                #         trial.report(model_score, epoch) 
+                #         if trial.should_prune():
+                #             raise optuna.exceptions.TrialPruned()   
     
+        model_score = run_gmm(model, dataloader)
 
         # save the model and the optuna study at the end of the trial -----------
         fname = dir_pth['result'] + f"model_trial_{trial.number}_epoch_{epoch+1}" 
@@ -383,7 +389,7 @@ def main(exp_name="DEBUG",
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # Train test split -----------
-    dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n)
+    dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db)
     dat = MET_exc_inh_v2.from_file(dir_pth['MET_data'])
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
@@ -404,23 +410,26 @@ def main(exp_name="DEBUG",
 
     # Optimization -------------
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
-    # Load previous optimization study if exist
-    storage = 'sqlite:///'+exp_name+'.db'
-    
-    # if opset==0:
-    #     optuna.delete_study(study_name=exp_name, storage=storage)        
-    
+            
     study = optuna.create_study(study_name=exp_name,
                                 direction="maximize", 
                                 sampler=optuna.samplers.TPESampler(),
                                 pruner=optuna.pruners.HyperbandPruner(),
-                                storage=storage, 
-                                load_if_exists=True)
-    
-    if len(study.trials) > 0:
-        model_name_to_load = dir_pth['result'] + f"model_trial_{str(study.best_trial.number )}_epoch_{n_epochs}.pt"
+                                storage='sqlite:///'+dir_pth['opt_storage_db'], 
+                                load_if_exists=db_load_if_exist)
+    if db_load_if_exist:
+        if os.path.exists(dir_pth['opt_storage_db']):
+            print("Loading the optimization history from:")
+            print(dir_pth['opt_storage_db'])
+            
+    if load_model:
+        assert len(study.trials) > 0, f"sqlite:///{dir_pth['opt_storage_db']}, does not exist"
+        model_to_load = dir_pth['result'] + f"model_trial_{str(study.best_trial.number )}_epoch_{n_epochs}.pt"
+        print("Going to load the best model from previous optimization study")
+        print(model_to_load)
     else:
-        model_name_to_load = None
+        model_to_load = None
+        print("Starting the model from scratch as there is no model to load")
 
     study.optimize(Objective(lambda_tune_T_E_range = lambda_tune_T_E_range, 
                              lambda_tune_E_T_range = lambda_tune_E_T_range, 
@@ -434,7 +443,7 @@ def main(exp_name="DEBUG",
                              lambda_tune_M_ME_range = lambda_tune_M_ME_range,
                              lambda_tune_ME_E_range = lambda_tune_ME_E_range,
                              lambda_tune_E_ME_range = lambda_tune_E_ME_range,
-                             previous_ML_model_weights_to_load = model_name_to_load), n_trials=n_trials)
+                             previous_ML_model_weights_to_load = model_to_load), n_trials=opt_n_trials)
 
     fname = dir_pth['result'] + f"study_{exp_name}_{opset}opset.pkl" 
 
