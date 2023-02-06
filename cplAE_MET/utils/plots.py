@@ -223,6 +223,9 @@ def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), zme_paired=None):
         ylim (tuple): plot limits. Defaults to (-5, 5).
     """
     is_me_1d = np.logical_and(output['is_e_1d'], output['is_m_1d'])
+    is_te_1d = np.logical_and(output['is_e_1d'], output['is_t_1d'])
+    is_mt_1d = np.logical_and(output['is_m_1d'], output['is_t_1d'])
+    is_met_1d = np.logical_and(is_me_1d, output['is_t_1d'])
 
     fig = plt.figure(figsize=(20,5))
 
@@ -236,24 +239,24 @@ def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), zme_paired=None):
 
 
     ax = fig.add_subplot(142, projection='3d')
-    ax.scatter(output['ze'][output['is_e_1d']][:,2], output['ze'][output['is_e_1d']][:,1], 
-               output['ze'][output['is_e_1d']][:,0], c=output['cluster_color'][output['is_e_1d']],s=1)
+    ax.scatter(output['ze'][is_te_1d][:,2], output['ze'][is_te_1d][:,1], 
+               output['ze'][is_te_1d][:,0], c=output['cluster_color'][is_te_1d],s=1)
     ax.set(title='E', xlim=xlim, ylim=ylim, zlim=zlim)
     # ax.set_xticklabels(labels=[])
     # ax.set_yticklabels(labels=[])
     # ax.set_zticklabels(labels=[])
 
     ax = fig.add_subplot(143, projection='3d')
-    ax.scatter(output['zme_paired'][is_me_1d][:,2], output['zme_paired'][is_me_1d][:,1], 
-               output['zme_paired'][is_me_1d][:,0], c=output['cluster_color'][is_me_1d],s=1)
+    ax.scatter(output['zme_paired'][is_met_1d][:,2], output['zme_paired'][is_met_1d][:,1], 
+               output['zme_paired'][is_met_1d][:,0], c=output['cluster_color'][is_met_1d],s=1)
     ax.set(title='ME', xlim=xlim, ylim=ylim, zlim=zlim)
     # ax.set_xticklabels(labels=[])
     # ax.set_yticklabels(labels=[])
     # ax.set_zticklabels(labels=[])
 
     ax = fig.add_subplot(144, projection='3d')
-    ax.scatter(output['zm'][output['is_m_1d']][:,2], output['zm'][output['is_m_1d']][:,1], 
-               output['zm'][output['is_m_1d']][:,0], c=output['cluster_color'][output['is_m_1d']], s=1)
+    ax.scatter(output['zm'][is_mt_1d][:,2], output['zm'][is_mt_1d][:,1], 
+               output['zm'][is_mt_1d][:,0], c=output['cluster_color'][is_mt_1d], s=1)
     ax.set(title='M', xlim=xlim, ylim=ylim, zlim=zlim)
     # ax.set_xticklabels(labels=[])
     # ax.set_yticklabels(labels=[])

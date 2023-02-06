@@ -22,20 +22,24 @@ from cplAE_MET.utils.dataset import MET_exc_inh_v2
 from cplAE_MET.utils.load_config import load_config
 from cplAE_MET.models.torch_utils import MET_dataset_v2
 from cplAE_MET.models.model_classes import Model_ME_T_v2
-from cplAE_MET.models.classification_functions import run_LDA
 from cplAE_MET.models.train_tempcsfeatures_dev import set_paths, init_losses
+
+# For community detection
+import networkx as nx
+from cdlib import algorithms
+from sklearn.neighbors import kneighbors_graph
 
 from torch.utils.tensorboard import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='optuna_all_connected_objective_comm_det_10trial_2000epochs_1000runs',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='optuna_all_connected_objective_comm_det_10trial_2000epochs_1000runs.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
-parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
-parser.add_argument('--opset',                 default=1,              type=int,   help='round of operation with n_trials')
-parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
+parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
+parser.add_argument('--opt_n_trials',          default=10,             type=int,   help='number trials for bayesian optimization')
 parser.add_argument('--n_epochs',              default=2000,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
@@ -50,18 +54,18 @@ parser.add_argument('--lambda_ME',             default=1.0,            type=floa
 parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
 parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_T_E_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_E_T_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_T_M_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_M_T_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_E_M_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between E and M')
-parser.add_argument('--lambda_tune_M_E_range', default=(0.2,5),        type=float, help='Tune the directionality of coupling between M and E')
-parser.add_argument('--lambda_tune_T_ME_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between T and ME')
-parser.add_argument('--lambda_tune_ME_T_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_ME_M_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_M_ME_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between M and ME')
-parser.add_argument('--lambda_tune_ME_E_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_E_ME_range',default=(0.2,5),        type=float, help='Tune the directionality of coupling between E and ME')
+parser.add_argument('--lambda_tune_T_E_range', default=(1,4),        type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_T_M_range', default=(1,4),        type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_ME_M_range',default=(1,4),        type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_E_range',default=(1,4),        type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_E_M_range', default=(1,4),        type=float, help='Tune the directionality of coupling between E and M')
+parser.add_argument('--lambda_tune_E_T_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_M_T_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and T')
+parser.add_argument('--lambda_tune_M_ME_range',default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and ME')
+parser.add_argument('--lambda_tune_E_ME_range',default=(-4,-2),      type=float, help='Tune the directionality of coupling between E and ME')
+parser.add_argument('--lambda_tune_M_E_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_T_ME_range',default=(-1.5,1.5),   type=float, help='Tune the directionality of coupling between T and ME')
+parser.add_argument('--lambda_tune_ME_T_range',default=(-1.5,1.5),   type=float, help='Tune the directionality of coupling between ME and T')
 
 
 
@@ -70,10 +74,10 @@ def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=
     paths['result'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/'
     paths['opt_storage_db'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/{opt_storage_db}'
     Path(paths['result']).mkdir(parents=False, exist_ok=True)
-    paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
-    if os.path.exists(paths['tb_logs']):
-        shutil.rmtree(paths['tb_logs'])
-    Path(paths['tb_logs']).mkdir(parents=True, exist_ok=False)
+    #paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
+    #if os.path.exists(paths['tb_logs']):
+    #    shutil.rmtree(paths['tb_logs'])
+    #Path(paths['tb_logs']).mkdir(parents=True, exist_ok=False)
     return paths
 
 def save_ckp(state, checkpoint_dir, fname):
@@ -168,6 +172,7 @@ def Criterion(model_config, loss_dict):
 
     return criterion
 
+
 def denovo_clustering_gmm(X, n_components_range=np.arange(1,93), covariance_type="full", random_state=0):
 
     models = [GaussianMixture(n, 
@@ -203,6 +208,41 @@ def run_gmm(model, dataloader):
 
     print("model_score:", model_score)
     return model_score 
+
+def Leiden_community_detection(data):
+
+    # Create adj matrix with 12 nn
+    A = kneighbors_graph(data, 12, mode='distance', include_self=True)
+    # Create a network_x graph
+    G = nx.convert_matrix.from_numpy_array(A)
+    # Run Leiden community detection algorithm
+    comm = algorithms.leiden(G)
+    ncomm = len(comm.communities)
+
+    return ncomm
+
+
+def run_Leiden_community_detection(model, dataloader):
+    
+    model.eval()
+    for all_data in iter(dataloader):
+        _, z_dict, _ = model(all_data) 
+
+    is_t_1d = tonumpy(all_data['is_t_1d'])
+    is_e_1d = tonumpy(all_data['is_e_1d'])
+    is_m_1d = tonumpy(all_data['is_m_1d'])
+    is_me_1d = np.logical_and(is_m_1d, is_e_1d)
+    is_met_1d = np.logical_and(is_t_1d, is_me_1d)
+
+    zt = tonumpy(z_dict['zt'])
+    zme_paired = tonumpy(z_dict['zme_paired'])
+    
+    n_t_types = Leiden_community_detection(zt[is_t_1d])
+    n_me_types = Leiden_community_detection(zme_paired[is_met_1d])
+
+    model_score = np.min(n_t_types , n_me_types)
+
+    return model_score
 
 
 def main(exp_name="TEST",
@@ -242,6 +282,9 @@ def main(exp_name="TEST",
     
     def build_model(params):
         ''' Config and build the model'''
+        
+        for k,v in params.items(): 
+            params[k] = np.exp(v)
 
         model_config = dict(latent_dim=latent_dim, 
                             batch_size=batch_size,
@@ -291,7 +334,10 @@ def main(exp_name="TEST",
             self.lambda_tune_ME_M_range = lambda_tune_ME_M_range
             self.lambda_tune_M_ME_range = lambda_tune_M_ME_range
             self.previous_ML_model_weights_to_load = previous_ML_model_weights_to_load
-
+            self.best_model = None
+            self._current_model = None
+            self.best_optimizer = None
+            self._current_optimizer = None
 
         def __call__(self, trial):
             params = {'lambda_tune_T_E': trial.suggest_float('lambda_tune_T_E', self.lambda_tune_T_E_range[0], self.lambda_tune_T_E_range[1]),
@@ -317,9 +363,17 @@ def main(exp_name="TEST",
                 print("loaded previous best model weights and optimizer")
                 print(self.previous_ML_model_weights_to_load)
 
-            accuracy = train_and_evaluate(model_config, model, optimizer, trial)
+            trained_model, score = train_and_evaluate(model_config, model, optimizer, trial)
+            self._current_model = trained_model
+            self._current_optimizer = optimizer
 
-            return accuracy
+            return score
+
+        def callback(self, study, trial):
+            if study.best_trial == trial:
+                self.best_model = self._current_model
+                self.best_optimizer = self._current_optimizer
+
 
     def train_and_evaluate(model_config, model, optimizer, trial):
         '''Train and evaluation function, this will be called at each trial and epochs will start from zero'''
@@ -329,7 +383,6 @@ def main(exp_name="TEST",
 
         # Training -----------
         for epoch in range(n_epochs):
-            print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
@@ -368,21 +421,9 @@ def main(exp_name="TEST",
                 #         if trial.should_prune():
                 #             raise optuna.exceptions.TrialPruned()   
     
-        model_score = run_gmm(model, dataloader)
+        model_score = run_Leiden_community_detection(model, dataloader)
 
-        # save the model and the optuna study at the end of the trial -----------
-        fname = dir_pth['result'] + f"model_trial_{trial.number}_epoch_{epoch+1}" 
-        checkpoint = {
-            'epoch': epoch,
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict()
-            }
-        save_ckp(checkpoint, dir_pth['result'], fname)
-
-        fname = dir_pth['result'] + f"Results_trial_{trial.number}_epoch_{epoch+1}_opset_{opset}.pkl"
-        save_results(model, dataloader, dat, fname)
-
-        return model_score
+        return model, model_score
 
     # Main code ###############################################################
     # Set the device -----------
@@ -421,7 +462,7 @@ def main(exp_name="TEST",
         if os.path.exists(dir_pth['opt_storage_db']):
             print("Loading the optimization history from:")
             print(dir_pth['opt_storage_db'])
-            
+
     if load_model:
         assert len(study.trials) > 0, f"sqlite:///{dir_pth['opt_storage_db']}, does not exist"
         model_to_load = dir_pth['result'] + f"model_trial_{str(study.best_trial.number )}_epoch_{n_epochs}.pt"
@@ -431,7 +472,7 @@ def main(exp_name="TEST",
         model_to_load = None
         print("Starting the model from scratch as there is no model to load")
 
-    study.optimize(Objective(lambda_tune_T_E_range = lambda_tune_T_E_range, 
+    objective = Objective(lambda_tune_T_E_range = lambda_tune_T_E_range, 
                              lambda_tune_E_T_range = lambda_tune_E_T_range, 
                              lambda_tune_T_M_range = lambda_tune_T_M_range,
                              lambda_tune_M_T_range = lambda_tune_M_T_range,
@@ -443,11 +484,25 @@ def main(exp_name="TEST",
                              lambda_tune_M_ME_range = lambda_tune_M_ME_range,
                              lambda_tune_ME_E_range = lambda_tune_ME_E_range,
                              lambda_tune_E_ME_range = lambda_tune_E_ME_range,
-                             previous_ML_model_weights_to_load = model_to_load), n_trials=opt_n_trials)
+                             previous_ML_model_weights_to_load = model_to_load)
 
-    fname = dir_pth['result'] + f"study_{exp_name}_{opset}opset.pkl" 
+    study.optimize(objective, n_trials=opt_n_trials, callbacks=[objective.callback])
 
-    savepkl(study, fname)
+
+    # save the best model checkpoint and the best results at the end of the study -----------
+    # This is run only if the best model was happend in this run ----------------------------
+
+    fname = dir_pth['result'] + f"Best_model_trial{study.best_trial.number}_" 
+    if objective.best_model is not None:
+        checkpoint = {
+            'state_dict': objective.best_model.state_dict(),
+            'optimizer': objective.best_optimizer.state_dict()
+            }
+        save_ckp(checkpoint, dir_pth['result'], fname)
+
+        fname = dir_pth['result'] + f"Results_trial_{study.best_trial.number}.pkl"
+
+        save_results(objective.best_model, dataloader, dat, fname)
 
 
 if __name__ == '__main__':
