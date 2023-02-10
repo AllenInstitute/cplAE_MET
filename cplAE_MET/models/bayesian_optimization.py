@@ -7,6 +7,8 @@ import argparse
 import numpy as np
 from pathlib import Path
 from sklearn.mixture import GaussianMixture
+from timeit import default_timer as timer
+
 
 # From torch
 import torch
@@ -34,13 +36,13 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='optuna_all_connected_objective_comm_det_10trial_2000epochs_1000runs',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='optuna_all_connected_objective_comm_det_10trial_2000epochs_1000runs.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
-parser.add_argument('--opt_n_trials',          default=10,             type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2000,           type=int,   help='Number of epochs to train')
+parser.add_argument('--opt_n_trials',          default=1,             type=int,   help='number trials for bayesian optimization')
+parser.add_argument('--n_epochs',              default=1,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -173,41 +175,6 @@ def Criterion(model_config, loss_dict):
     return criterion
 
 
-def denovo_clustering_gmm(X, n_components_range=np.arange(1,93), covariance_type="full", random_state=0):
-
-    models = [GaussianMixture(n, 
-                              covariance_type=covariance_type,
-                              random_state=random_state, 
-                              n_init=10, 
-                              reg_covar=1e-4).fit(X) 
-                        for n in n_components_range]
-    return np.argmin([m.bic(X) for m in models])
-
-
-def run_gmm(model, dataloader):
-
-    model.eval()
-    for all_data in iter(dataloader):
-        _, z_dict, _ = model(all_data) 
-
-    is_t_1d = tonumpy(all_data['is_t_1d'])
-    is_e_1d = tonumpy(all_data['is_e_1d'])
-    is_m_1d = tonumpy(all_data['is_m_1d'])
-    is_me_1d = np.logical_and(is_m_1d, is_e_1d)
-    is_met_1d = np.logical_and(is_t_1d, is_me_1d)
-
-    zt = tonumpy(z_dict['zt'])
-    zme_paired = tonumpy(z_dict['zme_paired'])
-    
-    n_t_gmm_types = denovo_clustering_gmm(zt[is_t_1d])
-    n_me_gmm_types = denovo_clustering_gmm(zme_paired[is_met_1d])
-    
-    print("n_t_gmm_types, n_me_gmm_types")
-    print(n_t_gmm_types, n_me_gmm_types)
-    model_score = n_t_gmm_types * n_me_gmm_types
-
-    print("model_score:", model_score)
-    return model_score 
 
 def Leiden_community_detection(data):
 
@@ -237,10 +204,17 @@ def run_Leiden_community_detection(model, dataloader):
     zt = tonumpy(z_dict['zt'])
     zme_paired = tonumpy(z_dict['zme_paired'])
     
-    n_t_types = Leiden_community_detection(zt[is_t_1d])
-    n_me_types = Leiden_community_detection(zme_paired[is_met_1d])
+    n_t_types = []
+    n_me_types = []
+    # Instead of running it only one, we run it 10 times and then take the max
+    for i in range(10):
+        n_t_types.append(Leiden_community_detection(zt[is_t_1d]))
+        n_me_types.append(Leiden_community_detection(zme_paired[is_met_1d]))
 
-    model_score = np.min(n_t_types , n_me_types)
+    n_t_types = np.max(n_t_types)
+    n_me_types = np.max(n_me_types)
+    
+    model_score = np.min([n_t_types , n_me_types])
 
     return model_score
 
@@ -409,20 +383,14 @@ def main(exp_name="TEST",
                 for val_batch in iter(val_dataloader):
                     model.eval()
                     val_loss, _, _ = model(val_batch)
-                
 
-                # if ((epoch % epochs_prune) == 0):
-                #     print("time to check if the model can be pruned away at epoch:", epoch+1)
-                #     model_score = run_gmm(model, dataloader)
-                    
-                #     # Prune if this trial is not good -----------
-                #     if trial is not None:
-                #         trial.report(model_score, epoch) 
-                #         if trial.should_prune():
-                #             raise optuna.exceptions.TrialPruned()   
-    
+                    # model_score = run_Leiden_community_detection(model, dataloader)
+                    # Prune if this trial is not good -----------
+                    # trial.report(model_score, epoch) 
+                    # if trial.should_prune():
+                        # raise optuna.exceptions.TrialPruned()   
+        
         model_score = run_Leiden_community_detection(model, dataloader)
-
         return model, model_score
 
     # Main code ###############################################################
