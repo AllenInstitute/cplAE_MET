@@ -45,7 +45,7 @@ parser.add_argument('--lambda_tune_E_ME',default=0.027747845375511254,        ty
 parser.add_argument("--augment_decoders",default=0,                           type=int,   help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument('--scale_by',        default=0.3,                         type=float, help='scaling factor for M_data interpolation')
 parser.add_argument('--config_file',     default='config.toml',               type=str,   help='config file with data paths')
-parser.add_argument('--n_epochs',        default=10000,                       type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',        default=1,                       type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',          default=0,                           type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',      default=3,                           type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',      default=1000,                        type=int,   help='Batch size')
@@ -347,7 +347,7 @@ def main(exp_name="DEBUG",
         # TODO
         # save model -----------
         if (((epoch) % 1000) == 0):
-            fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid 
+            fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_fold_{fold_n}_" + fileid 
             save_results(model, dataloader, dat, fname+".pkl")
             checkpoint = {
                 'epoch': epoch,
@@ -356,7 +356,7 @@ def main(exp_name="DEBUG",
                 }
             save_ckp(checkpoint, dir_pth['result'], fname)
 
-    fname = dir_pth['result'] + "exit_summary_" + fileid + ".pkl"
+    fname = dir_pth['result'] + f"exit_summary_fold_{fold_n}_" + fileid + ".pkl"
     save_results(model, dataloader, dat, fname)
     tb_writer.close()
 
