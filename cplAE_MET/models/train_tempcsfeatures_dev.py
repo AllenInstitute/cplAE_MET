@@ -7,10 +7,10 @@ import numpy as np
 from pathlib import Path
 
 from torch.utils.data import DataLoader
-from cplAE_MET.models.model_classes import Model_ME_T_v2
-from cplAE_MET.models.torch_utils import MET_dataset_v2
+from cplAE_MET.models.model_classes import Model_ME_T
+from cplAE_MET.models.torch_utils import MET_dataset
 from cplAE_MET.utils.load_config import load_config
-from cplAE_MET.utils.dataset import MET_exc_inh_v2
+from cplAE_MET.utils.dataset import MET_exc_inh
 from cplAE_MET.utils.utils import savepkl
 from cplAE_MET.models.torch_utils import tonumpy
 
@@ -19,29 +19,29 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 # TODO
-parser.add_argument('--exp_name',        default='Tonly_Eonly_Monly_8643_103MNPCs_26Mfeatures_l3_v0',  type=str,   help='Experiment set')
+parser.add_argument('--exp_name',        default='optuna_all_connected_objective_comm_det_max',  type=str,   help='Experiment set')
 parser.add_argument('--alpha_T',         default=1.0,                         type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',         default=1.0,                         type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_E',         default=1.0,                         type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',        default=1.0,                         type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_TE',       default=0.0,                         type=float, help='coupling loss weight between T and E')
-parser.add_argument('--lambda_TM',       default=0.0,                         type=float, help='coupling loss weight between T and M')
-parser.add_argument('--lambda_ME',       default=0.0,                         type=float, help='coupling loss weight between M and E')
-parser.add_argument('--lambda_ME_T',     default=0.0,                         type=float, help='coupling loss weight between ME and T')
-parser.add_argument('--lambda_ME_M',     default=0.0,                         type=float, help='coupling loss weight between ME and M')
-parser.add_argument('--lambda_ME_E',     default=0.0,                         type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_T_E', default=0.0,                         type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_E_T', default=0.0,                         type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_T_M', default=0.0,                         type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_M_T', default=0.0,                         type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_E_M', default=0.0,                         type=float, help='Tune the directionality of coupling between M and E')
-parser.add_argument('--lambda_tune_M_E', default=0.0,                         type=float, help='Tune the directionality of coupling between M and E')
-parser.add_argument('--lambda_tune_T_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_ME_T',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_ME_M',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_M_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_E',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_E_ME',default=0.0,                         type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_TE',       default=1.0,                         type=float, help='coupling loss weight between T and E')
+parser.add_argument('--lambda_TM',       default=1.0,                         type=float, help='coupling loss weight between T and M')
+parser.add_argument('--lambda_ME',       default=1.0,                         type=float, help='coupling loss weight between M and E')
+parser.add_argument('--lambda_ME_T',     default=1.0,                         type=float, help='coupling loss weight between ME and T')
+parser.add_argument('--lambda_ME_M',     default=1.0,                         type=float, help='coupling loss weight between ME and M')
+parser.add_argument('--lambda_ME_E',     default=1.0,                         type=float, help='coupling loss weight between ME and E')
+parser.add_argument('--lambda_tune_T_E', default=2.7545670402918794,          type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_E_T', default=0.030355761338547508,        type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_T_M', default=4.923626399104391,           type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_M_T', default=0.034111033923947195,         type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_E_M', default=6.181896874559317,           type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_M_E', default=0.020260484683023328,           type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_T_ME',default=4.048824869366832,           type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_T',default=0.26084594909347,          type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_M',default=33.74738918640115,          type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_M_ME',default=0.07804981769058802,         type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_E',default=4.532941145995674,           type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_E_ME',default=0.027747845375511254,        type=float, help='Tune the directionality of coupling between ME and E')
 parser.add_argument("--augment_decoders",default=0,                           type=int,   help="0 or 1 : Train with cross modal reconstruction")
 parser.add_argument('--scale_by',        default=0.3,                         type=float, help='scaling factor for M_data interpolation')
 parser.add_argument('--config_file',     default='config.toml',               type=str,   help='config file with data paths')
@@ -183,12 +183,12 @@ def main(exp_name="DEBUG",
          batch_size=1000):
 
     # Set the device -----------
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n)
     tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
-    dat = MET_exc_inh_v2.from_file(dir_pth['MET_data'])
+    dat = MET_exc_inh.from_file(dir_pth['MET_data'])
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
     val_dat = dat[val_ind,:]
@@ -197,13 +197,13 @@ def main(exp_name="DEBUG",
     shutil.copy(__file__, dir_pth['result'])
 
     # Dataset and Dataloader -----------
-    train_dataset = MET_dataset_v2(train_dat, device=device)
+    train_dataset = MET_dataset(train_dat, device=device)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-    val_dataset = MET_dataset_v2(val_dat, device=device)
+    val_dataset = MET_dataset(val_dat, device=device)
     val_dataloader = DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False)
 
-    dataset = MET_dataset_v2(dat, device=device)
+    dataset = MET_dataset(dat, device=device)
     dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=False)
 
     # TODO
@@ -230,11 +230,15 @@ def main(exp_name="DEBUG",
                         )
     
     
-    model = Model_ME_T_v2(model_config)
+    model = Model_ME_T(model_config)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # loaded_model = torch.load("/home/fahimehb/Local/new_codes/cplAE_MET/data/results/optuna_all_connected_objective_comm_det_max/Best_model_trial1305_.pt", map_location='cpu')
+    # model.load_state_dict(loaded_model['state_dict'])
+    # optimizer.load_state_dict(loaded_model['optimizer'])
+    print("loaded previous best model weights and optimizer")
 
     model.to(device)
-    # optimizer_to(optimizer,device)
+    optimizer_to(optimizer,device)
 
     fileid = "test"
 
@@ -339,18 +343,10 @@ def main(exp_name="DEBUG",
         tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)
         tb_writer.add_scalar('Train/cpl_E->ME', train_loss['cpl_e->me'], epoch)
         tb_writer.add_scalar('Validation/cpl_E->ME', val_loss['cpl_e->me'], epoch)
-        if model_config['augment_decoders']:
-            tb_writer.add_scalar('Train/MSE_XT_from_zme_paired', train_loss['rec_t_from_zme_paired'], epoch)
-            tb_writer.add_scalar('Train/MSE_XE_from_zme_paired', train_loss['rec_e_from_zme_paired'], epoch)
-            tb_writer.add_scalar('Train/MSE_XE_from_zt', train_loss['rec_e_from_zt'], epoch)
-            tb_writer.add_scalar('Train/MSE_XM_from_zme_paired', train_loss['rec_m_from_zme_paired'], epoch)
-            tb_writer.add_scalar('Train/MSE_XM_from_zt', train_loss['rec_m_from_zt'], epoch)
-            tb_writer.add_scalar('Train/MSE_XM_from_ze', train_loss['rec_m_from_ze'], epoch)
-            tb_writer.add_scalar('Train/MSE_XME_paired_from_zt', (train_loss['rec_e_me_paired_from_zt'] + train_loss['rec_m_me_paired_from_zt']), epoch)
-
+        
         # TODO
         # save model -----------
-        if (((epoch) % 500) == 0):
+        if (((epoch) % 1000) == 0):
             fname = dir_pth['result'] + f"checkpoint_ep_{epoch}_" + fileid 
             save_results(model, dataloader, dat, fname+".pkl")
             checkpoint = {

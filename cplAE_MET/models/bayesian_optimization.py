@@ -20,10 +20,10 @@ import optuna
 # From CplAE_MET
 from cplAE_MET.utils.utils import savepkl
 from cplAE_MET.models.torch_utils import tonumpy
-from cplAE_MET.utils.dataset import MET_exc_inh_v2
+from cplAE_MET.utils.dataset import MET_exc_inh
 from cplAE_MET.utils.load_config import load_config
-from cplAE_MET.models.torch_utils import MET_dataset_v2
-from cplAE_MET.models.model_classes import Model_ME_T_v2
+from cplAE_MET.models.torch_utils import MET_dataset
+from cplAE_MET.models.model_classes import Model_ME_T
 from cplAE_MET.models.train_tempcsfeatures_dev import set_paths, init_losses
 
 # For community detection
@@ -41,8 +41,8 @@ parser.add_argument('--opt_storage_db',        default='test.db',      type=str,
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
-parser.add_argument('--opt_n_trials',          default=1,             type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=1,           type=int,   help='Number of epochs to train')
+parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
+parser.add_argument('--n_epochs',              default=1,              type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -60,7 +60,7 @@ parser.add_argument('--lambda_tune_T_E_range', default=(1,4),        type=float,
 parser.add_argument('--lambda_tune_T_M_range', default=(1,4),        type=float, help='Tune the directionality of coupling between T and M')
 parser.add_argument('--lambda_tune_ME_M_range',default=(1,4),        type=float, help='Tune the directionality of coupling between ME and M')
 parser.add_argument('--lambda_tune_ME_E_range',default=(1,4),        type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_E_M_range', default=(1,4),        type=float, help='Tune the directionality of coupling between E and M')
+parser.add_argument('--lambda_tune_E_M_range', default=(0,5),        type=float, help='Tune the directionality of coupling between E and M')
 parser.add_argument('--lambda_tune_E_T_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between E and T')
 parser.add_argument('--lambda_tune_M_T_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and T')
 parser.add_argument('--lambda_tune_M_ME_range',default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and ME')
@@ -211,8 +211,8 @@ def run_Leiden_community_detection(model, dataloader):
         n_t_types.append(Leiden_community_detection(zt[is_t_1d]))
         n_me_types.append(Leiden_community_detection(zme_paired[is_met_1d]))
 
-    n_t_types = np.max(n_t_types)
-    n_me_types = np.max(n_me_types)
+    n_t_types = np.median(n_t_types)
+    n_me_types = np.median(n_me_types)
     
     model_score = np.min([n_t_types , n_me_types])
 
@@ -273,7 +273,7 @@ def main(exp_name="TEST",
                             ME_E=dict(lambda_ME_E=lambda_ME_E, lambda_tune_ME_E=params['lambda_tune_ME_E'], lambda_tune_E_ME=params['lambda_tune_E_ME'])
                             )  
 
-        model = Model_ME_T_v2(model_config)
+        model = Model_ME_T(model_config)
         return model, model_config
 
 
@@ -399,7 +399,7 @@ def main(exp_name="TEST",
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db)
-    dat = MET_exc_inh_v2.from_file(dir_pth['MET_data'])
+    dat = MET_exc_inh.from_file(dir_pth['MET_data'])
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
     val_dat = dat[val_ind,:]
@@ -408,13 +408,13 @@ def main(exp_name="TEST",
     shutil.copy(__file__, dir_pth['result'])
 
     # Dataset and Dataloader -----------
-    train_dataset = MET_dataset_v2(train_dat, device=device)
+    train_dataset = MET_dataset(train_dat, device=device)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-    val_dataset = MET_dataset_v2(val_dat, device=device)
+    val_dataset = MET_dataset(val_dat, device=device)
     val_dataloader = DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False)
 
-    dataset = MET_dataset_v2(dat, device=device)
+    dataset = MET_dataset(dat, device=device)
     dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=False)
 
     # Optimization -------------
