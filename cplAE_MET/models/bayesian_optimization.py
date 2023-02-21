@@ -42,7 +42,7 @@ parser.add_argument('--load_model',            default=False,          type=bool
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=1,              type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=2000,              type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -156,8 +156,8 @@ def Criterion(model_config, loss_dict):
     ''' Loss function for the autoencoder'''
 
     criterion = model_config['T']['alpha_T'] * loss_dict['rec_t'] + \
-                model_config['E']['alpha_E'] * loss_dict['rec_e'] + \
-                model_config['M']['alpha_M'] * loss_dict['rec_m'] + \
+                model_config['E']['alpha_E'] * loss_dict['rec_e'] * (1 + 999 * (loss_dict['rec_e'] > 0.1)) + \
+                model_config['M']['alpha_M'] * loss_dict['rec_m'] * (1 + 999 * (loss_dict['rec_m'] > 0.07)) + \
                 model_config['ME']['alpha_ME'] * (loss_dict['rec_m_me'] + loss_dict['rec_e_me']) + \
                 model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_T_E'] * loss_dict['cpl_t->e'] + \
                 model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_E_T'] * loss_dict['cpl_e->t'] + \
