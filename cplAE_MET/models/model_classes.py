@@ -30,7 +30,7 @@ class Model_ME_T(nn.Module):
                                              gnoise_std_frac=model_config['M']['gnoise_std_frac'],
                                              dropout_p=model_config['M']['dropout_p'])
         self.me_m_decoder = Dec_zm_int_to_xm()
-        # self.augment_decoders = model_config['augment_decoders']
+        self.variational = model_config['variational']
         return
     
 
@@ -39,6 +39,12 @@ class Model_ME_T(nn.Module):
     
     def compute_cpl_loss(self, z1_paired, z2_paired):
         return min_var_loss(z1_paired, z2_paired)
+
+    def compute_KLD_loss(self, mu, log_sigma, mask):    
+        mu = mu[mask] 
+        log_sigma = log_sigma[mask]  
+        return (-0.5 * torch.mean(1 + log_sigma - mu.pow(2) - log_sigma.exp(), dim=0)).sum()
+
     
     def forward(self, input):
 
@@ -48,24 +54,36 @@ class Model_ME_T(nn.Module):
         valid_xm=input['valid_xm']
         valid_xe=input['valid_xe']
         valid_xt=input['valid_xt']
+        is_t_1d = input['is_t_1d']
+        is_e_1d = input['is_e_1d']
+        is_m_1d = input['is_m_1d']
         is_te_1d=torch.logical_and(input['is_t_1d'], input['is_e_1d'])
         is_tm_1d=torch.logical_and(input['is_t_1d'], input['is_m_1d'])
         is_me_1d=torch.logical_and(input['is_m_1d'], input['is_e_1d'])
         is_met_1d=torch.logical_and(is_me_1d, input['is_t_1d'])
 
         # t arm
-        zt, xrt = self.ae_t(xt)
+        zt, xrt, mu_t, log_sigma_t = self.ae_t(xt)
 
         # e arm
-        _, ze, _, xre = self.ae_e(xe)
+        _, ze, _, xre, mu_e, log_sigma_e = self.ae_e(xe)
 
         # m arm
-        _, zm, _, xrm = self.ae_m(xm)
+        _, zm, _, xrm, mu_m, log_sigma_m = self.ae_m(xm)
         
         # me arm
         ze_int_enc_paired = self.me_e_encoder(xe)
         zm_int_enc_paired = self.me_m_encoder(xm)
-        zme_paired = self.ae_me.enc_zme_int_to_zme(zm_int_enc_paired, ze_int_enc_paired)
+
+        if self.variational:
+            mu_me, sigma_me = self.ae_me.enc_zme_int_to_zme(zm_int_enc_paired, ze_int_enc_paired)
+            log_sigma_me = (sigma_me + 1e-6).log()
+            zme_paired = self.ae_me.dec_zme_to_zme_int.reparametrize(mu_me, sigma_me)
+        else:
+            zme_paired = self.ae_me.enc_zme_int_to_zme(zm_int_enc_paired, ze_int_enc_paired)
+            mu_me = []
+            log_sigma_me = []
+
         zm_int_dec_paired, ze_int_dec_paired = self.ae_me.dec_zme_to_zme_int(zme_paired)
         xre_me_paired = self.me_e_decoder(ze_int_dec_paired)
         xrm_me_paired = self.me_m_decoder(zm_int_dec_paired)
@@ -95,6 +113,14 @@ class Model_ME_T(nn.Module):
 
         loss_dict['cpl_m->e'] = self.compute_cpl_loss(zm[is_me_1d, ...].detach(), ze[is_me_1d, ...])
         loss_dict['cpl_e->m'] = self.compute_cpl_loss(zm[is_me_1d, ...], ze[is_me_1d, ...].detach())
+
+        if self.variational:
+            # print(mu_t, mu_e, mu_m, mu_me, log_sigma_e, log_sigma_m, log_sigma_t, log_sigma_me)
+            loss_dict['KLD_t'] = self.compute_KLD_loss(mu_t, log_sigma_t, is_t_1d)
+            loss_dict['KLD_e'] = self.compute_KLD_loss(mu_e, log_sigma_e, is_e_1d)
+            loss_dict['KLD_m'] = self.compute_KLD_loss(mu_m, log_sigma_m, is_m_1d)
+            loss_dict['KLD_me_paired'] = self.compute_KLD_loss(mu_me, log_sigma_me, is_me_1d)
+
 
         ############################## get output dicts
         z_dict = get_output_dict([zm, ze, zt, zme_paired], 

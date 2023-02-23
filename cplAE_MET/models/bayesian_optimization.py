@@ -25,6 +25,7 @@ from cplAE_MET.utils.load_config import load_config
 from cplAE_MET.models.torch_utils import MET_dataset
 from cplAE_MET.models.model_classes import Model_ME_T
 from cplAE_MET.models.train_tempcsfeatures_dev import set_paths, init_losses
+from cplAE_MET.models.classification_functions import run_LDA
 
 # For community detection
 import networkx as nx
@@ -36,16 +37,18 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--exp_name',              default='Optuna_T_ME_classification_obj_10000ep_10trial',         type=str,   help='Experiment set')
+parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
+parser.add_argument('--opt_storage_db',        default='Optuna_T_ME_classification_obj_10000ep_10trial.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
-parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2000,              type=int,   help='Number of epochs to train')
+parser.add_argument('--opt_n_trials',          default=10,             type=int,   help='number trials for bayesian optimization')
+parser.add_argument('--n_epochs',              default=10000,          type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
+parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_M',               default=1.0,            type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_E',               default=1.0,            type=float, help='E reconstruction loss weight')
@@ -56,18 +59,18 @@ parser.add_argument('--lambda_ME',             default=1.0,            type=floa
 parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
 parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_T_E_range', default=(1,4),        type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_T_M_range', default=(1,4),        type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_ME_M_range',default=(1,4),        type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_E_range',default=(1,4),        type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_E_M_range', default=(0,5),        type=float, help='Tune the directionality of coupling between E and M')
-parser.add_argument('--lambda_tune_E_T_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_M_T_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_M_ME_range',default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and ME')
-parser.add_argument('--lambda_tune_E_ME_range',default=(-4,-2),      type=float, help='Tune the directionality of coupling between E and ME')
-parser.add_argument('--lambda_tune_M_E_range', default=(-4,-2),      type=float, help='Tune the directionality of coupling between M and E')
-parser.add_argument('--lambda_tune_T_ME_range',default=(-1.5,1.5),   type=float, help='Tune the directionality of coupling between T and ME')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-1.5,1.5),   type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_T_E_range', default=(1,4),          type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_T_M_range', default=(1,4),          type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_ME_M_range',default=(1,4),          type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_E_range',default=(1,4),          type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_E_M_range', default=(0,5),          type=float, help='Tune the directionality of coupling between E and M')
+parser.add_argument('--lambda_tune_E_T_range', default=(-4,-2),        type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_M_T_range', default=(-4,-2),        type=float, help='Tune the directionality of coupling between M and T')
+parser.add_argument('--lambda_tune_M_ME_range',default=(-4,-2),        type=float, help='Tune the directionality of coupling between M and ME')
+parser.add_argument('--lambda_tune_E_ME_range',default=(-4,-2),        type=float, help='Tune the directionality of coupling between E and ME')
+parser.add_argument('--lambda_tune_M_E_range', default=(-4,-2),        type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_T_ME_range',default=(-1.5,1.5),     type=float, help='Tune the directionality of coupling between T and ME')
+parser.add_argument('--lambda_tune_ME_T_range',default=(-1.5,1.5),     type=float, help='Tune the directionality of coupling between ME and T')
 
 
 
@@ -156,8 +159,8 @@ def Criterion(model_config, loss_dict):
     ''' Loss function for the autoencoder'''
 
     criterion = model_config['T']['alpha_T'] * loss_dict['rec_t'] + \
-                model_config['E']['alpha_E'] * loss_dict['rec_e'] * (1 + 999 * (loss_dict['rec_e'] > 0.1)) + \
-                model_config['M']['alpha_M'] * loss_dict['rec_m'] * (1 + 999 * (loss_dict['rec_m'] > 0.07)) + \
+                model_config['E']['alpha_E'] * loss_dict['rec_e'] + \
+                model_config['M']['alpha_M'] * loss_dict['rec_m'] + \
                 model_config['ME']['alpha_ME'] * (loss_dict['rec_m_me'] + loss_dict['rec_e_me']) + \
                 model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_T_E'] * loss_dict['cpl_t->e'] + \
                 model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_E_T'] * loss_dict['cpl_e->t'] + \
@@ -172,6 +175,13 @@ def Criterion(model_config, loss_dict):
                 model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_ME_E'] * loss_dict['cpl_me->e'] + \
                 model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_E_ME'] * loss_dict['cpl_e->me'] 
 
+    if model_config['variational']:
+        criterion = criterion + \
+                    model_config['KLD_beta'] * loss_dict['KLD_t'] + \
+                    model_config['KLD_beta'] * loss_dict['KLD_e'] + \
+                    model_config['KLD_beta'] * loss_dict['KLD_m'] + \
+                    model_config['KLD_beta'] * loss_dict['KLD_me_paired'] 
+                         
     return criterion
 
 
@@ -220,12 +230,14 @@ def run_Leiden_community_detection(model, dataloader):
 
 
 def main(exp_name="TEST",
+         variational=False,
          load_model=False,
          opt_storage_db="test.db",
          db_load_if_exist=True,
          config_file="config.toml", 
          n_epochs=10, 
          fold_n=0, 
+         KLD_beta=1.0,
          alpha_T=0.0,
          alpha_M=0.0,
          alpha_E=0.0,
@@ -253,15 +265,47 @@ def main(exp_name="TEST",
          opt_n_trials=1,
          opset=0):
 
+    # Classification function #################################################
+    def run_classification(model, dataloader):
+        model.eval()
+        for all_data in iter(dataloader):
+            _, z_dict, _ = model(all_data) 
+
+        is_t_1d = tonumpy(all_data['is_t_1d'])
+        is_e_1d = tonumpy(all_data['is_e_1d'])
+        is_m_1d = tonumpy(all_data['is_m_1d'])
+        is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+        is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
+        is_me_1d = np.logical_and(is_m_1d, is_e_1d)
+        is_met_1d = np.logical_and(is_t_1d, is_me_1d)
+        T_labels = np.array(dat.cluster_label) #TODO these labels should become part of dataloader
+
+        zt = tonumpy(z_dict['zt'])
+        ze = tonumpy(z_dict['ze'])
+        zm = tonumpy(z_dict['zm'])
+        zme_paired = tonumpy(z_dict['zme_paired'])
+        
+        _, _, clf = run_LDA(zt[is_t_1d], 
+                            T_labels[is_t_1d],
+                            train_test_ids={'train':[i for i in train_ind if is_t_1d[i]], 
+                                            'val':[i for i in val_ind if is_t_1d[i]]})
+        
+        te_cpl_score = clf.score(ze[is_te_1d], T_labels[is_te_1d]) * 100
+        tm_cpl_score = clf.score(zm[is_tm_1d], T_labels[is_tm_1d]) * 100
+        met_cpl_score = clf.score(zme_paired[is_met_1d], T_labels[is_met_1d]) * 100
+
+        return np.min([te_cpl_score, tm_cpl_score, met_cpl_score])
     
     def build_model(params):
         ''' Config and build the model'''
         
         for k,v in params.items(): 
-            params[k] = np.exp(v)
+           params[k] = np.exp(v)
 
-        model_config = dict(latent_dim=latent_dim, 
+        model_config = dict(variational=variational,
+                            latent_dim=latent_dim, 
                             batch_size=batch_size,
+                            KLD_beta=KLD_beta,
                             T=dict(dropout_p=0.2, alpha_T=alpha_T),
                             E=dict(gnoise_std=train_dataset.gnoise_e_std, gnoise_std_frac=0.05, dropout_p=0.2, alpha_E=alpha_E),
                             M=dict(gnoise_std=train_dataset.gnoise_m_std, gnoise_std_frac=0.005, dropout_p=0.2, alpha_M=alpha_M),
@@ -357,6 +401,7 @@ def main(exp_name="TEST",
 
         # Training -----------
         for epoch in range(n_epochs):
+            # print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
@@ -383,14 +428,10 @@ def main(exp_name="TEST",
                 for val_batch in iter(val_dataloader):
                     model.eval()
                     val_loss, _, _ = model(val_batch)
-
-                    # model_score = run_Leiden_community_detection(model, dataloader)
-                    # Prune if this trial is not good -----------
-                    # trial.report(model_score, epoch) 
-                    # if trial.should_prune():
-                        # raise optuna.exceptions.TrialPruned()   
+  
         
-        model_score = run_Leiden_community_detection(model, dataloader)
+        #model_score = run_Leiden_community_detection(model, dataloader)
+        model_score = run_classification(model, dataloader)
         return model, model_score
 
     # Main code ###############################################################

@@ -16,7 +16,8 @@ class Enc_xe_to_ze_int(nn.Module):
     def __init__(self,
                  gnoise_std=None, 
                  gnoise_std_frac=0.05,
-                 dropout_p=0.2, out_dim=11):
+                 dropout_p=0.2, 
+                 out_dim=11):
         super(Enc_xe_to_ze_int, self).__init__()
         if gnoise_std is not None:
             self.gnoise_std = gnoise_std * gnoise_std_frac
@@ -50,15 +51,26 @@ class Enc_ze_int_to_ze(nn.Module):
     """Encodes `ze_int` to `ze`
     """
 
-    def __init__(self, in_dim=11, out_dim=3):
+    def __init__(self, 
+                 in_dim=11, 
+                 out_dim=3,
+                 variational=False):
         super(Enc_ze_int_to_ze, self).__init__()
-        self.fc_0 = nn.Linear(in_dim, out_dim, bias=False)
+        self.variational = variational
+        # self.fc_0 = nn.Linear(in_dim, out_dim, bias=False)
+        self.fc_mu = nn.Linear(in_dim, out_dim, bias=False)
+        self.fc_sigma = nn.Linear(in_dim, out_dim, bias=False)
         self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
         return
 
     def forward(self, ze_int):
-        ze = self.bn(self.fc_0(ze_int))
-        return ze
+        if self.variational:
+            mu = self.fc_mu(ze_int)
+            var = torch.sigmoid(self.fc_sigma(ze_int))
+            return mu, var
+        else:
+            return self.bn(self.fc_mu(ze_int))
+        
 
 class Dec_ze_to_ze_int(nn.Module):
     """Decodes `ze` into `ze_int`
@@ -71,6 +83,11 @@ class Dec_ze_to_ze_int(nn.Module):
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         return
+
+    def reparametrize(self, mu, var):
+        std = torch.sqrt(var)
+        eps = torch.randn_like(std)
+        return mu + eps * std
 
     def forward(self, ze):
         x = self.elu(self.fc_0(ze))
@@ -105,14 +122,24 @@ class AE_E(nn.Module):
         self.enc_xe_to_ze_int = Enc_xe_to_ze_int(gnoise_std=gnoise_std,
                                                  gnoise_std_frac=config['E']['gnoise_std_frac'],
                                                  dropout_p=config['E']['dropout_p'])
-        self.enc_ze_int_to_ze = Enc_ze_int_to_ze(out_dim=config['latent_dim'])
+        self.enc_ze_int_to_ze = Enc_ze_int_to_ze(out_dim=config['latent_dim'], variational=config['variational'])
         self.dec_ze_to_ze_int = Dec_ze_to_ze_int(in_dim=config['latent_dim'])
         self.dec_ze_int_to_xe = Dec_ze_int_to_xe()
+        self.variational = config['variational']
         return
 
     def forward(self, xe):
         ze_int_enc = self.enc_xe_to_ze_int(xe.nan_to_num())
-        ze = self.enc_ze_int_to_ze(ze_int_enc)
+        if self.variational:
+            mu, sigma = self.enc_ze_int_to_ze(ze_int_enc)
+            log_sigma = (sigma + 1e-6).log()
+            ze = self.dec_ze_to_ze_int.reparametrize(mu, sigma)
+        else:
+            ze = self.enc_ze_int_to_ze(ze_int_enc)
+            mu=[]
+            log_sigma=[]
+        
         ze_int_dec = self.dec_ze_to_ze_int(ze)
         xre = self.dec_ze_int_to_xe(ze_int_dec)
-        return ze_int_enc, ze, ze_int_dec, xre
+        return ze_int_enc, ze, ze_int_dec, xre, mu, log_sigma
+

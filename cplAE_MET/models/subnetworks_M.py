@@ -36,15 +36,22 @@ class Enc_xm_to_zm_int(nn.Module):
 class Enc_zm_int_to_zm(nn.Module):
     """Intermediate representation `zm_int` is encoded into `zm`
     """
-    def __init__(self, in_dim=11, out_dim=3):
+    def __init__(self, in_dim=11, out_dim=3, variational=False):
         super(Enc_zm_int_to_zm, self).__init__()
-        self.fc_0 = nn.Linear(in_dim, out_dim, bias=False)
+        # self.fc_0 = nn.Linear(in_dim, out_dim, bias=False)
+        self.fc_mu = nn.Linear(in_dim, out_dim, bias=False)
+        self.fc_sigma = nn.Linear(in_dim, out_dim, bias=False)
         self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
+        self.variational = variational
         return
 
     def forward(self, zm_int):
-        zm = self.bn(self.fc_0(zm_int))
-        return zm
+        if self.variational:
+            mu = self.fc_mu(zm_int)
+            var = torch.sigmoid(self.fc_sigma(zm_int))
+            return mu, var
+        else:
+            return self.bn(self.fc_mu(zm_int))
 
 
 class Dec_zm_to_zm_int(nn.Module):
@@ -59,10 +66,14 @@ class Dec_zm_to_zm_int(nn.Module):
         self.relu = nn.ReLU()
         return
 
+    def reparametrize(self, mu, var):
+        std = torch.sqrt(var)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
     def forward(self, zm):
         x = self.elu(self.fc_0(zm))
         zm_int = self.relu(self.fc_1(x))
-
         return zm_int
 
 
@@ -97,16 +108,25 @@ class AE_M(nn.Module):
     def __init__(self, config):
         super(AE_M, self).__init__()
         self.enc_xm_to_zm_int = Enc_xm_to_zm_int()
-        self.enc_zm_int_to_zm = Enc_zm_int_to_zm(out_dim=config['latent_dim'])
+        self.enc_zm_int_to_zm = Enc_zm_int_to_zm(out_dim=config['latent_dim'], variational=config['variational'])
         self.dec_zm_to_zm_int = Dec_zm_to_zm_int(in_dim=config['latent_dim'])
         self.dec_zm_int_to_xm = Dec_zm_int_to_xm()
+        self.variational = config['variational']
         return
 
     def forward(self, xm, xsd):
         zm_int_enc = self.enc_xm_to_zm_int(xm.nan_to_num(), xsd.nan_to_num())
-        zm = self.enc_zm_int_to_zm(zm_int_enc)
+        if self.variational:
+            mu, sigma = self.enc_zm_int_to_zm(zm_int_enc)
+            log_sigma = (sigma + 1e-6).log()
+            zm = self.dec_zm_to_zm_int.reparametrize(mu, sigma)
+        else:
+            zm = self.enc_zm_int_to_zm(zm_int_enc)
+            mu=[]
+            log_sigma=[]
+
         zm_int_dec = self.dec_zm_to_zm_int(zm)
         xrm, xrsd = self.dec_zm_int_to_xm(zm_int_dec,
                                           self.enc_xm_to_zm_int.pool_0_ind,
                                           self.enc_xm_to_zm_int.pool_1_ind)
-        return zm_int_enc, zm, zm_int_dec, xrm, xrsd
+        return zm_int_enc, zm, zm_int_dec, xrm, xrsd, mu, log_sigma
