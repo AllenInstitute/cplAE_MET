@@ -293,7 +293,7 @@ def main(exp_name="TEST",
         te_cpl_score = clf.score(ze[is_te_1d], T_labels[is_te_1d]) * 100
         tm_cpl_score = clf.score(zm[is_tm_1d], T_labels[is_tm_1d]) * 100
         met_cpl_score = clf.score(zme_paired[is_met_1d], T_labels[is_met_1d]) * 100
-        print(te_cpl_score, tm_cpl_score, met_cpl_score)
+        # print(te_cpl_score, tm_cpl_score, met_cpl_score)
         return np.min([te_cpl_score, tm_cpl_score, met_cpl_score])
     
     def build_model(params):
@@ -429,11 +429,11 @@ def main(exp_name="TEST",
                     model.eval()
                     val_loss, _, _ = model(val_batch)
             
-            if ((epoch + 1) % 100 == 0):
-                intermediate_value = run_classification(model, dataloader)
-                trial.report(intermediate_value, epoch + 1)
-                if trial.should_prune():
-                    raise optuna.TrialPruned()
+            # if ((epoch + 1) % 100 == 0):
+            #     intermediate_value = run_classification(model, dataloader)
+            #     trial.report(intermediate_value, epoch + 1)
+            #     if trial.should_prune():
+            #         raise optuna.TrialPruned()
   
         
         #model_score = run_Leiden_community_detection(model, dataloader)
