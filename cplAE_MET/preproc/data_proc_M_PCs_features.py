@@ -27,6 +27,7 @@ def set_paths(config_file=None):
     paths['ivscc_inh_m_features'] = f'{paths["input"]}/{str(paths["ivscc_inh_m_features"])}'
     paths['ivscc_exc_m_features'] = f'{paths["input"]}/{str(paths["ivscc_exc_m_features"])}'
     paths['fmost_exc_m_features'] = f'{paths["input"]}/{str(paths["fmost_exc_m_features"])}'
+    #paths['Mfeature_only_cells'] = f'{paths["input"]}/{str(paths["Mfeature_only_cells"])}'
     paths['m_output_file'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
 
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
@@ -167,7 +168,12 @@ for k in Scaled_PCs.keys():
     data_frames.append(Scaled_PCs[k])
 
 Scaled_PCs = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='outer'), data_frames)
-
+print("Zero-mean the scaled PCs")
+print("...................................................")
+subset_Scaled_PCs = Scaled_PCs[[c for c in Scaled_PCs.columns if c != "specimen_id"]]
+subset_Scaled_PCs = (subset_Scaled_PCs - subset_Scaled_PCs.mean(axis=0)) 
+subset_Scaled_PCs['specimen_id'] = Scaled_PCs['specimen_id']
+Scaled_PCs = subset_Scaled_PCs
 df = Scaled_PCs.melt(value_vars=Scaled_PCs[[c for c in Scaled_PCs.columns if c != "specimen_id"]])
 sns.catplot(x="variable", y="value", kind='box', data=df, palette=sns.color_palette(["skyblue"]), aspect=4.4)
 ax = plt.gca()
@@ -186,21 +192,6 @@ fmost_mf = pd.read_csv(dir_pth['fmost_exc_m_features'])
 
 # %%
 Scaled_PCs
-
-# %%
-m_cells_w_feature = [str(i) for i in ivscc_inh.specimen_id.to_list() + fmost_mf.specimen_id.to_list() + ivscc_exc.specimen_id.to_list()]
-m_cells_w_arborPCs = [str(i) for i in Scaled_PCs['specimen_id'].to_list()]
-
-print("m_cells with m features:", len(m_cells_w_feature))
-print("m_cells with arbor PCs:", len(m_cells_w_arborPCs))
-
-print("m cells with features that are NOT in m cells with arbor PCs:",len([i for i in m_cells_w_feature if i not in m_cells_w_arborPCs]))
-print("m cells with features that are NOT in locked dataset:", len([i for i in m_cells_w_feature if i not in ids.specimen_id.to_list()]))
-
-
-print("so we expect to see this amount of cells with either m features or m arbor PCs:", len([i for i in m_cells_w_feature if i not in m_cells_w_arborPCs]) + 
-                                                                                        len(m_cells_w_arborPCs) - 
-                                                                                        len([i for i in m_cells_w_feature if i not in ids.specimen_id.to_list()]))
 
 # %% [markdown]
 # ### Inh cells features
@@ -295,6 +286,30 @@ fmost_mf = fmost_mf[fmost_mf['specimen_id'].isin(ids['specimen_id'].to_list())]
 fmost_mf = fmost_mf[m_features['exc']]
 ivscc_exc = ivscc_exc[m_features['exc']]
 ivscc_inh = ivscc_inh[m_features['inh']]
+
+# %%
+print("...................................................")
+print("size of ivscc_exc, inh and fmost file after filtering for columns and rows")
+print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape)
+
+# %%
+m_cells_w_feature = [str(i) for i in ivscc_inh.specimen_id.to_list() + fmost_mf.specimen_id.to_list() + ivscc_exc.specimen_id.to_list()]
+m_cells_w_arborPCs = [str(i) for i in Scaled_PCs['specimen_id'].to_list()]
+
+print("m_cells with m features:", len(m_cells_w_feature))
+print("m_cells with arbor PCs:", len(m_cells_w_arborPCs))
+
+rm_cells = [i for i in m_cells_w_feature if i not in m_cells_w_arborPCs]
+print("m cells with features that are NOT in m cells with arbor PCs:",len(rm_cells))
+print("m cells with features that are NOT in locked dataset:", len([i for i in m_cells_w_feature if i not in ids.specimen_id.to_list()]))
+
+# %%
+print("so we should remove this cells from our analysis:")
+ivscc_exc = ivscc_exc[(ivscc_exc['specimen_id']).isin(m_cells_w_arborPCs)]
+ivscc_inh = ivscc_inh[(ivscc_inh['specimen_id']).isin(m_cells_w_arborPCs)]
+fmost_mf = fmost_mf[(fmost_mf['specimen_id']).isin(m_cells_w_arborPCs)]
+# pd.DataFrame(rm_cells).to_csv(dir_pth['Mfeature_only_cells'], index=False)
+
 
 # %%
 print("...................................................")

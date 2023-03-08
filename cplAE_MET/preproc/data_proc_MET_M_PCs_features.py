@@ -8,11 +8,11 @@ import scipy.io as sio
 from functools import reduce
 
 from cplAE_MET.utils.load_config import load_config
+from cplAE_MET.utils.analysis_tree_helpers import get_merged_types
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file', default='config_preproc.toml', type=str,   help='config file with data paths')
-parser.add_argument('--pca_th',      default=0.97,                  type=float, help='threshold for pca component')
 
 
 def set_paths(config_file=None):
@@ -36,7 +36,7 @@ def set_paths(config_file=None):
  return paths
 
 
-def main(config_file='config_preproc.toml', pca_th=0.97):
+def main(config_file='config_preproc.toml'):
 
     dir_pth = set_paths(config_file=config_file)
 
@@ -67,6 +67,10 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     T_data['specimen_id'] = T_data['specimen_id'].astype(str)
     cells['specimen_id'] = cells['specimen_id'].astype(str)
     T_ann['specimen_id'] = T_ann['specimen_id'].astype(str)
+    #dropping the space at the end of the name of the cluster labels
+    is_t_1d = np.all(~np.isnan(np.array(T_data.drop(columns=["specimen_id"]))), axis=1)
+    T_ann.loc[is_t_1d, 'Tree_first_cl_label'] = np.array([i.rstrip() for i in T_ann[is_t_1d]['Tree_first_cl_label'].to_list()])
+
 
     print("...................................................")
     print("Combining M, E and T data and metadata")
@@ -76,6 +80,22 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     result = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='left'), [result, cells])
     result = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='left'), [result, T_ann])
 
+    print("...................................................")
+    print("Merging t types and writing the merged types in the mat file")
+    # First we need to find the cells that have T data available and then start merging them
+    merged_t_at40, _, _  = get_merged_types(htree_file="/home/fahimehb/Local/new_codes/cplAE_MET/tree_20180520.csv",  
+                                            cells_labels=np.array(result['Tree_first_cl_label'][is_t_1d]), 
+                                            num_classes=40,
+                                            ref_leaf=np.unique(result['Tree_first_cl_label'][is_t_1d]),
+                                            node="n1")
+    
+    merged_t_at50, _, _  = get_merged_types(htree_file="/home/fahimehb/Local/new_codes/cplAE_MET/tree_20180520.csv",  
+                                            cells_labels=np.array(result['Tree_first_cl_label'][is_t_1d]), 
+                                            num_classes=50,
+                                            ref_leaf=np.unique(result['Tree_first_cl_label'][is_t_1d]),
+                                            node="n1")
+    result.loc[is_t_1d, 'merged_types_40'] = merged_t_at40
+    result.loc[is_t_1d, 'merged_types_50'] = merged_t_at50
     print("...................................................")
     print("Writing the output mat")
 
@@ -90,6 +110,9 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     model_input_mat["cluster_id"] = result.Tree_first_cl_id.to_list()
     model_input_mat["cluster_color"] = result.Tree_first_cl_color.to_list()
     model_input_mat["cluster_label"] = result.Tree_first_cl_label.to_list()
+    model_input_mat["merged_cluster_label_at40"] = result.merged_types_40.to_list()
+    model_input_mat["merged_cluster_label_at50"] = result.merged_types_50.to_list()
+
 
     #Writing the E_feature and M_features names
     model_input_mat["gene_ids"] = gene_id["gene_id"].to_list()

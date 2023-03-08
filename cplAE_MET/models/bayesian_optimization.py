@@ -6,7 +6,6 @@ import logging
 import argparse
 import numpy as np
 from pathlib import Path
-from sklearn.mixture import GaussianMixture
 from timeit import default_timer as timer
 
 
@@ -37,9 +36,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='Optuna_T_ME_classification_obj_10000ep_10trial',         type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_merged_t_type_at50_classification_optimization_v0',         type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='Optuna_T_ME_classification_obj_10000ep_10trial.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_merged_t_type_at50_classification_optimization_v0.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
@@ -103,7 +102,7 @@ def set_requires_grad(module, val):
 def rm_emp_end_str(myarray):
     return np.array([mystr.rstrip() for mystr in myarray])
 
-def save_results(model, dataloader, dat, fname):
+def save_results(model, dataloader, dat, fname, train_ind, val_ind):
     '''
     Takes the model, run it in the evaluation mode to calculate the embeddings and reconstructions for printing out.
     '''
@@ -125,6 +124,14 @@ def save_results(model, dataloader, dat, fname):
                 'ze': tonumpy(z_dict['ze']),
                 'zt': tonumpy(z_dict['zt']),
                 'zme_paired': tonumpy(z_dict['zme_paired']),
+                # 'mu_t': tonumpy(mu_dict['mu_t']),
+                # 'mu_e': tonumpy(mu_dict['mu_e']),
+                # 'mu_m': tonumpy(mu_dict['mu_m']),
+                # 'mu_me': tonumpy(mu_dict['mu_me']),
+                # 'log_sigma_t': tonumpy(log_sigma_dict['log_sigma_t']),
+                # 'log_sigma_e': tonumpy(log_sigma_dict['log_sigma_e']),
+                # 'log_sigma_m': tonumpy(log_sigma_dict['log_sigma_m']),
+                # 'log_sigma_me': tonumpy(log_sigma_dict['log_sigma_me']),
                 'is_t_1d':tonumpy(all_data['is_t_1d']),
                 'is_e_1d':tonumpy(all_data['is_e_1d']),
                 'is_m_1d':tonumpy(all_data['is_m_1d']), 
@@ -133,7 +140,9 @@ def save_results(model, dataloader, dat, fname):
                 'e_features': dat.E_features,
                 'specimen_id': rm_emp_end_str(dat.specimen_id),
                 'cluster_label': rm_emp_end_str(dat.cluster_label),
-                'cluster_color': rm_emp_end_str(dat.cluster_color)}
+                'cluster_color': rm_emp_end_str(dat.cluster_color),
+                'train_ind': train_ind,
+                'val_ind': val_ind}
 
     savepkl(savedict, fname)
     model.train()
@@ -274,11 +283,11 @@ def main(exp_name="TEST",
         is_t_1d = tonumpy(all_data['is_t_1d'])
         is_e_1d = tonumpy(all_data['is_e_1d'])
         is_m_1d = tonumpy(all_data['is_m_1d'])
-        is_te_1d = np.logical_and(is_t_1d, is_e_1d)
-        is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
         is_me_1d = np.logical_and(is_m_1d, is_e_1d)
-        is_met_1d = np.logical_and(is_t_1d, is_me_1d)
-        T_labels = np.array(dat.cluster_label) #TODO these labels should become part of dataloader
+        leaf_labels = np.array(dat.cluster_label) #TODO these labels should become part of dataloader
+        merged_T_labels_at40 = np.array(dat.merged_cluster_label_at40)
+        merged_T_labels_at50 = np.array(dat.merged_cluster_label_at50)
+        T_labels = merged_T_labels_at50
 
         zt = tonumpy(z_dict['zt'])
         ze = tonumpy(z_dict['ze'])
@@ -287,13 +296,13 @@ def main(exp_name="TEST",
         
         _, _, clf = run_LDA(zt[is_t_1d], 
                             T_labels[is_t_1d],
-                            train_test_ids={'train':[i for i in train_ind if is_t_1d[i]], 
-                                            'val':[i for i in val_ind if is_t_1d[i]]})
+                            train_test_ids={'train': train_ind, 
+                                            'val': val_ind})
         
-        te_cpl_score = clf.score(ze[is_te_1d], T_labels[is_te_1d]) * 100
-        tm_cpl_score = clf.score(zm[is_tm_1d], T_labels[is_tm_1d]) * 100
-        met_cpl_score = clf.score(zme_paired[is_met_1d], T_labels[is_met_1d]) * 100
-        # print(te_cpl_score, tm_cpl_score, met_cpl_score)
+        te_cpl_score = clf.score(ze[val_ind], T_labels[val_ind]) * 100
+        tm_cpl_score = clf.score(zm[val_ind], T_labels[val_ind]) * 100
+        met_cpl_score = clf.score(zme_paired[val_ind], T_labels[val_ind]) * 100
+        print("te, tm and met classification acc:", te_cpl_score, tm_cpl_score, met_cpl_score)
         return np.min([te_cpl_score, tm_cpl_score, met_cpl_score])
     
     def build_model(params):
@@ -507,7 +516,7 @@ def main(exp_name="TEST",
     # save the best model checkpoint and the best results at the end of the study -----------
     # This is run only if the best model was happend in this run ----------------------------
 
-    fname = dir_pth['result'] + f"Best_model_trial{study.best_trial.number}_" 
+    fname = dir_pth['result'] + f"Best_model_trial{study.best_trial.number}" 
     if objective.best_model is not None:
         checkpoint = {
             'state_dict': objective.best_model.state_dict(),
@@ -517,7 +526,7 @@ def main(exp_name="TEST",
 
         fname = dir_pth['result'] + f"Results_trial_{study.best_trial.number}.pkl"
 
-        save_results(objective.best_model, dataloader, dat, fname)
+        save_results(objective.best_model, dataloader, dat, fname, train_ind, val_ind)
 
 
 if __name__ == '__main__':

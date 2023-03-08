@@ -19,9 +19,6 @@ def set_paths(config_file=None):
     paths = load_config(config_file=config_file, verbose=False)
 
     paths['input'] = f'{str(paths["data_dir"])}'
-    paths['arbor_density_file'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
-    paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
-
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
     paths['gene_file'] = f'{paths["input"]}/{str(paths["gene_file"])}'
 

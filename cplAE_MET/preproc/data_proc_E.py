@@ -24,7 +24,7 @@ def set_paths(config_file=None):
 
     paths['input'] = f'{str(paths["data_dir"])}'
     paths['arbor_density_file'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
-    paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
+    # paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
 
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
 
@@ -142,6 +142,12 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
         data_frames.append(Scaled_PCs[k])
 
     Scaled_PCs = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='outer'), data_frames)
+    print("Zero-mean the scaled PCs")
+    print("...................................................")
+    subset_Scaled_PCs = Scaled_PCs[[c for c in Scaled_PCs.columns if c != "specimen_id"]]
+    subset_Scaled_PCs = (subset_Scaled_PCs - subset_Scaled_PCs.mean(axis=0)) 
+    subset_Scaled_PCs['specimen_id'] = Scaled_PCs['specimen_id']
+    Scaled_PCs = subset_Scaled_PCs
 
     df = Scaled_PCs.melt(value_vars=Scaled_PCs[[c for c in Scaled_PCs.columns if c != "specimen_id"]])
     sns.catplot(x="variable", y="value", kind='box', data=df, palette=sns.color_palette(["skyblue"]), aspect=4.4)

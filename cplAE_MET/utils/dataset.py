@@ -10,6 +10,8 @@ class MET_exc_inh(object):
         self.XE = dat['XE']
         self.XM = dat['XM']
         self.cluster_label = dat['cluster_label']
+        self.merged_cluster_label_at40 = dat['merged_cluster_label_at40']
+        self.merged_cluster_label_at50 = dat['merged_cluster_label_at50']
         self.cluster_id = dat['cluster_id']
         self.cluster_color = dat['cluster_color']
         self.specimen_id = dat['specimen_id']
@@ -31,6 +33,8 @@ class MET_exc_inh(object):
                                   XE=self.XE[inds[0]],
                                   XM=self.XM[inds[0]],
                                   cluster_label=self.cluster_label[inds[0]],
+                                  merged_cluster_label_at40=self.merged_cluster_label_at40[inds[0]],
+                                  merged_cluster_label_at50=self.merged_cluster_label_at50[inds[0]],
                                   cluster_id=self.cluster_id[inds[0]],
                                   cluster_color=self.cluster_color[inds[0]],
                                   specimen_id=self.specimen_id[inds[0]],
@@ -82,6 +86,8 @@ class MET_exc_inh(object):
         D['XE'] = data['E_dat']
         D['XM'] = data['M_dat']
         D['cluster_label'] = data['cluster_label']
+        D['merged_cluster_label_at40'] = data['merged_cluster_label_at40']
+        D['merged_cluster_label_at50'] = data['merged_cluster_label_at50']
         D['cluster_id'] = data['cluster_id'].astype(int)
         D['cluster_color'] = data['cluster_color']
         D['specimen_id'] = data['specimen_id']
@@ -91,6 +97,8 @@ class MET_exc_inh(object):
 
         # removing extra whitespaces from strings
         D['cluster_label'] = np.array([c.strip() for c in D['cluster_label']])
+        D['merged_cluster_label_at40'] = np.array([c.strip() for c in D['merged_cluster_label_at40']])
+        D['merged_cluster_label_at50'] = np.array([c.strip() for c in D['merged_cluster_label_at50']])
         D['cluster_color'] = np.array([c.strip() for c in D['cluster_color']])
         D['gene_ids'] = np.array([c.strip() for c in D['gene_ids']])
         D['E_features'] = np.array([c.strip() for c in D['E_features']])
@@ -98,7 +106,13 @@ class MET_exc_inh(object):
 
         # convention for annotations
         isnan = D['cluster_label']=='nan'
+        isnan_merged_at40 = D['merged_cluster_label_at40'] == 'nan'
+        isnan_merged_at50 = D['merged_cluster_label_at50'] == 'nan'
+        assert np.all(isnan == isnan_merged_at40) , f"When t types are merged, nans must be the same"
+        assert np.all(isnan == isnan_merged_at50) , f"When t types are merged, nans must be the same"
         D['cluster_label'][isnan] = 'NA'
+        D['merged_cluster_label_at40'][isnan] = 'NA'
+        D['merged_cluster_label_at50'][isnan] = 'NA'
         D['cluster_id'][isnan] = np.max(D['cluster_id']) + 1
         D['cluster_color'][isnan] = '#888888'
         return D
