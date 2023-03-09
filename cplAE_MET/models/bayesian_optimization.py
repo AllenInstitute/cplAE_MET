@@ -36,9 +36,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_merged_t_type_at50_classification_optimization_v0',         type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_merged_t_type_at50_classification_optimization_v1',         type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_merged_t_type_at50_classification_optimization_v0.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_merged_t_type_at50_classification_optimization_v1.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
@@ -140,6 +140,8 @@ def save_results(model, dataloader, dat, fname, train_ind, val_ind):
                 'e_features': dat.E_features,
                 'specimen_id': rm_emp_end_str(dat.specimen_id),
                 'cluster_label': rm_emp_end_str(dat.cluster_label),
+                'merged_cluster_label_at40': rm_emp_end_str(dat.merged_cluster_label_at40),
+                'merged_cluster_label_at50': rm_emp_end_str(dat.merged_cluster_label_at50),
                 'cluster_color': rm_emp_end_str(dat.cluster_color),
                 'train_ind': train_ind,
                 'val_ind': val_ind}
@@ -438,11 +440,11 @@ def main(exp_name="TEST",
                     model.eval()
                     val_loss, _, _ = model(val_batch)
             
-            # if ((epoch + 1) % 100 == 0):
-            #     intermediate_value = run_classification(model, dataloader)
-            #     trial.report(intermediate_value, epoch + 1)
-            #     if trial.should_prune():
-            #         raise optuna.TrialPruned()
+            if ((epoch + 1) % 100 == 0):
+                intermediate_value = run_classification(model, dataloader)
+                trial.report(intermediate_value, epoch + 1)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
   
         
         #model_score = run_Leiden_community_detection(model, dataloader)
