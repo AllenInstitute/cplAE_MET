@@ -22,12 +22,11 @@ def set_paths(config_file=None):
 
     paths['input'] = f'{str(paths["data_dir"])}'
     paths['arbor_density_file'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
-    # paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
     paths['arbor_density_PC_vars_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_vars_file"])}'
     paths['ivscc_inh_m_features'] = f'{paths["input"]}/{str(paths["ivscc_inh_m_features"])}'
     paths['ivscc_exc_m_features'] = f'{paths["input"]}/{str(paths["ivscc_exc_m_features"])}'
     paths['fmost_exc_m_features'] = f'{paths["input"]}/{str(paths["fmost_exc_m_features"])}'
-    #paths['Mfeature_only_cells'] = f'{paths["input"]}/{str(paths["Mfeature_only_cells"])}'
+    paths['Mfeature_only_cells'] = f'{paths["input"]}/{str(paths["Mfeature_only_cells"])}'
     paths['m_output_file'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
 
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
@@ -308,7 +307,7 @@ print("so we should remove this cells from our analysis:")
 ivscc_exc = ivscc_exc[(ivscc_exc['specimen_id']).isin(m_cells_w_arborPCs)]
 ivscc_inh = ivscc_inh[(ivscc_inh['specimen_id']).isin(m_cells_w_arborPCs)]
 fmost_mf = fmost_mf[(fmost_mf['specimen_id']).isin(m_cells_w_arborPCs)]
-# pd.DataFrame(rm_cells).to_csv(dir_pth['Mfeature_only_cells'], index=False)
+pd.DataFrame(rm_cells).to_csv(dir_pth['Mfeature_only_cells'], index=False)
 
 
 # %%

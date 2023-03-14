@@ -36,14 +36,14 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_merged_t_type_at50_classification_optimization_v0',         type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v0',         type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_merged_t_type_at50_classification_optimization_v0.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v0.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
-parser.add_argument('--opt_n_trials',          default=10,             type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=200,          type=int,   help='Number of epochs to train')
+parser.add_argument('--opt_n_trials',          default=1,             type=int,   help='number trials for bayesian optimization')
+parser.add_argument('--n_epochs',              default=10000,          type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -440,11 +440,11 @@ def main(exp_name="TEST",
                     model.eval()
                     val_loss, _, _ = model(val_batch)
             
-            if ((epoch + 1) % 100 == 0):
-                intermediate_value = run_classification(model, dataloader)
-                trial.report(intermediate_value, epoch + 1)
-                if trial.should_prune():
-                    raise optuna.TrialPruned()
+            # if ((epoch + 1) % 100 == 0):
+            #     intermediate_value = run_classification(model, dataloader)
+            #     trial.report(intermediate_value, epoch + 1)
+            #     if trial.should_prune():
+            #         raise optuna.TrialPruned()
   
         
         #model_score = run_Leiden_community_detection(model, dataloader)

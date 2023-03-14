@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import umap
 import numpy as np
@@ -8,6 +9,10 @@ from sklearn.metrics import r2_score
 from sklearn.decomposition import PCA
 import cplAE_MET.utils.utils as ut
 from sklearn.preprocessing import StandardScaler
+from cplAE_MET.utils.utils import loadpkl
+from cplAE_MET.models.bayesian_optimization import Leiden_community_detection
+from cplAE_MET.models.classification_functions import run_LDA
+
 
 
 
@@ -375,4 +380,78 @@ def get_umap_data(input):
     output = reducer.fit_transform(scaled_input)
     return output
 
+
+def load_exp_output(exp_name, pkl_file, results_folder="/home/fahimehb/Local/new_codes/cplAE_MET/data/results/"):
+    '''Takes the exp_name and pkl file name and load the pkl file from the result folder'''
+    output_folder = f"{results_folder}{exp_name}/"
+    path = os.path.join(output_folder, pkl_file)
+    return loadpkl(path)
+
+def get_Leiden_comms(output):
+    '''Takes model output and print the number of communities in each
+    latent representation'''
+    
+    is_t_1d = output['is_t_1d']
+    is_m_1d = output['is_m_1d']
+    is_e_1d = output['is_e_1d']
+    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+    is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
+    is_me_1d = np.logical_and(is_m_1d, is_e_1d)
+    is_met_1d = np.logical_and(is_t_1d, is_me_1d)
+
+    print("Number of t, te, tm and met communities:", Leiden_community_detection(output['zt'][is_t_1d]),
+                                                      Leiden_community_detection(output['ze'][is_te_1d]),
+                                                      Leiden_community_detection(output['zm'][is_tm_1d]),
+                                                      Leiden_community_detection(output['zme_paired'][is_met_1d]))
+    return 
+
+def get_LDA_classification(output, level="leaf_labels", test_on_all_cells=False):
+    '''Take the model output and the cluster label or the merged cluster labels and run LDA classification'''
+    is_t_1d = output['is_t_1d']
+    is_e_1d = output['is_e_1d']
+    is_m_1d = output['is_m_1d']
+    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+    is_tm_1d = np.logical_and(is_m_1d, is_t_1d)
+    is_met_1d = np.logical_and(is_m_1d, is_te_1d)
+    if "train_ind" in output:
+        train_ind = output['train_ind']
+        val_ind = output['val_ind']
+    else:
+        train_ind = None
+        val_ind = None
+
+    leaf_labels = np.array([i.rstrip() for i in output['cluster_label']])
+    if "merged_cluster_label_at40" in output:
+        merged_cluster_label_at40 = np.array([i.rstrip() for i in output['merged_cluster_label_at40']]) 
+    if "merged_cluster_label_at50" in output:
+        merged_cluster_label_at50 = np.array([i.rstrip() for i in output['merged_cluster_label_at50']])
+
+    if level=="leaf_labels":
+        T_labels = leaf_labels
+    elif level == "merged_cluster_label_at40":
+        T_labels = merged_cluster_label_at40
+    elif level == "merged_cluster_label_at50":
+        T_labels = merged_cluster_label_at50
+    else:
+        sys.exit("The t_label merge level should be provided")
+
+    zt = output['zt']
+    ze = output['ze']
+    zm = output['zm']
+    zme_paired = output['zme_paired']
+
+    if not test_on_all_cells:
+        _, _, clf = run_LDA(zt[is_t_1d],
+                            T_labels[is_t_1d],
+                            train_test_ids= {'train': train_ind, 'val': val_ind})
+        te_cpl_score = clf.score(ze[val_ind], T_labels[val_ind]) * 100
+        tm_cpl_score = clf.score(zm[val_ind], T_labels[val_ind]) * 100
+        met_cpl_score = clf.score(zme_paired[val_ind], T_labels[val_ind]) * 100
+        print(f"te, tm and met classification acc on VAL cells for {level}:", "{:10.2f}".format(te_cpl_score), "{:10.2f}".format(tm_cpl_score), "{:10.2f}".format(met_cpl_score))
+    else:
+        _, _, clf = run_LDA(zt[is_t_1d], T_labels[is_t_1d], test_size= 0.2)
+        te_cpl_score = clf.score(ze[is_te_1d], T_labels[is_te_1d]) * 100
+        tm_cpl_score = clf.score(zm[is_tm_1d], T_labels[is_tm_1d]) * 100
+        met_cpl_score = clf.score(zme_paired[is_met_1d], T_labels[is_met_1d]) * 100
+        print(f"te, tm and met classification acc on ALL cells for {level}:", "{:10.2f}".format(te_cpl_score), "{:10.2f}".format(tm_cpl_score), "{:10.2f}".format(met_cpl_score))
 
