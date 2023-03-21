@@ -36,9 +36,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v0',         type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v1',         type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v0.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v1.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
@@ -173,6 +173,8 @@ def Criterion(model_config, loss_dict):
                 model_config['E']['alpha_E'] * loss_dict['rec_e'] + \
                 model_config['M']['alpha_M'] * loss_dict['rec_m'] + \
                 model_config['ME']['alpha_ME'] * (loss_dict['rec_m_me'] + loss_dict['rec_e_me']) + \
+                model_config['M']['alpha_M'] * loss_dict['BCELoss_m'] + \
+                model_config['ME']['alpha_ME'] * loss_dict['BCELoss_me_m'] + \
                 model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_T_E'] * loss_dict['cpl_t->e'] + \
                 model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_E_T'] * loss_dict['cpl_e->t'] + \
                 model_config['TM']['lambda_TM'] * model_config['TM']['lambda_tune_T_M'] * loss_dict['cpl_t->m'] + \
@@ -205,9 +207,8 @@ def Leiden_community_detection(data):
     G = nx.convert_matrix.from_numpy_array(A)
     # Run Leiden community detection algorithm
     comm = algorithms.leiden(G)
-    ncomm = len(comm.communities)
 
-    return ncomm
+    return comm
 
 
 def run_Leiden_community_detection(model, dataloader):
@@ -229,8 +230,10 @@ def run_Leiden_community_detection(model, dataloader):
     n_me_types = []
     # Instead of running it only one, we run it 10 times and then take the max
     for i in range(10):
-        n_t_types.append(Leiden_community_detection(zt[is_t_1d]))
-        n_me_types.append(Leiden_community_detection(zme_paired[is_met_1d]))
+        ncomm = len(Leiden_community_detection(zt[is_t_1d]).communities)
+        n_t_types.append(ncomm)
+        ncomm = len(Leiden_community_detection(zme_paired[is_met_1d]).communities)
+        n_me_types.append(ncomm)
 
     n_t_types = np.median(n_t_types)
     n_me_types = np.median(n_me_types)

@@ -7,11 +7,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
 from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
 import cplAE_MET.utils.utils as ut
 from sklearn.preprocessing import StandardScaler
 from cplAE_MET.utils.utils import loadpkl
 from cplAE_MET.models.bayesian_optimization import Leiden_community_detection
 from cplAE_MET.models.classification_functions import run_LDA
+from sklearn.model_selection import KFold
+
 
 
 
@@ -387,71 +390,145 @@ def load_exp_output(exp_name, pkl_file, results_folder="/home/fahimehb/Local/new
     path = os.path.join(output_folder, pkl_file)
     return loadpkl(path)
 
-def get_Leiden_comms(output):
+
+def get_Leiden_comms(input):
     '''Takes model output and print the number of communities in each
-    latent representation'''
+    latent representation
+    Args:
+    input: This is the output .mat file from the coupled autoencoder run
+    '''
     
-    is_t_1d = output['is_t_1d']
-    is_m_1d = output['is_m_1d']
-    is_e_1d = output['is_e_1d']
+    is_t_1d = input['is_t_1d']
+    is_m_1d = input['is_m_1d']
+    is_e_1d = input['is_e_1d']
     is_te_1d = np.logical_and(is_t_1d, is_e_1d)
     is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
     is_me_1d = np.logical_and(is_m_1d, is_e_1d)
     is_met_1d = np.logical_and(is_t_1d, is_me_1d)
 
-    print("Number of t, te, tm and met communities:", Leiden_community_detection(output['zt'][is_t_1d]),
-                                                      Leiden_community_detection(output['ze'][is_te_1d]),
-                                                      Leiden_community_detection(output['zm'][is_tm_1d]),
-                                                      Leiden_community_detection(output['zme_paired'][is_met_1d]))
-    return 
+    df = pd.DataFrame(columns=["t_comm", "et_comm", "met_comm", "mt_comm"])
+    df.loc[0, "t_comm"] = len(Leiden_community_detection(input['zt'][is_t_1d]).communities)
+    df.loc[0, "et_comm"] = len(Leiden_community_detection(input['ze'][is_te_1d]).communities)
+    df.loc[0, "met_comm"] = len(Leiden_community_detection(input['zme_paired'][is_met_1d]).communities)
+    df.loc[0, "mt_comm"] = len(Leiden_community_detection(input['zm'][is_tm_1d]).communities)
+    return df
 
-def get_LDA_classification(output, level="leaf_labels", test_on_all_cells=False):
+
+def get_communities_sorted_node_labels(comm_obj):
+    '''Get the community object and return the node labels for the 
+    sorted nodes. This is required if we are going to pass a list of
+    node lables to any algorithm
+    Args:
+    comm_obj: community detection object'''
+
+    nodes = [i for i in comm_obj.to_node_community_map().keys()]
+    node_labels = [i[0] for i in comm_obj.to_node_community_map().values()]
+    myDict = {nodes[i]: node_labels[i] for i in range(len(nodes))}
+    myKeys = list(myDict.keys())
+    myKeys.sort()
+    sorted_dict = {i: myDict[i] for i in myKeys}
+    sorted_node_labels = [sorted_dict[k] for k in myKeys]
+
+    return sorted_node_labels
+
+
+def get_LDA_classification(output, level="cluster_label"):
     '''Take the model output and the cluster label or the merged cluster labels and run LDA classification'''
+
     is_t_1d = output['is_t_1d']
     is_e_1d = output['is_e_1d']
     is_m_1d = output['is_m_1d']
     is_te_1d = np.logical_and(is_t_1d, is_e_1d)
     is_tm_1d = np.logical_and(is_m_1d, is_t_1d)
     is_met_1d = np.logical_and(is_m_1d, is_te_1d)
-    if "train_ind" in output:
-        train_ind = output['train_ind']
-        val_ind = output['val_ind']
-    else:
-        train_ind = None
-        val_ind = None
 
-    leaf_labels = np.array([i.rstrip() for i in output['cluster_label']])
-    if "merged_cluster_label_at40" in output:
-        merged_cluster_label_at40 = np.array([i.rstrip() for i in output['merged_cluster_label_at40']]) 
-    if "merged_cluster_label_at50" in output:
-        merged_cluster_label_at50 = np.array([i.rstrip() for i in output['merged_cluster_label_at50']])
+    X_train = output['zt'][is_t_1d]
+    y_train = np.array([i.rstrip() for i in output[level][is_t_1d]])
+    y = np.array([i.rstrip() for i in output[level]])
 
-    if level=="leaf_labels":
-        T_labels = leaf_labels
-    elif level == "merged_cluster_label_at40":
-        T_labels = merged_cluster_label_at40
-    elif level == "merged_cluster_label_at50":
-        T_labels = merged_cluster_label_at50
-    else:
-        sys.exit("The t_label merge level should be provided")
+    kf = KFold(n_splits=10, random_state=None, shuffle=False)
+    te_cpl_score = []
+    tm_cpl_score = []
+    met_cpl_score = []
+    for i, (train_index, test_index) in enumerate(kf.split(X_train)):
+        _, _, clf = run_LDA(X_train, y_train, train_test_ids= {'train': train_index, 'val': test_index})
+        te_cpl_score.append(clf.score(output['ze'][is_te_1d], y[is_te_1d]) * 100)
+        tm_cpl_score.append(clf.score(output['zm'][is_tm_1d], y[is_tm_1d]) * 100)
+        met_cpl_score.append(clf.score(output['zme_paired'][is_met_1d], y[is_met_1d]) * 100)
 
-    zt = output['zt']
-    ze = output['ze']
-    zm = output['zm']
-    zme_paired = output['zme_paired']
+    df = pd.DataFrame(columns=["t_clusters", "et_class_acc", "met_class_acc", "mt_class_acc"])
+    df.loc[0, "t_clusters"] = len(np.unique(y_train))
+    df.loc[0, "et_class_acc"] = "{:.2f}".format(np.mean(te_cpl_score))
+    df.loc[0, "met_class_acc"] = "{:.2f}".format(np.mean(met_cpl_score))
+    df.loc[0, "mt_class_acc"] = "{:.2f}".format(np.mean(tm_cpl_score))
 
-    if not test_on_all_cells:
-        _, _, clf = run_LDA(zt[is_t_1d],
-                            T_labels[is_t_1d],
-                            train_test_ids= {'train': train_ind, 'val': val_ind})
-        te_cpl_score = clf.score(ze[val_ind], T_labels[val_ind]) * 100
-        tm_cpl_score = clf.score(zm[val_ind], T_labels[val_ind]) * 100
-        met_cpl_score = clf.score(zme_paired[val_ind], T_labels[val_ind]) * 100
-        print(f"te, tm and met classification acc on VAL cells for {level}:", "{:10.2f}".format(te_cpl_score), "{:10.2f}".format(tm_cpl_score), "{:10.2f}".format(met_cpl_score))
-    else:
-        _, _, clf = run_LDA(zt[is_t_1d], T_labels[is_t_1d], test_size= 0.2)
-        te_cpl_score = clf.score(ze[is_te_1d], T_labels[is_te_1d]) * 100
-        tm_cpl_score = clf.score(zm[is_tm_1d], T_labels[is_tm_1d]) * 100
-        met_cpl_score = clf.score(zme_paired[is_met_1d], T_labels[is_met_1d]) * 100
-        print(f"te, tm and met classification acc on ALL cells for {level}:", "{:10.2f}".format(te_cpl_score), "{:10.2f}".format(tm_cpl_score), "{:10.2f}".format(met_cpl_score))
+    return df
+
+
+def summary_classification_results(output):
+    df = pd.concat([get_LDA_classification(output, level = "cluster_label"),
+                    get_LDA_classification(output, level = "merged_cluster_label_at40"),
+                    get_LDA_classification(output, level = "merged_cluster_label_at50")]
+                    )
+    return df
+
+
+def summary_leiden_comm_silhouette_score(output):
+    is_t_1d = output['is_t_1d']
+    is_e_1d = output['is_e_1d']
+    is_m_1d = output['is_m_1d']
+    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+    is_tm_1d = np.logical_and(is_m_1d, is_t_1d)
+    is_met_1d = np.logical_and(is_m_1d, is_te_1d)
+    
+    df = pd.DataFrame(columns=["sil_score_t", "sil_score_et", "sil_score_met", "sil_score_mt"])
+
+    for mode, mask, key in zip(["zt", "ze", "zme_paired", "zm"], 
+                          [is_t_1d, is_te_1d, is_met_1d, is_tm_1d], 
+                          ["sil_score_t", "sil_score_et", "sil_score_met", "sil_score_mt"]):
+        comm = Leiden_community_detection(output[mode][mask])
+        sorted_node_labels = get_communities_sorted_node_labels(comm)
+        df.loc[0, key] = silhouette_score(output[mode][mask], sorted_node_labels) 
+    
+    return df
+
+
+def summarize_platforms(locked_dataset_path):
+    '''
+    Takes the spec id locked dataset and returns the summary of the paltforms and modalities available
+    Args:
+    locked_dataset_path: a file which has a column for specimen_id, a column called T_cell for all the cells that have 
+    T data available an column called E_cell and M_cell. Finally it has a coulumn which has the name of the
+    platform that data was collected from
+    '''
+    locked_dataset = pd.read_csv("/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/" + locked_dataset_path)
+
+    # data modalities mask
+    is_t_1d = np.array(locked_dataset['T_cell'])
+    is_e_1d = np.array(locked_dataset['E_cell'])
+    is_m_1d = np.array(locked_dataset['M_cell'])
+    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+    is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
+    is_me_1d = np.logical_and(is_m_1d, is_e_1d)
+    is_met_1d = np.logical_and(is_e_1d, is_tm_1d)
+    is_t_only = np.logical_and(is_t_1d, np.logical_and(~is_e_1d, ~is_m_1d))
+    is_e_only = np.logical_and(is_e_1d, np.logical_and(~is_t_1d, ~is_m_1d))
+    is_m_only = np.logical_and(is_m_1d, np.logical_and(~is_e_1d, ~is_t_1d))
+    is_te_only = np.logical_and(is_te_1d, ~is_m_1d)
+    is_me_only = np.logical_and(is_me_1d, ~is_t_1d)
+    is_tm_only = np.logical_and(is_tm_1d, ~is_e_1d)
+
+    summary = pd.DataFrame(columns=["platform", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
+    for i, p in enumerate(["patchseq", "ME", "EM", "fMOST"]):
+        platform_mask = np.array([True if i==p else False for i in locked_dataset["platform"].to_list()])
+        summary.loc[i, "platform"] = p
+        summary.loc[i, "T"] = np.sum(np.logical_and(platform_mask, is_t_only))
+        summary.loc[i, "E"] = np.sum(np.logical_and(platform_mask, is_e_only))
+        summary.loc[i, "M"] = np.sum(np.logical_and(platform_mask, is_m_only))
+        summary.loc[i, "E&T"] = np.sum(np.logical_and(platform_mask, is_te_only))
+        summary.loc[i, "M&T"] = np.sum(np.logical_and(platform_mask, is_tm_only))
+        summary.loc[i, "M&E"] = np.sum(np.logical_and(platform_mask, is_me_only))
+        summary.loc[i, "M&E&T"] = np.sum(np.logical_and(platform_mask, is_met_1d))
+        summary.loc[i, "total"] = int(platform_mask.sum())
+    return summary
 

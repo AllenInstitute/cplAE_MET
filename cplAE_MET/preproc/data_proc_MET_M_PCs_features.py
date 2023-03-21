@@ -83,6 +83,7 @@ def main(config_file='config_preproc.toml'):
     print("...................................................")
     print("Merging t types and writing the merged types in the mat file")
     # First we need to find the cells that have T data available and then start merging them
+
     merged_t_at40, _, _  = get_merged_types(htree_file="/home/fahimehb/Local/new_codes/cplAE_MET/tree_20180520.csv",  
                                             cells_labels=np.array(result['Tree_first_cl_label'][is_t_1d]), 
                                             num_classes=40,
@@ -94,8 +95,17 @@ def main(config_file='config_preproc.toml'):
                                             num_classes=50,
                                             ref_leaf=np.unique(result['Tree_first_cl_label'][is_t_1d]),
                                             node="n1")
+    
+    merged_t_at60, _, _  = get_merged_types(htree_file="/home/fahimehb/Local/new_codes/cplAE_MET/tree_20180520.csv",  
+                                            cells_labels=np.array(result['Tree_first_cl_label'][is_t_1d]), 
+                                            num_classes=60,
+                                            ref_leaf=np.unique(result['Tree_first_cl_label'][is_t_1d]),
+                                            node="n1")
+    
     result.loc[is_t_1d, 'merged_types_40'] = merged_t_at40
     result.loc[is_t_1d, 'merged_types_50'] = merged_t_at50
+    result.loc[is_t_1d, 'merged_types_60'] = merged_t_at60
+
     print("...................................................")
     print("Writing the output mat")
 
@@ -112,6 +122,7 @@ def main(config_file='config_preproc.toml'):
     model_input_mat["cluster_label"] = result.Tree_first_cl_label.to_list()
     model_input_mat["merged_cluster_label_at40"] = result.merged_types_40.to_list()
     model_input_mat["merged_cluster_label_at50"] = result.merged_types_50.to_list()
+    model_input_mat["merged_cluster_label_at60"] = result.merged_types_60.to_list()
 
 
     #Writing the E_feature and M_features names

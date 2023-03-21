@@ -26,6 +26,7 @@ def set_paths(config_file=None):
     paths['ivscc_inh_m_features'] = f'{paths["input"]}/{str(paths["ivscc_inh_m_features"])}'
     paths['ivscc_exc_m_features'] = f'{paths["input"]}/{str(paths["ivscc_exc_m_features"])}'
     paths['fmost_exc_m_features'] = f'{paths["input"]}/{str(paths["fmost_exc_m_features"])}'
+    paths['em_m_features'] = f'{paths["input"]}/{str(paths["em_m_features"])}' ""
     paths['Mfeature_only_cells'] = f'{paths["input"]}/{str(paths["Mfeature_only_cells"])}'
     paths['m_output_file'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
 
@@ -187,7 +188,8 @@ Scaled_PCs.head()
 # read M_metadata 
 ivscc_inh = pd.read_csv(dir_pth['ivscc_inh_m_features'])
 ivscc_exc = pd.read_csv(dir_pth['ivscc_exc_m_features']) 
-fmost_mf = pd.read_csv(dir_pth['fmost_exc_m_features'])  
+fmost_mf = pd.read_csv(dir_pth['fmost_exc_m_features']) 
+em_mf = pd.read_csv(dir_pth['em_m_features']) 
 
 # %%
 Scaled_PCs
@@ -225,6 +227,11 @@ for ax, feature in zip(axs.flatten(), [i for i in fmost_mf.columns if i!="specim
     ax.plot(fmost_mf[feature], color='dodgerblue')
     ax.set_title(feature)
 
+# %%
+# fig, axs = plt.subplots(7,7, figsize=(30, 30))
+# for ax, feature in zip(axs.flatten(), [i for i in em_mf.columns if i!="specimen_id"]):
+#     ax.plot(em_mf[feature], color='dodgerblue')
+#     ax.set_title(feature)
 # %% [markdown]
 # ### Reliable features to keep:
 
@@ -267,7 +274,7 @@ m_features = {"exc": ["specimen_id",
 # %%
 print("...................................................")
 print("size of ivscc_exc, inh and fmost file before filtering for columns and rows")
-print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape)
+print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape, em_mf.shape)
 
 # %% [markdown]
 # ### Keep locked cells and reliable features from ivscc exc/inh and fmost data
@@ -277,22 +284,27 @@ print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape)
 ivscc_exc['specimen_id'] = ivscc_exc['specimen_id'].astype(str)
 ivscc_inh['specimen_id'] = ivscc_inh['specimen_id'].astype(str)
 fmost_mf['specimen_id'] = fmost_mf['specimen_id'].astype(str)
+em_mf['specimen_id'] = em_mf['specimen_id'].astype(str)
 
+#%%
 ivscc_exc = ivscc_exc[ivscc_exc['specimen_id'].isin(ids['specimen_id'].to_list())]
 ivscc_inh = ivscc_inh[ivscc_inh['specimen_id'].isin(ids['specimen_id'].to_list())]
 fmost_mf = fmost_mf[fmost_mf['specimen_id'].isin(ids['specimen_id'].to_list())]
+em_mf = em_mf[em_mf['specimen_id'].isin(ids['specimen_id'].to_list())]
 
 fmost_mf = fmost_mf[m_features['exc']]
 ivscc_exc = ivscc_exc[m_features['exc']]
 ivscc_inh = ivscc_inh[m_features['inh']]
+em_mf = em_mf[m_features['exc']]
+
 
 # %%
 print("...................................................")
 print("size of ivscc_exc, inh and fmost file after filtering for columns and rows")
-print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape)
+print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape, em_mf.shape)
 
 # %%
-m_cells_w_feature = [str(i) for i in ivscc_inh.specimen_id.to_list() + fmost_mf.specimen_id.to_list() + ivscc_exc.specimen_id.to_list()]
+m_cells_w_feature = [str(i) for i in ivscc_inh.specimen_id.to_list() + fmost_mf.specimen_id.to_list() + ivscc_exc.specimen_id.to_list() + em_mf.specimen_id.to_list()]
 m_cells_w_arborPCs = [str(i) for i in Scaled_PCs['specimen_id'].to_list()]
 
 print("m_cells with m features:", len(m_cells_w_feature))
@@ -313,13 +325,13 @@ pd.DataFrame(rm_cells).to_csv(dir_pth['Mfeature_only_cells'], index=False)
 # %%
 print("...................................................")
 print("size of ivscc_exc, inh and fmost file after filtering for columns and rows")
-print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape)
+print(ivscc_exc.shape, ivscc_inh.shape, fmost_mf.shape, em_mf.shape)
 
 # %% [markdown]
 # ### concat fmost, ivscc_inh and ivscc_exc features into a dataframe
 
 # %%
-data_frames = [ivscc_exc, fmost_mf, ivscc_inh]
+data_frames = [ivscc_exc, fmost_mf, ivscc_inh, em_mf]
 m_features = reduce(lambda left, right: pd.merge(left, right, how='outer'), data_frames)
 m_features['specimen_id'] = m_features['specimen_id'].astype(str)
 
@@ -370,6 +382,11 @@ m_cells = ~np.isnan(soma_depth)
 m_cells = [id for i, id in enumerate(arbor_ids) if m_cells[i]]
 
 sd = pd.DataFrame({"specimen_id": m_cells, "soma_depth": soma_depth[~np.isnan(soma_depth)]})
+
+print("Super important to set the nan values for the M cells PCs equal to zero before combining all other cells to the M cells")
+print("this is because later on, we will mask only the m cells for the loss function and in there, we need to compute the loss")
+print("on all the 4 channels. becasue if we dont do this then we will not include all the 4 channels in the loss calculations")
+Scaled_PCs = Scaled_PCs.fillna(0)
 
 data_frames = [Scaled_PCs, sd, m_features_norm]
 df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='outer'), data_frames)

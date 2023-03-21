@@ -1,4 +1,3 @@
-# %%
 import torch
 import torch.nn as nn
 from cplAE_MET.models.subnetwork_M_PCs_features import AE_M, Dec_zm_int_to_xm, Enc_xm_to_zm_int
@@ -44,6 +43,14 @@ class Model_ME_T(nn.Module):
         mu = mu[mask] 
         log_sigma = log_sigma[mask]  
         return (-0.5 * torch.mean(1 + log_sigma - mu.pow(2) - log_sigma.exp(), dim=0)).sum()
+    
+    def compute_BCE_loss(self, x, target):
+        loss = nn.BCELoss()
+        x_bin = 0. * x
+        x_bin[x.abs()>0.001] = 1.
+        target_bin = 0. * target
+        target_bin[target.abs()>0.001] = 1.
+        return loss(x_bin, target_bin)
 
     
     def forward(self, input):
@@ -96,6 +103,9 @@ class Model_ME_T(nn.Module):
         loss_dict['rec_m_me'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_me_paired[is_me_1d, ...], valid_xm[is_me_1d, ...])
         loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...])
 
+        loss_dict['BCELoss_m'] = self.compute_BCE_loss(xrm[is_m_1d][valid_xm[is_m_1d]], xm[is_m_1d][valid_xm[is_m_1d]])
+        loss_dict['BCELoss_me_m'] = self.compute_BCE_loss(xrm[is_me_1d][valid_xm[is_me_1d]], xm[is_me_1d][valid_xm[is_me_1d]])
+        
         loss_dict['cpl_me->t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
         loss_dict['cpl_t->me'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
 
