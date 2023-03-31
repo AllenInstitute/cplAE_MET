@@ -209,6 +209,15 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
 
     data_frames = [Scaled_PCs, ipfx_norm]
     df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='outer'), data_frames)
+    ##################### From here
+    print("...................................................")
+    print("Removing some of the features than more than %5 of data dont have that feature")
+    drop_feature_thr = int(df_merged.shape[0]*0.05)
+    temp = df_merged.isnull().sum(axis=0).reset_index()
+    feature_to_drop = temp[temp[0]>drop_feature_thr]['index'].to_list()
+    df_merged = df_merged[[col for col in df_merged.columns.to_list() if col not in feature_to_drop]]
+    df_merged = df_merged[~df_merged.isnull().any(axis=1)]
+    ###################### keep until here if you want to remove bad features and bad cells
     df_merged['specimen_id'] = df_merged['specimen_id'].astype(str)
     df_merged = df_merged.merge(pd.DataFrame(specimen_ids, columns=["specimen_id"]), on="specimen_id", how='right')
 

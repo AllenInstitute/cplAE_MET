@@ -5,8 +5,10 @@ import umap
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import scipy.io as sio
 from sklearn.metrics import r2_score
 from sklearn.decomposition import PCA
+from sklearn.decomposition import NMF
 from sklearn.metrics import silhouette_score
 import cplAE_MET.utils.utils as ut
 from sklearn.preprocessing import StandardScaler
@@ -290,6 +292,14 @@ def get_PCA_explained_variance_ratio_at_thr(nparray, threshold, show_plots=True)
         plt.show()
     return n_components
 
+def get_NMF_explained_variance_ratio(x, ncomp):
+    model = NMF(n_components=ncomp, init='random', random_state=0, max_iter=200)
+    W = model.fit_transform(x)
+    H = model.components_
+    err = model.reconstruction_err_
+    explained_var = 1 - np.square(err)/np.square(np.linalg.norm(x))
+    return explained_var
+
 def remove_nan_observations(x):
     """takes a np.array assuming that first dimension is the batch size or number of observations and remove
     any observation that has ALL nan features (cells with few nans and few non nans are kept).
@@ -501,12 +511,11 @@ def summarize_platforms(locked_dataset_path):
     T data available an column called E_cell and M_cell. Finally it has a coulumn which has the name of the
     platform that data was collected from
     '''
-    locked_dataset = pd.read_csv("/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/" + locked_dataset_path)
+    locked_dataset = sio.loadmat("/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/" + locked_dataset_path)
 
-    # data modalities mask
-    is_t_1d = np.array(locked_dataset['T_cell'])
-    is_e_1d = np.array(locked_dataset['E_cell'])
-    is_m_1d = np.array(locked_dataset['M_cell'])
+    is_t_1d = np.all(~np.isnan(locked_dataset['T_dat']), axis=1)
+    is_e_1d = np.all(~np.isnan(locked_dataset['E_dat']), axis=1)
+    is_m_1d = np.all(~np.isnan(locked_dataset['M_dat']), axis=1)
     is_te_1d = np.logical_and(is_t_1d, is_e_1d)
     is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
     is_me_1d = np.logical_and(is_m_1d, is_e_1d)
@@ -518,17 +527,40 @@ def summarize_platforms(locked_dataset_path):
     is_me_only = np.logical_and(is_me_1d, ~is_t_1d)
     is_tm_only = np.logical_and(is_tm_1d, ~is_e_1d)
 
-    summary = pd.DataFrame(columns=["platform", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
+    locked_dataset["platform"] = [i.rstrip() for i in locked_dataset["platform"]]
+
+    summary1 = pd.DataFrame(columns=["platform", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
     for i, p in enumerate(["patchseq", "ME", "EM", "fMOST"]):
-        platform_mask = np.array([True if i==p else False for i in locked_dataset["platform"].to_list()])
-        summary.loc[i, "platform"] = p
-        summary.loc[i, "T"] = np.sum(np.logical_and(platform_mask, is_t_only))
-        summary.loc[i, "E"] = np.sum(np.logical_and(platform_mask, is_e_only))
-        summary.loc[i, "M"] = np.sum(np.logical_and(platform_mask, is_m_only))
-        summary.loc[i, "E&T"] = np.sum(np.logical_and(platform_mask, is_te_only))
-        summary.loc[i, "M&T"] = np.sum(np.logical_and(platform_mask, is_tm_only))
-        summary.loc[i, "M&E"] = np.sum(np.logical_and(platform_mask, is_me_only))
-        summary.loc[i, "M&E&T"] = np.sum(np.logical_and(platform_mask, is_met_1d))
-        summary.loc[i, "total"] = int(platform_mask.sum())
-    return summary
+        platform_mask = np.array([True if i==p else False for i in locked_dataset["platform"]])
+        summary1.loc[i, "platform"] = p
+        summary1.loc[i, "T"] = np.sum(np.logical_and(platform_mask, is_t_only))
+        summary1.loc[i, "E"] = np.sum(np.logical_and(platform_mask, is_e_only))
+        summary1.loc[i, "M"] = np.sum(np.logical_and(platform_mask, is_m_only))
+        summary1.loc[i, "E&T"] = np.sum(np.logical_and(platform_mask, is_te_only))
+        summary1.loc[i, "M&T"] = np.sum(np.logical_and(platform_mask, is_tm_only))
+        summary1.loc[i, "M&E"] = np.sum(np.logical_and(platform_mask, is_me_only))
+        summary1.loc[i, "M&E&T"] = np.sum(np.logical_and(platform_mask, is_met_1d))
+        summary1.loc[i, "total"] = int(platform_mask.sum())
+    summary1.loc[4,"platform"] = "all"
+    summary1.loc[4, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary1.sum(axis=0).to_list()[1:]
+
+    if "class" in locked_dataset.keys():
+        locked_dataset["class"] = [i.rstrip() for i in locked_dataset["class"]]
+        summary2 = pd.DataFrame(columns=["class", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
+        for i, c in enumerate(['exc', 'inh']):
+            class_mask = np.array([True if i == c else False for i in locked_dataset["class"]])
+            summary2.loc[i, "class"] = c
+            summary2.loc[i, "T"] = np.sum(np.logical_and(class_mask, is_t_only))
+            summary2.loc[i, "E"] = np.sum(np.logical_and(class_mask, is_e_only))
+            summary2.loc[i, "M"] = np.sum(np.logical_and(class_mask, is_m_only))
+            summary2.loc[i, "E&T"] = np.sum(np.logical_and(class_mask, is_te_only))
+            summary2.loc[i, "M&T"] = np.sum(np.logical_and(class_mask, is_tm_only))
+            summary2.loc[i, "M&E"] = np.sum(np.logical_and(class_mask, is_me_only))
+            summary2.loc[i, "M&E&T"] = np.sum(np.logical_and(class_mask, is_met_1d))
+            summary2.loc[i, "total"] = int(class_mask.sum())
+        summary2.loc[2,"class"] = "all"
+        summary2.loc[2, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary2.sum(axis=0).to_list()[1:]
+        return summary1, summary2
+    else:
+        return summary1
 

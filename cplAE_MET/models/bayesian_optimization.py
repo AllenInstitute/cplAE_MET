@@ -6,7 +6,10 @@ import logging
 import argparse
 import numpy as np
 from pathlib import Path
+from collections import Counter
 from timeit import default_timer as timer
+from sklearn.model_selection import StratifiedKFold
+
 
 
 # From torch
@@ -36,14 +39,14 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v1',         type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_50k_v0',   type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_patch_ME_EM_fMOST_merged_t_type_at50_classification_optimization_v1.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_50k_v0.db',type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
-parser.add_argument('--opt_n_trials',          default=1,             type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=10000,          type=int,   help='Number of epochs to train')
+parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
+parser.add_argument('--n_epochs',              default=2000,              type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -102,7 +105,7 @@ def set_requires_grad(module, val):
 def rm_emp_end_str(myarray):
     return np.array([mystr.rstrip() for mystr in myarray])
 
-def save_results(model, dataloader, dat, fname, train_ind, val_ind):
+def save_results(model, dataloader, D, fname, train_ind, val_ind):
     '''
     Takes the model, run it in the evaluation mode to calculate the embeddings and reconstructions for printing out.
     '''
@@ -111,7 +114,19 @@ def save_results(model, dataloader, dat, fname, train_ind, val_ind):
     for all_data in iter(dataloader):
         with torch.no_grad():
             loss_dict, z_dict, xr_dict = model(all_data)
+    
+    # Reconstruct the arbor densities from the recnstructed pcs
+    min_lim = 0
+    rec_channel = {}
+    rec_nmf = tonumpy(xr_dict['xrm'])
+    for channel in ['ax', 'de', 'api', 'bas']:
+        comp_name = "M_nmf_components_" + channel
+        col_limit = (min_lim , min_lim + D[comp_name].shape[0])
+        rec_channel[channel] = (np.dot(rec_nmf[:, col_limit[0]:col_limit[1]], D[comp_name])).reshape(-1, 120, 4)
+        min_lim = col_limit[1]
 
+    rec_arbor_density = np.stack((rec_channel['ax'], rec_channel['de'], rec_channel['api'], rec_channel['bas']), axis=3)
+    
     savedict = {'XT': tonumpy(all_data['xt']),
                 'XM': tonumpy(all_data['xm']),
                 'XE': tonumpy(all_data['xe']),
@@ -120,29 +135,36 @@ def save_results(model, dataloader, dat, fname, train_ind, val_ind):
                 'XrM': tonumpy(xr_dict['xrm']),
                 'XrM_me_paired': tonumpy(xr_dict['xrm_me_paired']),
                 'XrE_me_paired': tonumpy(xr_dict['xre_me_paired']),
+                'rec_arbor_density': rec_arbor_density,
                 'zm': tonumpy(z_dict['zm']),
                 'ze': tonumpy(z_dict['ze']),
                 'zt': tonumpy(z_dict['zt']),
                 'zme_paired': tonumpy(z_dict['zme_paired']),
-                # 'mu_t': tonumpy(mu_dict['mu_t']),
-                # 'mu_e': tonumpy(mu_dict['mu_e']),
-                # 'mu_m': tonumpy(mu_dict['mu_m']),
-                # 'mu_me': tonumpy(mu_dict['mu_me']),
-                # 'log_sigma_t': tonumpy(log_sigma_dict['log_sigma_t']),
-                # 'log_sigma_e': tonumpy(log_sigma_dict['log_sigma_e']),
-                # 'log_sigma_m': tonumpy(log_sigma_dict['log_sigma_m']),
-                # 'log_sigma_me': tonumpy(log_sigma_dict['log_sigma_me']),
                 'is_t_1d':tonumpy(all_data['is_t_1d']),
                 'is_e_1d':tonumpy(all_data['is_e_1d']),
                 'is_m_1d':tonumpy(all_data['is_m_1d']), 
-                'cluster_id': dat.cluster_id,
-                'gene_ids': dat.gene_ids,
-                'e_features': dat.E_features,
-                'specimen_id': rm_emp_end_str(dat.specimen_id),
-                'cluster_label': rm_emp_end_str(dat.cluster_label),
-                'merged_cluster_label_at40': rm_emp_end_str(dat.merged_cluster_label_at40),
-                'merged_cluster_label_at50': rm_emp_end_str(dat.merged_cluster_label_at50),
-                'cluster_color': rm_emp_end_str(dat.cluster_color),
+                'cluster_id': D['cluster_id'],
+                'gene_ids': D['gene_ids'],
+                'e_features': D['E_features'],
+                'specimen_id': rm_emp_end_str(D['specimen_id']),
+                'cluster_label': rm_emp_end_str(D['cluster_label']),
+                'merged_cluster_label_at40': rm_emp_end_str(D['merged_cluster_label_at40']),
+                'merged_cluster_label_at50': rm_emp_end_str(D['merged_cluster_label_at50']),
+                'merged_cluster_label_at60': rm_emp_end_str(D['merged_cluster_label_at60']),
+                'cluster_color': rm_emp_end_str(D['cluster_color']),
+                'platform': D['platform'],
+                'class':  D['class'],
+                'class_id': D['class_id'],
+                'group': D['group'],
+                'hist_ax_de_api_bas' : D['hist_ax_de_api_bas'],
+                'M_nmf_total_vars_ax': D['M_nmf_total_vars_ax'],
+                'M_nmf_total_vars_de': D['M_nmf_total_vars_de'],
+                'M_nmf_total_vars_api': D['M_nmf_total_vars_api'],
+                'M_nmf_total_vars_bas': D['M_nmf_total_vars_bas'],
+                'M_nmf_components_ax': D['M_nmf_components_ax'],
+                'M_nmf_components_de': D['M_nmf_components_de'],
+                'M_nmf_components_api': D['M_nmf_components_api'],
+                'M_nmf_components_bas': D['M_nmf_components_bas'],
                 'train_ind': train_ind,
                 'val_ind': val_ind}
 
@@ -292,6 +314,7 @@ def main(exp_name="TEST",
         leaf_labels = np.array(dat.cluster_label) #TODO these labels should become part of dataloader
         merged_T_labels_at40 = np.array(dat.merged_cluster_label_at40)
         merged_T_labels_at50 = np.array(dat.merged_cluster_label_at50)
+        merged_T_labels_at60 = np.array(dat.merged_cluster_label_at60)
         T_labels = merged_T_labels_at50
 
         zt = tonumpy(z_dict['zt'])
@@ -313,8 +336,8 @@ def main(exp_name="TEST",
     def build_model(params):
         ''' Config and build the model'''
         
-        for k,v in params.items(): 
-           params[k] = np.exp(v)
+        # for k,v in params.items(): 
+        #    params[k] = np.exp(v)
 
         model_config = dict(variational=variational,
                             latent_dim=latent_dim, 
@@ -384,6 +407,7 @@ def main(exp_name="TEST",
                       'lambda_tune_M_ME': trial.suggest_float('lambda_tune_M_ME', self.lambda_tune_M_ME_range[0], self.lambda_tune_M_ME_range[1]),
                       'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1]),
                       'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}
+            
            
             model, model_config = build_model(params)
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -460,17 +484,36 @@ def main(exp_name="TEST",
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db)
-    dat = MET_exc_inh.from_file(dir_pth['MET_data'])
+    dat, D = MET_exc_inh.from_file(dir_pth['MET_data'])
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
     val_dat = dat[val_ind,:]
+    train_classes = dat.class_id[train_ind]
 
     # Copy the running code into the result dir -----------
     shutil.copy(__file__, dir_pth['result'])
 
+
+    def make_weights_for_balanced_classes(train_classes):
+        count = Counter(train_classes)
+        weight_per_class = {}                                      
+        N = float(sum(count.values()))                                                  
+        for k, v in count.items():                                                   
+            weight_per_class[k] = N/float(v)                                
+        weight = [0] * len(train_classes)                                              
+        for idx, val in enumerate(train_classes):                                          
+            weight[idx] = weight_per_class[val]                                  
+        return weight 
+
+    
+    weights = make_weights_for_balanced_classes(train_classes)                                                                
+    weights = torch.DoubleTensor(weights)                                       
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights)) 
+    
     # Dataset and Dataloader -----------
     train_dataset = MET_dataset(train_dat, device=device)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, drop_last=True, sampler=sampler)
+
 
     val_dataset = MET_dataset(val_dat, device=device)
     val_dataloader = DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False)
@@ -531,7 +574,7 @@ def main(exp_name="TEST",
 
         fname = dir_pth['result'] + f"Results_trial_{study.best_trial.number}.pkl"
 
-        save_results(objective.best_model, dataloader, dat, fname, train_ind, val_ind)
+        save_results(objective.best_model, dataloader, D, fname, train_ind, val_ind)
 
 
 if __name__ == '__main__':

@@ -12,35 +12,36 @@ class MET_exc_inh(object):
         self.cluster_label = dat['cluster_label']
         self.merged_cluster_label_at40 = dat['merged_cluster_label_at40']
         self.merged_cluster_label_at50 = dat['merged_cluster_label_at50']
+        self.merged_cluster_label_at60 = dat['merged_cluster_label_at60']
         self.cluster_id = dat['cluster_id']
         self.cluster_color = dat['cluster_color']
         self.specimen_id = dat['specimen_id']
-        self.gene_ids = dat['gene_ids']
-        self.E_features = dat['E_features']
-        self.M_features = dat['M_features']
+        self.group = dat['group']
+        self.class_id = dat['class_id']
+
 
     @staticmethod
     def from_file(data_path):
-        dat = MET_exc_inh.load(data_path)
-        dat = MET_exc_inh(dat)
-        return dat
+        loaded_data = MET_exc_inh.load(data_path)
+        dat = MET_exc_inh(loaded_data)
+        return dat, loaded_data
 
     def __getitem__(self, inds):
         # convert a simple indsex x[y] to a tuple for consistency
         if not isinstance(inds, tuple):
             inds = tuple(inds)
         return MET_exc_inh(dict(XT=self.XT[inds[0]],
-                                  XE=self.XE[inds[0]],
-                                  XM=self.XM[inds[0]],
-                                  cluster_label=self.cluster_label[inds[0]],
-                                  merged_cluster_label_at40=self.merged_cluster_label_at40[inds[0]],
-                                  merged_cluster_label_at50=self.merged_cluster_label_at50[inds[0]],
-                                  cluster_id=self.cluster_id[inds[0]],
-                                  cluster_color=self.cluster_color[inds[0]],
-                                  specimen_id=self.specimen_id[inds[0]],
-                                  gene_ids=self.gene_ids,
-                                  E_features=self.E_features, 
-                                  M_features=self.M_features))
+                                XE=self.XE[inds[0]],
+                                XM=self.XM[inds[0]],
+                                cluster_label=self.cluster_label[inds[0]],
+                                merged_cluster_label_at40=self.merged_cluster_label_at40[inds[0]],
+                                merged_cluster_label_at50=self.merged_cluster_label_at50[inds[0]],
+                                merged_cluster_label_at60=self.merged_cluster_label_at60[inds[0]],
+                                cluster_id=self.cluster_id[inds[0]],
+                                cluster_color=self.cluster_color[inds[0]],
+                                specimen_id=self.specimen_id[inds[0]],
+                                group=self.group[inds[0]],
+                                class_id=self.class_id[inds[0]]))
 
 
     def __repr__(self):
@@ -69,6 +70,7 @@ class MET_exc_inh(object):
     def isM_ind(self): return np.flatnonzero(self.isM_1d)
 
 
+
     @staticmethod
     def load(data_path):
         """Loads processed patchseq MET data.
@@ -88,17 +90,32 @@ class MET_exc_inh(object):
         D['cluster_label'] = data['cluster_label']
         D['merged_cluster_label_at40'] = data['merged_cluster_label_at40']
         D['merged_cluster_label_at50'] = data['merged_cluster_label_at50']
+        D['merged_cluster_label_at60'] = data['merged_cluster_label_at60']
         D['cluster_id'] = data['cluster_id'].astype(int)
         D['cluster_color'] = data['cluster_color']
+        D['class'] = data['class']
+        D['class_id'] = data['class_id']
+        D['group'] = data['group']
         D['specimen_id'] = data['specimen_id']
+        D['platform'] = data['platform']
         D['gene_ids'] = data['gene_ids']
         D['E_features'] = data['E_features']
         D['M_features'] = data['M_features']
+        D['hist_ax_de_api_bas'] = data['hist_ax_de_api_bas']
+        D['M_nmf_total_vars_ax'] = data['M_nmf_total_vars_ax']
+        D['M_nmf_total_vars_de'] = data['M_nmf_total_vars_de']
+        D['M_nmf_total_vars_api'] = data['M_nmf_total_vars_api']
+        D['M_nmf_total_vars_bas'] = data['M_nmf_total_vars_bas']
+        D['M_nmf_components_ax'] = data['M_nmf_components_ax']
+        D['M_nmf_components_de'] = data['M_nmf_components_de']
+        D['M_nmf_components_api'] = data['M_nmf_components_api']
+        D['M_nmf_components_bas'] = data['M_nmf_components_bas']
 
         # removing extra whitespaces from strings
         D['cluster_label'] = np.array([c.strip() for c in D['cluster_label']])
         D['merged_cluster_label_at40'] = np.array([c.strip() for c in D['merged_cluster_label_at40']])
         D['merged_cluster_label_at50'] = np.array([c.strip() for c in D['merged_cluster_label_at50']])
+        D['merged_cluster_label_at60'] = np.array([c.strip() for c in D['merged_cluster_label_at60']])
         D['cluster_color'] = np.array([c.strip() for c in D['cluster_color']])
         D['gene_ids'] = np.array([c.strip() for c in D['gene_ids']])
         D['E_features'] = np.array([c.strip() for c in D['E_features']])
@@ -108,11 +125,14 @@ class MET_exc_inh(object):
         isnan = D['cluster_label']=='nan'
         isnan_merged_at40 = D['merged_cluster_label_at40'] == 'nan'
         isnan_merged_at50 = D['merged_cluster_label_at50'] == 'nan'
+        isnan_merged_at60 = D['merged_cluster_label_at60'] == 'nan'
         assert np.all(isnan == isnan_merged_at40) , f"When t types are merged, nans must be the same"
         assert np.all(isnan == isnan_merged_at50) , f"When t types are merged, nans must be the same"
+        assert np.all(isnan == isnan_merged_at60) , f"When t types are merged, nans must be the same"
         D['cluster_label'][isnan] = 'NA'
         D['merged_cluster_label_at40'][isnan] = 'NA'
         D['merged_cluster_label_at50'][isnan] = 'NA'
+        D['merged_cluster_label_at60'][isnan] = 'NA'
         D['cluster_id'][isnan] = np.max(D['cluster_id']) + 1
         D['cluster_color'][isnan] = '#888888'
         return D
