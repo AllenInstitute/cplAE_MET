@@ -39,14 +39,14 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_50k_v0',   type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='test',   type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_50k_v0.db',type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='test.db',type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2000,              type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=2,              type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -124,9 +124,13 @@ def save_results(model, dataloader, D, fname, train_ind, val_ind):
         col_limit = (min_lim , min_lim + D[comp_name].shape[0])
         rec_channel[channel] = (np.dot(rec_nmf[:, col_limit[0]:col_limit[1]], D[comp_name])).reshape(-1, 120, 4)
         min_lim = col_limit[1]
+        print(min_lim)
 
-    rec_arbor_density = np.stack((rec_channel['ax'], rec_channel['de'], rec_channel['api'], rec_channel['bas']), axis=3)
-    
+    rec_arbor_density = np.stack((rec_channel['ax'] * D['M_nmf_total_vars_ax'], 
+                                  rec_channel['de'] * D['M_nmf_total_vars_de'],
+                                  rec_channel['api'] * D['M_nmf_total_vars_api'], 
+                                  rec_channel['bas'] * D['M_nmf_total_vars_bas']), axis=3) 
+        
     savedict = {'XT': tonumpy(all_data['xt']),
                 'XM': tonumpy(all_data['xm']),
                 'XE': tonumpy(all_data['xe']),
@@ -336,8 +340,8 @@ def main(exp_name="TEST",
     def build_model(params):
         ''' Config and build the model'''
         
-        # for k,v in params.items(): 
-        #    params[k] = np.exp(v)
+        for k,v in params.items(): 
+            params[k] = np.exp(v)
 
         model_config = dict(variational=variational,
                             latent_dim=latent_dim, 
@@ -439,7 +443,6 @@ def main(exp_name="TEST",
 
         # Training -----------
         for epoch in range(n_epochs):
-            # print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
@@ -480,7 +483,7 @@ def main(exp_name="TEST",
 
     # Main code ###############################################################
     # Set the device -----------
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db)
