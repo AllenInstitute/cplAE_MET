@@ -39,22 +39,22 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='test',   type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_50k_v0',   type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='test.db',type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_50k_v0.db',type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2,              type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=2500,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
 parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=1.0,            type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_E',               default=1.0,            type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_ME',              default=1.0,            type=float, help='ME reconstruction loss weight')
+parser.add_argument('--alpha_M',               default=(-2,2),           type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_E',               default=(-2,2),            type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_ME',              default=(-2,2),            type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
 parser.add_argument('--lambda_TM',             default=1.0,            type=float, help='coupling loss weight between T and M')
 parser.add_argument('--lambda_ME',             default=1.0,            type=float, help='coupling loss weight between M and E')
@@ -278,10 +278,10 @@ def main(exp_name="TEST",
          n_epochs=10, 
          fold_n=0, 
          KLD_beta=1.0,
-         alpha_T=0.0,
-         alpha_M=0.0,
-         alpha_E=0.0,
-         alpha_ME=0.0,
+         alpha_T=1.0,
+         alpha_M=(-2,2),
+         alpha_E=(-2,2),
+         alpha_ME=(-2,2),
          lambda_TE=0.0,
          lambda_TM=0.0,
          lambda_ME=0.0,
@@ -348,11 +348,11 @@ def main(exp_name="TEST",
                             batch_size=batch_size,
                             KLD_beta=KLD_beta,
                             T=dict(dropout_p=0.2, alpha_T=alpha_T),
-                            E=dict(gnoise_std=train_dataset.gnoise_e_std, gnoise_std_frac=0.05, dropout_p=0.2, alpha_E=alpha_E),
-                            M=dict(gnoise_std=train_dataset.gnoise_m_std, gnoise_std_frac=0.005, dropout_p=0.2, alpha_M=alpha_M),
+                            E=dict(gnoise_std=train_dataset.gnoise_e_std, gnoise_std_frac=0.05, dropout_p=0.2, alpha_E=params['alpha_E']),
+                            M=dict(gnoise_std=train_dataset.gnoise_m_std, gnoise_std_frac=0.005, dropout_p=0.2, alpha_M=params['alpha_M']),
                             TE=dict(lambda_TE=lambda_TE, lambda_tune_T_E=params['lambda_tune_T_E'], lambda_tune_E_T=params['lambda_tune_E_T']),
                             TM=dict(lambda_TM=lambda_TM, lambda_tune_T_M=params['lambda_tune_T_M'], lambda_tune_M_T=params['lambda_tune_M_T']),
-                            ME=dict(alpha_ME=alpha_ME, lambda_ME=lambda_ME, lambda_tune_M_E=params['lambda_tune_M_E'], lambda_tune_E_M=params['lambda_tune_E_M']),
+                            ME=dict(alpha_ME=params['alpha_ME'], lambda_ME=lambda_ME, lambda_tune_M_E=params['lambda_tune_M_E'], lambda_tune_E_M=params['lambda_tune_E_M']),
                             ME_T=dict(lambda_ME_T=lambda_ME_T, lambda_tune_ME_T=params['lambda_tune_ME_T'], lambda_tune_T_ME=params['lambda_tune_T_ME']),
                             ME_M=dict(lambda_ME_M=lambda_ME_M, lambda_tune_ME_M=params['lambda_tune_ME_M'], lambda_tune_M_ME=params['lambda_tune_M_ME']), 
                             ME_E=dict(lambda_ME_E=lambda_ME_E, lambda_tune_ME_E=params['lambda_tune_ME_E'], lambda_tune_E_ME=params['lambda_tune_E_ME'])
@@ -365,6 +365,9 @@ def main(exp_name="TEST",
     class Objective:
         '''Objective class for optimization'''
         def __init__(self,
+                     alpha_E=None,
+                     alpha_M=None,
+                     alpha_ME=None,
                      lambda_tune_T_E_range=None, 
                      lambda_tune_E_T_range=None, 
                      lambda_tune_T_M_range=None,
@@ -379,7 +382,9 @@ def main(exp_name="TEST",
                      lambda_tune_M_ME_range=None, 
                      previous_ML_model_weights_to_load=None
                      ):
-                     
+            self.alpha_E = alpha_E
+            self.alpha_M = alpha_M      
+            self.alpha_ME = alpha_ME   
             self.lambda_tune_T_E_range = lambda_tune_T_E_range
             self.lambda_tune_E_T_range = lambda_tune_E_T_range
             self.lambda_tune_T_M_range = lambda_tune_T_M_range
@@ -399,7 +404,10 @@ def main(exp_name="TEST",
             self._current_optimizer = None
 
         def __call__(self, trial):
-            params = {'lambda_tune_T_E': trial.suggest_float('lambda_tune_T_E', self.lambda_tune_T_E_range[0], self.lambda_tune_T_E_range[1]),
+            params = {'alpha_E': trial.suggest_float('alpha_E', self.alpha_E[0], self.alpha_E[1]),
+                      'alpha_M': trial.suggest_float('alpha_M', self.alpha_M[0], self.alpha_M[1]),
+                      'alpha_ME': trial.suggest_float('alpha_ME', self.alpha_ME[0], self.alpha_ME[1]),
+                      'lambda_tune_T_E': trial.suggest_float('lambda_tune_T_E', self.lambda_tune_T_E_range[0], self.lambda_tune_T_E_range[1]),
                       'lambda_tune_E_T': trial.suggest_float('lambda_tune_E_T', self.lambda_tune_E_T_range[0], self.lambda_tune_E_T_range[1]),
                       'lambda_tune_T_M': trial.suggest_float('lambda_tune_T_M', self.lambda_tune_T_M_range[0], self.lambda_tune_T_M_range[1]),
                       'lambda_tune_M_T': trial.suggest_float('lambda_tune_M_T', self.lambda_tune_M_T_range[0], self.lambda_tune_M_T_range[1]),
@@ -547,19 +555,22 @@ def main(exp_name="TEST",
         model_to_load = None
         print("Starting the model from scratch as there is no model to load")
 
-    objective = Objective(lambda_tune_T_E_range = lambda_tune_T_E_range, 
-                             lambda_tune_E_T_range = lambda_tune_E_T_range, 
-                             lambda_tune_T_M_range = lambda_tune_T_M_range,
-                             lambda_tune_M_T_range = lambda_tune_M_T_range,
-                             lambda_tune_E_M_range = lambda_tune_E_M_range,
-                             lambda_tune_M_E_range = lambda_tune_M_E_range, 
-                             lambda_tune_T_ME_range = lambda_tune_T_ME_range,
-                             lambda_tune_ME_T_range = lambda_tune_ME_T_range,
-                             lambda_tune_ME_M_range = lambda_tune_ME_M_range,
-                             lambda_tune_M_ME_range = lambda_tune_M_ME_range,
-                             lambda_tune_ME_E_range = lambda_tune_ME_E_range,
-                             lambda_tune_E_ME_range = lambda_tune_E_ME_range,
-                             previous_ML_model_weights_to_load = model_to_load)
+    objective = Objective(alpha_E = alpha_E,
+                          alpha_M = alpha_M,
+                          alpha_ME = alpha_ME,
+                          lambda_tune_T_E_range = lambda_tune_T_E_range, 
+                          lambda_tune_E_T_range = lambda_tune_E_T_range, 
+                          lambda_tune_T_M_range = lambda_tune_T_M_range,
+                          lambda_tune_M_T_range = lambda_tune_M_T_range,
+                          lambda_tune_E_M_range = lambda_tune_E_M_range,
+                          lambda_tune_M_E_range = lambda_tune_M_E_range, 
+                          lambda_tune_T_ME_range = lambda_tune_T_ME_range,
+                          lambda_tune_ME_T_range = lambda_tune_ME_T_range,
+                          lambda_tune_ME_M_range = lambda_tune_ME_M_range,
+                          lambda_tune_M_ME_range = lambda_tune_M_ME_range,
+                          lambda_tune_ME_E_range = lambda_tune_ME_E_range,
+                          lambda_tune_E_ME_range = lambda_tune_E_ME_range,
+                          previous_ML_model_weights_to_load = model_to_load)
 
     study.optimize(objective, n_trials=opt_n_trials, callbacks=[objective.callback])
 
