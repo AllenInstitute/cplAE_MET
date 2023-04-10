@@ -211,7 +211,7 @@ def plot_z_v2(output, xlim=(-5, 5), ylim=(-5, 5), zme_paired=None):
     return
 
 
-def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), zme_paired=None):
+def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), platform=None):
     """plots M,E,T representations
 
     Args:
@@ -221,47 +221,56 @@ def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), zme_paired=None):
         dat (cluster_color):
         xlim (tuple): plot limits. Defaults to (-5, 5).
         ylim (tuple): plot limits. Defaults to (-5, 5).
+        platform: If given, then all the cells of that platform will be shown in gray color
     """
     is_me_1d = np.logical_and(output['is_e_1d'], output['is_m_1d'])
     is_te_1d = np.logical_and(output['is_e_1d'], output['is_t_1d'])
     is_mt_1d = np.logical_and(output['is_m_1d'], output['is_t_1d'])
     is_met_1d = np.logical_and(is_me_1d, output['is_t_1d'])
 
+    if platform:
+        plats = np.array([i.rstrip() for i in output['platform']])
+        plats_mask = plats == platform
+
+
     fig = plt.figure(figsize=(20,5))
 
     ax = fig.add_subplot(141, projection='3d')
     ax.scatter(output['zt'][output['is_t_1d']][:,2], output['zt'][output['is_t_1d']][:,1], 
-               output['zt'][output['is_t_1d']][:,0], c=output['cluster_color'][output['is_t_1d']],s=1)
+                output['zt'][output['is_t_1d']][:,0], c=output['cluster_color'][output['is_t_1d']],s=1)
+    if platform:
+        ax.scatter(output['zt'][plats_mask][:,2], output['zt'][plats_mask][:,1], 
+                output['zt'][plats_mask][:,0], c="#DCDCDC",s=1)
     ax.set(title='T', xlim=xlim, ylim=ylim, zlim=zlim)
-    # ax.set_xticklabels(labels=["-2", "" , "-1", "", "0", "", "1",""])
-    # ax.set_yticklabels(labels=["-1", "" , "0", "", "1", "", "2",""])
-
 
 
     ax = fig.add_subplot(142, projection='3d')
     ax.scatter(output['ze'][is_te_1d][:,2], output['ze'][is_te_1d][:,1], 
-               output['ze'][is_te_1d][:,0], c=output['cluster_color'][is_te_1d],s=1)
+                output['ze'][is_te_1d][:,0], c=output['cluster_color'][is_te_1d],s=1)
+    if platform:
+        ax.scatter(output['ze'][plats_mask][:,2], output['ze'][plats_mask][:,1], 
+                output['ze'][plats_mask][:,0], c="#DCDCDC",s=1)
     ax.set(title='E', xlim=xlim, ylim=ylim, zlim=zlim)
-    # ax.set_xticklabels(labels=[])
-    # ax.set_yticklabels(labels=[])
-    # ax.set_zticklabels(labels=[])
+
 
     ax = fig.add_subplot(143, projection='3d')
     ax.scatter(output['zme_paired'][is_met_1d][:,2], output['zme_paired'][is_met_1d][:,1], 
-               output['zme_paired'][is_met_1d][:,0], c=output['cluster_color'][is_met_1d],s=1)
+                output['zme_paired'][is_met_1d][:,0], c=output['cluster_color'][is_met_1d],s=1)
+    if platform:
+        ax.scatter(output['zme_paired'][plats_mask][:,2], output['zme_paired'][plats_mask][:,1], 
+                output['zme_paired'][plats_mask][:,0], c="#DCDCDC",s=1)
     ax.set(title='ME', xlim=xlim, ylim=ylim, zlim=zlim)
-    # ax.set_xticklabels(labels=[])
-    # ax.set_yticklabels(labels=[])
-    # ax.set_zticklabels(labels=[])
+
 
     ax = fig.add_subplot(144, projection='3d')
     ax.scatter(output['zm'][is_mt_1d][:,2], output['zm'][is_mt_1d][:,1], 
-               output['zm'][is_mt_1d][:,0], c=output['cluster_color'][is_mt_1d], s=1)
+                output['zm'][is_mt_1d][:,0], c=output['cluster_color'][is_mt_1d], s=1)
+    if platform:
+        ax.scatter(output['zm'][plats_mask][:,2], output['zm'][plats_mask][:,1], 
+                output['zm'][plats_mask][:,0], c="#DCDCDC", s=1)
     ax.set(title='M', xlim=xlim, ylim=ylim, zlim=zlim)
-    # ax.set_xticklabels(labels=[])
-    # ax.set_yticklabels(labels=[])
-    # ax.set_zticklabels(labels=[])
-    
+
+
     plt.tight_layout()
     plt.show()
     return

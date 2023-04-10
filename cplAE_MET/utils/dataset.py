@@ -17,6 +17,7 @@ class MET_exc_inh(object):
         self.cluster_color = dat['cluster_color']
         self.specimen_id = dat['specimen_id']
         self.group = dat['group']
+        self.subgroup = dat['subgroup']
         self.class_id = dat['class_id']
 
 
@@ -41,6 +42,7 @@ class MET_exc_inh(object):
                                 cluster_color=self.cluster_color[inds[0]],
                                 specimen_id=self.specimen_id[inds[0]],
                                 group=self.group[inds[0]],
+                                subgroup=self.subgroup[inds[0]],
                                 class_id=self.class_id[inds[0]]))
 
 
@@ -96,6 +98,7 @@ class MET_exc_inh(object):
         D['class'] = data['class']
         D['class_id'] = data['class_id']
         D['group'] = data['group']
+        D['subgroup'] = data['subgroup']
         D['specimen_id'] = data['specimen_id']
         D['platform'] = data['platform']
         D['gene_ids'] = data['gene_ids']

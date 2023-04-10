@@ -39,20 +39,20 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_50k_v0',   type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_50k_sratified_50met',   type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_50k_v0.db',type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_50k_sratified_50met.db',type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2500,           type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=2500,            type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
 parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=(-2,2),           type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_M',               default=(-2,2),            type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_E',               default=(-2,2),            type=float, help='E reconstruction loss weight')
 parser.add_argument('--alpha_ME',              default=(-2,2),            type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
@@ -121,15 +121,13 @@ def save_results(model, dataloader, D, fname, train_ind, val_ind):
     rec_nmf = tonumpy(xr_dict['xrm'])
     for channel in ['ax', 'de', 'api', 'bas']:
         comp_name = "M_nmf_components_" + channel
+        total_var_name = "M_nmf_total_vars_" + channel
         col_limit = (min_lim , min_lim + D[comp_name].shape[0])
-        rec_channel[channel] = (np.dot(rec_nmf[:, col_limit[0]:col_limit[1]], D[comp_name])).reshape(-1, 120, 4)
+        rec_channel[channel] = (np.dot(rec_nmf[:, col_limit[0]:col_limit[1]] * D[total_var_name], D[comp_name])).reshape(-1, 120, 4)
         min_lim = col_limit[1]
-        print(min_lim)
+    
 
-    rec_arbor_density = np.stack((rec_channel['ax'] * D['M_nmf_total_vars_ax'], 
-                                  rec_channel['de'] * D['M_nmf_total_vars_de'],
-                                  rec_channel['api'] * D['M_nmf_total_vars_api'], 
-                                  rec_channel['bas'] * D['M_nmf_total_vars_bas']), axis=3) 
+    rec_arbor_density = np.stack((rec_channel['ax'], rec_channel['de'], rec_channel['api'] , rec_channel['bas'] ), axis=3) 
         
     savedict = {'XT': tonumpy(all_data['xt']),
                 'XM': tonumpy(all_data['xm']),
@@ -160,6 +158,7 @@ def save_results(model, dataloader, D, fname, train_ind, val_ind):
                 'class':  D['class'],
                 'class_id': D['class_id'],
                 'group': D['group'],
+                'subgroup': D['subgroup'],
                 'hist_ax_de_api_bas' : D['hist_ax_de_api_bas'],
                 'M_nmf_total_vars_ax': D['M_nmf_total_vars_ax'],
                 'M_nmf_total_vars_de': D['M_nmf_total_vars_de'],
@@ -347,15 +346,35 @@ def main(exp_name="TEST",
                             latent_dim=latent_dim, 
                             batch_size=batch_size,
                             KLD_beta=KLD_beta,
-                            T=dict(dropout_p=0.2, alpha_T=alpha_T),
-                            E=dict(gnoise_std=train_dataset.gnoise_e_std, gnoise_std_frac=0.05, dropout_p=0.2, alpha_E=params['alpha_E']),
-                            M=dict(gnoise_std=train_dataset.gnoise_m_std, gnoise_std_frac=0.005, dropout_p=0.2, alpha_M=params['alpha_M']),
-                            TE=dict(lambda_TE=lambda_TE, lambda_tune_T_E=params['lambda_tune_T_E'], lambda_tune_E_T=params['lambda_tune_E_T']),
-                            TM=dict(lambda_TM=lambda_TM, lambda_tune_T_M=params['lambda_tune_T_M'], lambda_tune_M_T=params['lambda_tune_M_T']),
-                            ME=dict(alpha_ME=params['alpha_ME'], lambda_ME=lambda_ME, lambda_tune_M_E=params['lambda_tune_M_E'], lambda_tune_E_M=params['lambda_tune_E_M']),
-                            ME_T=dict(lambda_ME_T=lambda_ME_T, lambda_tune_ME_T=params['lambda_tune_ME_T'], lambda_tune_T_ME=params['lambda_tune_T_ME']),
-                            ME_M=dict(lambda_ME_M=lambda_ME_M, lambda_tune_ME_M=params['lambda_tune_ME_M'], lambda_tune_M_ME=params['lambda_tune_M_ME']), 
-                            ME_E=dict(lambda_ME_E=lambda_ME_E, lambda_tune_ME_E=params['lambda_tune_ME_E'], lambda_tune_E_ME=params['lambda_tune_E_ME'])
+                            T=dict(dropout_p=0.2, 
+                                   alpha_T=alpha_T),
+                            E=dict(gnoise_std=train_dataset.gnoise_e_std, 
+                                   gnoise_std_frac=0.05, 
+                                   dropout_p=0.2, 
+                                   alpha_E=params['alpha_E']),
+                            M=dict(gnoise_std=train_dataset.gnoise_m_std, 
+                                   gnoise_std_frac=0.005, 
+                                   dropout_p=0.2, 
+                                   alpha_M=params['alpha_M']),
+                            TE=dict(lambda_TE=lambda_TE,
+                                    lambda_tune_T_E=params['lambda_tune_T_E'], 
+                                    lambda_tune_E_T=params['lambda_tune_E_T']),
+                            TM=dict(lambda_TM=lambda_TM, 
+                                    lambda_tune_T_M=params['lambda_tune_T_M'], 
+                                    lambda_tune_M_T=params['lambda_tune_M_T']),
+                            ME=dict(alpha_ME=params['alpha_ME'], 
+                                    lambda_ME=lambda_ME, 
+                                    lambda_tune_M_E=params['lambda_tune_M_E'], 
+                                    lambda_tune_E_M=params['lambda_tune_E_M']),
+                            ME_T=dict(lambda_ME_T=lambda_ME_T, 
+                                      lambda_tune_ME_T=params['lambda_tune_ME_T'], 
+                                      lambda_tune_T_ME=params['lambda_tune_T_ME']),
+                            ME_M=dict(lambda_ME_M=lambda_ME_M, 
+                                      lambda_tune_ME_M=params['lambda_tune_ME_M'], 
+                                      lambda_tune_M_ME=params['lambda_tune_M_ME']), 
+                            ME_E=dict(lambda_ME_E=lambda_ME_E, 
+                                      lambda_tune_ME_E=params['lambda_tune_ME_E'], 
+                                      lambda_tune_E_ME=params['lambda_tune_E_ME'])
                             )  
 
         model = Model_ME_T(model_config)
@@ -418,7 +437,7 @@ def main(exp_name="TEST",
                       'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
                       'lambda_tune_M_ME': trial.suggest_float('lambda_tune_M_ME', self.lambda_tune_M_ME_range[0], self.lambda_tune_M_ME_range[1]),
                       'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1]),
-                      'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}
+                      'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}       
             
            
             model, model_config = build_model(params)
@@ -450,9 +469,22 @@ def main(exp_name="TEST",
         optimizer_to(optimizer,device)
 
         # Training -----------
+        # x_inh = []
+        # x_exc = []
+        # inh =[]
+        # exc = []
+        # i =0 
         for epoch in range(n_epochs):
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
+                # print(i)
+                # inh.append(tonumpy(torch.sum(batch['group']==0)))
+                # exc.append(tonumpy(torch.sum(batch['group']==1)))
+                # x_inh.append(tonumpy(torch.sum(batch['subgroup']==2)))
+                # x_exc.append(tonumpy(torch.sum(batch['subgroup']==3)))
+                # i += 1
+                # if ((i%100)==0):
+                    # print("here", np.mean(inh), np.mean(exc), np.mean(x_inh), np.mean(x_exc))
                 optimizer.zero_grad()
                 # forward pass -----------
                 loss_dict, _, _ = model(batch)
@@ -499,26 +531,35 @@ def main(exp_name="TEST",
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
     val_dat = dat[val_ind,:]
-    train_classes = dat.class_id[train_ind]
+    train_dat = dat[train_ind,:]
+    train_classes = train_dat.group
+    train_subclasses = train_dat.subgroup
 
     # Copy the running code into the result dir -----------
     shutil.copy(__file__, dir_pth['result'])
 
 
-    def make_weights_for_balanced_classes(train_classes):
+    def make_weights_for_balanced_classes(train_classes, train_subclasses):
         count = Counter(train_classes)
-        weight_per_class = {}                                      
+        count_subclass = Counter(train_subclasses)
+        weight_per_class = {}
+        weight_per_subclass = {}                                      
         N = float(sum(count.values()))                                                  
         for k, v in count.items():                                                   
-            weight_per_class[k] = N/float(v)                                
+            weight_per_class[k] = N/float(v)
+        weight_per_subclass[0] = weight_per_class[0]
+        weight_per_subclass[2] = weight_per_class[0]
+        weight_per_subclass[1] = weight_per_class[1] - 0.11
+        weight_per_subclass[3] = weight_per_class[1] + (count_subclass[1] * 0.11 / count_subclass[3])
         weight = [0] * len(train_classes)                                              
-        for idx, val in enumerate(train_classes):                                          
-            weight[idx] = weight_per_class[val]                                  
+        for idx, val in enumerate(train_subclasses):                                          
+            weight[idx] = weight_per_subclass[val]  
         return weight 
 
     
-    weights = make_weights_for_balanced_classes(train_classes)                                                                
+    weights = make_weights_for_balanced_classes(train_classes, train_subclasses)                                                                
     weights = torch.DoubleTensor(weights)                                       
+
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights)) 
     
     # Dataset and Dataloader -----------

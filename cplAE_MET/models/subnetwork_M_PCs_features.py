@@ -19,8 +19,8 @@ class Enc_xm_to_zm_int(nn.Module):
         if gnoise_std is not None:
             self.gnoise_std = gnoise_std * gnoise_std_frac
         self.drp = nn.Dropout(p=dropout_p)
-        self.fc_0 = nn.Linear(99, 40)
-        self.fc_1 = nn.Linear(40, 40)
+        self.fc_0 = nn.Linear(601, 100)
+        self.fc_1 = nn.Linear(100, 40)
         self.bn = nn.BatchNorm1d(40, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.fc_2 = nn.Linear(40, 40)
         self.fc_3 = nn.Linear(40, out_dim)
@@ -93,12 +93,12 @@ class Dec_zm_int_to_xm(nn.Module):
     """Decodes `zm_int` into the reconstruction `xm`
     """
 
-    def __init__(self, in_dim=11, out_dim=99):
+    def __init__(self, in_dim=11, out_dim=601):
         super(Dec_zm_int_to_xm, self).__init__()
         self.fc_0 = nn.Linear(in_dim, 40)
         self.fc_1 = nn.Linear(40, 40)
-        self.fc_2 = nn.Linear(40, 40)
-        self.fc_3 = nn.Linear(40, out_dim)
+        self.fc_2 = nn.Linear(40, 100)
+        self.fc_3 = nn.Linear(100, out_dim)
         self.relu = nn.ReLU()
         return
 

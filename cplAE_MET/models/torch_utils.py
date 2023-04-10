@@ -116,6 +116,7 @@ class MET_dataset(Dataset):
         self.xe = met_dataclass_obj.XE
         self.xm = met_dataclass_obj.XM
         self.group = met_dataclass_obj.group
+        self.subgroup = met_dataclass_obj.subgroup
         self.class_id = met_dataclass_obj.class_id
         self.astensor = lambda x: torch.as_tensor(x).float().to(self.device)
         self.gnoise_e_std = torch.var(torch.nan_to_num(self.astensor(self.xe)), dim=0, keepdim=True).sqrt()
@@ -150,15 +151,18 @@ class MET_dataset(Dataset):
         group = self.astensor(self.group[idx, ...])
         assert ~torch.isnan(group) #make sure all the cells have a class
 
+        subgroup = self.astensor(self.subgroup[idx, ...])
+        assert ~torch.isnan(subgroup) #make sure all the cells have a class
+
         is_m_1d = self.is_m_1d[idx]
         is_e_1d = self.is_e_1d[idx]
         is_t_1d = self.is_t_1d[idx]
         is_me_1d = self.is_me_1d[idx]
         is_met_1d = self.is_met_1d[idx]
 
-        return dict(xm=xm, xe=xe, xt=xt, group=group, class_id=class_id,
-                    valid_xm=valid_xm,
-                    valid_xe=valid_xe, valid_xt=valid_xt,
+        return dict(xm=xm, xe=xe, xt=xt, 
+                    group=group, subgroup=subgroup, class_id=class_id,
+                    valid_xm=valid_xm, valid_xe=valid_xe, valid_xt=valid_xt,
                     is_m_1d=is_m_1d, is_e_1d=is_e_1d, is_t_1d=is_t_1d,
                     is_me_1d=is_me_1d, is_met_1d=is_met_1d)
 
