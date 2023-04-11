@@ -39,14 +39,14 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_50k_sratified_50met',   type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='test',   type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_50k_sratified_50met.db',type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='test.db',type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2500,            type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=10,            type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -484,7 +484,7 @@ def main(exp_name="TEST",
                 # x_exc.append(tonumpy(torch.sum(batch['subgroup']==3)))
                 # i += 1
                 # if ((i%100)==0):
-                    # print("here", np.mean(inh), np.mean(exc), np.mean(x_inh), np.mean(x_exc))
+                #     print("here", np.mean(inh), np.mean(exc), np.mean(x_inh), np.mean(x_exc))
                 optimizer.zero_grad()
                 # forward pass -----------
                 loss_dict, _, _ = model(batch)
@@ -538,28 +538,39 @@ def main(exp_name="TEST",
     # Copy the running code into the result dir -----------
     shutil.copy(__file__, dir_pth['result'])
 
+    def make_weights_for_balanced_classes(train_classes, train_subclasses, n_met = 54, met_subclass_id = [2, 3]):
 
-    def make_weights_for_balanced_classes(train_classes, train_subclasses):
-        count = Counter(train_classes)
-        count_subclass = Counter(train_subclasses)
-        weight_per_class = {}
-        weight_per_subclass = {}                                      
-        N = float(sum(count.values()))                                                  
-        for k, v in count.items():                                                   
+        met_prob = n_met/(batch_size/2)
+        others_prob = 1 - met_prob
+
+        dic = {}
+        for i, j in zip(train_classes, train_subclasses):
+            dic[j] = i
+
+        class_counts = Counter(train_classes)
+        subclass_counts = Counter(train_subclasses)
+        N = float(sum(class_counts.values()))
+        weight_per_class = {}  
+        for k, v in class_counts.items():    
             weight_per_class[k] = N/float(v)
-        weight_per_subclass[0] = weight_per_class[0]
-        weight_per_subclass[2] = weight_per_class[0]
-        weight_per_subclass[1] = weight_per_class[1] - 0.11
-        weight_per_subclass[3] = weight_per_class[1] + (count_subclass[1] * 0.11 / count_subclass[3])
-        weight = [0] * len(train_classes)                                              
+
+        weight_per_subclass = {}   
+        for k, v in subclass_counts.items():
+            c = dic[k]
+            if k in met_subclass_id:
+                weight_per_subclass[k] = (weight_per_class[c] * met_prob/v) * class_counts[c]
+            else: 
+                weight_per_subclass[k] = (weight_per_class[c] * others_prob/v) * class_counts[c]
+
+        weights = [0] * len(train_subclasses)
         for idx, val in enumerate(train_subclasses):                                          
-            weight[idx] = weight_per_subclass[val]  
-        return weight 
+            weights[idx] = weight_per_subclass[val]
+
+        return weights
 
     
     weights = make_weights_for_balanced_classes(train_classes, train_subclasses)                                                                
     weights = torch.DoubleTensor(weights)                                       
-
     sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights)) 
     
     # Dataset and Dataloader -----------
