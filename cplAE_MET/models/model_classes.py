@@ -105,8 +105,8 @@ class Model_ME_T(nn.Module):
         loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...])
 
 
-        loss_dict['BCELoss_m'] = self.compute_BCE_loss(xrm[is_m_1d][:,:600][valid_xm[is_m_1d][:,:600]], xm[is_m_1d][:,:600][valid_xm[is_m_1d][:,:600]])
-        loss_dict['BCELoss_me_m'] = self.compute_BCE_loss(xrm[is_me_1d][:,:600][valid_xm[is_me_1d][:,:600]], xm[is_me_1d][:,:600][valid_xm[is_me_1d][:,:600]])
+        loss_dict['BCELoss_m'] = self.compute_BCE_loss(xrm[is_m_1d][valid_xm[is_m_1d]], xm[is_m_1d][valid_xm[is_m_1d]])
+        loss_dict['BCELoss_me_m'] = self.compute_BCE_loss(xrm[is_me_1d][valid_xm[is_me_1d]], xm[is_me_1d][valid_xm[is_me_1d]])
         
         loss_dict['cpl_me->t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
         loss_dict['cpl_t->me'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
