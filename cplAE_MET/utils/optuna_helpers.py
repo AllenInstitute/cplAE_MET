@@ -4,6 +4,7 @@ import numpy as np
 
 def load_study(exp_name, results_folder="/home/fahimehb/Local/new_codes/cplAE_MET/data/results/"):
     storage = f'sqlite:///{results_folder}{exp_name}/{exp_name}.db'
+    print(storage)
     study = optuna.create_study(study_name=exp_name,
                                 direction="maximize",
                                 sampler=optuna.samplers.TPESampler(),

@@ -503,19 +503,19 @@ def summary_leiden_comm_silhouette_score(output):
     return df
 
 
-def summarize_platforms(locked_dataset_path):
+def summarize_data_output_pkl(exp_name, pkl_output_file):
     '''
     Takes the spec id locked dataset and returns the summary of the paltforms and modalities available
     Args:
-    locked_dataset_path: a file which has a column for specimen_id, a column called T_cell for all the cells that have 
-    T data available an column called E_cell and M_cell. Finally it has a coulumn which has the name of the
-    platform that data was collected from
+    exp_name: name of the experiment folder in the results folder
+    pkl_output_file: Name of the pkl file in the exp folder that should be loaded
     '''
-    locked_dataset = sio.loadmat("/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/" + locked_dataset_path)
 
-    is_t_1d = np.all(~np.isnan(locked_dataset['T_dat']), axis=1)
-    is_e_1d = np.all(~np.isnan(locked_dataset['E_dat']), axis=1)
-    is_m_1d = np.all(~np.isnan(locked_dataset['M_dat']), axis=1)
+    output = loadpkl("/home/fahimehb/Local/new_codes/cplAE_MET/data/results/" + exp_name + "/" + pkl_output_file)
+
+    is_t_1d = output['is_t_1d']
+    is_e_1d = output['is_e_1d']
+    is_m_1d = output['is_m_1d']
     is_te_1d = np.logical_and(is_t_1d, is_e_1d)
     is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
     is_me_1d = np.logical_and(is_m_1d, is_e_1d)
@@ -527,28 +527,29 @@ def summarize_platforms(locked_dataset_path):
     is_me_only = np.logical_and(is_me_1d, ~is_t_1d)
     is_tm_only = np.logical_and(is_tm_1d, ~is_e_1d)
 
-    locked_dataset["platform"] = [i.rstrip() for i in locked_dataset["platform"]]
+    if "platform" in output.keys():
+        output["platform"] = [i.rstrip() for i in output["platform"]]
 
-    summary1 = pd.DataFrame(columns=["platform", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
-    for i, p in enumerate(["patchseq", "ME", "EM", "fMOST"]):
-        platform_mask = np.array([True if i==p else False for i in locked_dataset["platform"]])
-        summary1.loc[i, "platform"] = p
-        summary1.loc[i, "T"] = np.sum(np.logical_and(platform_mask, is_t_only))
-        summary1.loc[i, "E"] = np.sum(np.logical_and(platform_mask, is_e_only))
-        summary1.loc[i, "M"] = np.sum(np.logical_and(platform_mask, is_m_only))
-        summary1.loc[i, "E&T"] = np.sum(np.logical_and(platform_mask, is_te_only))
-        summary1.loc[i, "M&T"] = np.sum(np.logical_and(platform_mask, is_tm_only))
-        summary1.loc[i, "M&E"] = np.sum(np.logical_and(platform_mask, is_me_only))
-        summary1.loc[i, "M&E&T"] = np.sum(np.logical_and(platform_mask, is_met_1d))
-        summary1.loc[i, "total"] = int(platform_mask.sum())
-    summary1.loc[4,"platform"] = "all"
-    summary1.loc[4, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary1.sum(axis=0).to_list()[1:]
+        summary1 = pd.DataFrame(columns=["platform", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
+        for i, p in enumerate(["patchseq", "ME", "EM", "fMOST"]):
+            platform_mask = np.array([True if i==p else False for i in output["platform"]])
+            summary1.loc[i, "platform"] = p
+            summary1.loc[i, "T"] = np.sum(np.logical_and(platform_mask, is_t_only))
+            summary1.loc[i, "E"] = np.sum(np.logical_and(platform_mask, is_e_only))
+            summary1.loc[i, "M"] = np.sum(np.logical_and(platform_mask, is_m_only))
+            summary1.loc[i, "E&T"] = np.sum(np.logical_and(platform_mask, is_te_only))
+            summary1.loc[i, "M&T"] = np.sum(np.logical_and(platform_mask, is_tm_only))
+            summary1.loc[i, "M&E"] = np.sum(np.logical_and(platform_mask, is_me_only))
+            summary1.loc[i, "M&E&T"] = np.sum(np.logical_and(platform_mask, is_met_1d))
+            summary1.loc[i, "total"] = int(platform_mask.sum())
+        summary1.loc[4,"platform"] = "all"
+        summary1.loc[4, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary1.sum(axis=0).to_list()[1:]
 
-    if "class" in locked_dataset.keys():
-        locked_dataset["class"] = [i.rstrip() for i in locked_dataset["class"]]
+    if "class" in output.keys():
+        output["class"] = [i.rstrip() for i in output["class"]]
         summary2 = pd.DataFrame(columns=["class", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
         for i, c in enumerate(['exc', 'inh']):
-            class_mask = np.array([True if i == c else False for i in locked_dataset["class"]])
+            class_mask = np.array([True if i == c else False for i in output["class"]])
             summary2.loc[i, "class"] = c
             summary2.loc[i, "T"] = np.sum(np.logical_and(class_mask, is_t_only))
             summary2.loc[i, "E"] = np.sum(np.logical_and(class_mask, is_e_only))
@@ -563,4 +564,68 @@ def summarize_platforms(locked_dataset_path):
         return summary1, summary2
     else:
         return summary1
+    
+
+def summarize_data_input_mat(input_mat_file_name):
+    '''
+    Takes the spec id locked dataset and returns the summary of the paltforms and modalities available
+    Args:
+    exp_name: name of the experiment folder in the results folder
+    pkl_output_file: Name of the pkl file in the exp folder that should be loaded
+    '''
+
+    mat = sio.loadmat("/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/" + input_mat_file_name)
+
+    is_t_1d = np.isnan(mat['T_dat'])
+    is_e_1d = output['is_e_1d']
+    is_m_1d = output['is_m_1d']
+    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+    is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
+    is_me_1d = np.logical_and(is_m_1d, is_e_1d)
+    is_met_1d = np.logical_and(is_e_1d, is_tm_1d)
+    is_t_only = np.logical_and(is_t_1d, np.logical_and(~is_e_1d, ~is_m_1d))
+    is_e_only = np.logical_and(is_e_1d, np.logical_and(~is_t_1d, ~is_m_1d))
+    is_m_only = np.logical_and(is_m_1d, np.logical_and(~is_e_1d, ~is_t_1d))
+    is_te_only = np.logical_and(is_te_1d, ~is_m_1d)
+    is_me_only = np.logical_and(is_me_1d, ~is_t_1d)
+    is_tm_only = np.logical_and(is_tm_1d, ~is_e_1d)
+
+    output["platform"] = [i.rstrip() for i in output["platform"]]
+
+    summary1 = pd.DataFrame(columns=["platform", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
+    for i, p in enumerate(["patchseq", "ME", "EM", "fMOST"]):
+        platform_mask = np.array([True if i==p else False for i in output["platform"]])
+        summary1.loc[i, "platform"] = p
+        summary1.loc[i, "T"] = np.sum(np.logical_and(platform_mask, is_t_only))
+        summary1.loc[i, "E"] = np.sum(np.logical_and(platform_mask, is_e_only))
+        summary1.loc[i, "M"] = np.sum(np.logical_and(platform_mask, is_m_only))
+        summary1.loc[i, "E&T"] = np.sum(np.logical_and(platform_mask, is_te_only))
+        summary1.loc[i, "M&T"] = np.sum(np.logical_and(platform_mask, is_tm_only))
+        summary1.loc[i, "M&E"] = np.sum(np.logical_and(platform_mask, is_me_only))
+        summary1.loc[i, "M&E&T"] = np.sum(np.logical_and(platform_mask, is_met_1d))
+        summary1.loc[i, "total"] = int(platform_mask.sum())
+    summary1.loc[4,"platform"] = "all"
+    summary1.loc[4, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary1.sum(axis=0).to_list()[1:]
+
+    if "class" in output.keys():
+        output["class"] = [i.rstrip() for i in output["class"]]
+        summary2 = pd.DataFrame(columns=["class", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
+        for i, c in enumerate(['exc', 'inh']):
+            class_mask = np.array([True if i == c else False for i in output["class"]])
+            summary2.loc[i, "class"] = c
+            summary2.loc[i, "T"] = np.sum(np.logical_and(class_mask, is_t_only))
+            summary2.loc[i, "E"] = np.sum(np.logical_and(class_mask, is_e_only))
+            summary2.loc[i, "M"] = np.sum(np.logical_and(class_mask, is_m_only))
+            summary2.loc[i, "E&T"] = np.sum(np.logical_and(class_mask, is_te_only))
+            summary2.loc[i, "M&T"] = np.sum(np.logical_and(class_mask, is_tm_only))
+            summary2.loc[i, "M&E"] = np.sum(np.logical_and(class_mask, is_me_only))
+            summary2.loc[i, "M&E&T"] = np.sum(np.logical_and(class_mask, is_met_1d))
+            summary2.loc[i, "total"] = int(class_mask.sum())
+        summary2.loc[2,"class"] = "all"
+        summary2.loc[2, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary2.sum(axis=0).to_list()[1:]
+        return summary1, summary2
+    else:
+        return summary1
+
+
 

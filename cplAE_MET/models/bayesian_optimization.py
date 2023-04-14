@@ -39,14 +39,14 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='test',   type=str,   help='Experiment set')
+parser.add_argument('--exp_name',              default='MET_50k_train_with_optimized_hyperparams',   type=str,   help='Experiment set')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='test.db',type=str,   help='Optuna study storage database')
+parser.add_argument('--opt_storage_db',        default='MET_50k_train_with_optimized_hyperparams.db',type=str,   help='Optuna study storage database')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=10,            type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=2500,            type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -423,21 +423,37 @@ def main(exp_name="TEST",
             self._current_optimizer = None
 
         def __call__(self, trial):
-            params = {'alpha_E': trial.suggest_float('alpha_E', self.alpha_E[0], self.alpha_E[1]),
-                      'alpha_M': trial.suggest_float('alpha_M', self.alpha_M[0], self.alpha_M[1]),
-                      'alpha_ME': trial.suggest_float('alpha_ME', self.alpha_ME[0], self.alpha_ME[1]),
-                      'lambda_tune_T_E': trial.suggest_float('lambda_tune_T_E', self.lambda_tune_T_E_range[0], self.lambda_tune_T_E_range[1]),
-                      'lambda_tune_E_T': trial.suggest_float('lambda_tune_E_T', self.lambda_tune_E_T_range[0], self.lambda_tune_E_T_range[1]),
-                      'lambda_tune_T_M': trial.suggest_float('lambda_tune_T_M', self.lambda_tune_T_M_range[0], self.lambda_tune_T_M_range[1]),
-                      'lambda_tune_M_T': trial.suggest_float('lambda_tune_M_T', self.lambda_tune_M_T_range[0], self.lambda_tune_M_T_range[1]),
-                      'lambda_tune_E_M': trial.suggest_float('lambda_tune_E_M', self.lambda_tune_E_M_range[0], self.lambda_tune_E_M_range[1]),
-                      'lambda_tune_M_E': trial.suggest_float('lambda_tune_M_E', self.lambda_tune_M_E_range[0], self.lambda_tune_M_E_range[1]),
-                      'lambda_tune_T_ME': trial.suggest_float('lambda_tune_T_ME', self.lambda_tune_T_ME_range[0], self.lambda_tune_T_ME_range[1]),
-                      'lambda_tune_ME_T': trial.suggest_float('lambda_tune_ME_T', self.lambda_tune_ME_T_range[0], self.lambda_tune_ME_T_range[1]),
-                      'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
-                      'lambda_tune_M_ME': trial.suggest_float('lambda_tune_M_ME', self.lambda_tune_M_ME_range[0], self.lambda_tune_M_ME_range[1]),
-                      'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1]),
-                      'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}       
+            # params = {'alpha_E': trial.suggest_float('alpha_E', self.alpha_E[0], self.alpha_E[1]),
+            #           'alpha_M': trial.suggest_float('alpha_M', self.alpha_M[0], self.alpha_M[1]),
+            #           'alpha_ME': trial.suggest_float('alpha_ME', self.alpha_ME[0], self.alpha_ME[1]),
+            #           'lambda_tune_T_E': trial.suggest_float('lambda_tune_T_E', self.lambda_tune_T_E_range[0], self.lambda_tune_T_E_range[1]),
+            #           'lambda_tune_E_T': trial.suggest_float('lambda_tune_E_T', self.lambda_tune_E_T_range[0], self.lambda_tune_E_T_range[1]),
+            #           'lambda_tune_T_M': trial.suggest_float('lambda_tune_T_M', self.lambda_tune_T_M_range[0], self.lambda_tune_T_M_range[1]),
+            #           'lambda_tune_M_T': trial.suggest_float('lambda_tune_M_T', self.lambda_tune_M_T_range[0], self.lambda_tune_M_T_range[1]),
+            #           'lambda_tune_E_M': trial.suggest_float('lambda_tune_E_M', self.lambda_tune_E_M_range[0], self.lambda_tune_E_M_range[1]),
+            #           'lambda_tune_M_E': trial.suggest_float('lambda_tune_M_E', self.lambda_tune_M_E_range[0], self.lambda_tune_M_E_range[1]),
+            #           'lambda_tune_T_ME': trial.suggest_float('lambda_tune_T_ME', self.lambda_tune_T_ME_range[0], self.lambda_tune_T_ME_range[1]),
+            #           'lambda_tune_ME_T': trial.suggest_float('lambda_tune_ME_T', self.lambda_tune_ME_T_range[0], self.lambda_tune_ME_T_range[1]),
+            #           'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
+            #           'lambda_tune_M_ME': trial.suggest_float('lambda_tune_M_ME', self.lambda_tune_M_ME_range[0], self.lambda_tune_M_ME_range[1]),
+            #           'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1]),
+            #           'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}  
+
+            params = {'alpha_E': 1.2869859370743415,
+                      'alpha_M': 1.9711963739421188,
+                      'alpha_ME': 0.6168165409554247,
+                      'lambda_tune_E_M': -1.9776075823513382,
+                      'lambda_tune_E_ME': -1.0644703858364666,
+                      'lambda_tune_E_T': -4.888852617109678,
+                      'lambda_tune_ME_E': 2.644502410424172,
+                      'lambda_tune_ME_M': 2.842288735271968,
+                      'lambda_tune_ME_T': -0.41742677002205725,
+                      'lambda_tune_M_E': -4.163691716432162,
+                      'lambda_tune_M_ME': -2.23157440178539,
+                      'lambda_tune_M_T': -5.9691106528827795,
+                      'lambda_tune_T_E': 3.2456391602797465,
+                      'lambda_tune_T_M': 4.940357566343783,
+                      'lambda_tune_T_ME': 3.957540393765548}       
             
            
             model, model_config = build_model(params)
@@ -475,6 +491,7 @@ def main(exp_name="TEST",
         # exc = []
         # i =0 
         for epoch in range(n_epochs):
+            print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 # print(i)
@@ -516,8 +533,10 @@ def main(exp_name="TEST",
             #     if trial.should_prune():
             #         raise optuna.TrialPruned()
   
-        
-        #model_score = run_Leiden_community_detection(model, dataloader)
+            if ((epoch % 500) == 0):
+                fname = dir_pth['result'] + f"checkpoint_epoch_{epoch}.pkl"
+                save_results(model, dataloader, D, fname, train_ind, val_ind)
+
         model_score = run_classification(model, dataloader)
         return model, model_score
 
