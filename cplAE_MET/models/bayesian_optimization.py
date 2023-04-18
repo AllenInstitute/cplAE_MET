@@ -7,10 +7,6 @@ import argparse
 import numpy as np
 from pathlib import Path
 from collections import Counter
-from timeit import default_timer as timer
-from sklearn.model_selection import StratifiedKFold
-
-
 
 # From torch
 import torch
@@ -38,96 +34,149 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_50k_train_with_optimized_hyperparams',   type=str,   help='Experiment set')
+parser.add_argument('--config_file',           default='config_10k.toml',  type=str,   help='config file with data paths')
+parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--opt_storage_db',        default='MET_50k_train_with_optimized_hyperparams.db',type=str,   help='Optuna study storage database')
+parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2500,            type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=10000,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
 parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=(-2,2),            type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_E',               default=(-2,2),            type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_ME',              default=(-2,2),            type=float, help='ME reconstruction loss weight')
+parser.add_argument('--alpha_E',               default=(-4,2),         type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_M',               default=(-2,2),         type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_ME',              default=(-2,2),         type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
 parser.add_argument('--lambda_TM',             default=1.0,            type=float, help='coupling loss weight between T and M')
 parser.add_argument('--lambda_ME',             default=1.0,            type=float, help='coupling loss weight between M and E')
 parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
 parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_T_E_range', default=(0,5),          type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_E_M_range', default=(-2,3),         type=float, help='Tune the directionality of coupling between E and M')
+parser.add_argument('--lambda_tune_E_ME_range',default=(-6,-3),        type=float, help='Tune the directionality of coupling between E and ME')
+parser.add_argument('--lambda_tune_E_T_range', default=(-6,-3),        type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_ME_E_range',default=(2,6),          type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_ME_M_range',default=(2,6),          type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_T_range',default=(-6,-2),        type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_M_E_range', default=(-6,-2),        type=float, help='Tune the directionality of coupling between M and E')
+parser.add_argument('--lambda_tune_M_ME_range',default=(-6,-2),        type=float, help='Tune the directionality of coupling between M and ME')
+parser.add_argument('--lambda_tune_M_T_range', default=(-4,0),         type=float, help='Tune the directionality of coupling between M and T')
+parser.add_argument('--lambda_tune_T_E_range', default=(3,6),          type=float, help='Tune the directionality of coupling between T and E')
 parser.add_argument('--lambda_tune_T_M_range', default=(0,5),          type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_ME_M_range',default=(0,5),          type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_E_range',default=(0,5),          type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_E_M_range', default=(-2,3),          type=float, help='Tune the directionality of coupling between E and M')
-parser.add_argument('--lambda_tune_E_T_range', default=(-5,-1),        type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_M_T_range', default=(-6,-2),        type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_M_ME_range',default=(-5,-1),        type=float, help='Tune the directionality of coupling between M and ME')
-parser.add_argument('--lambda_tune_E_ME_range',default=(-5,-1),        type=float, help='Tune the directionality of coupling between E and ME')
-parser.add_argument('--lambda_tune_M_E_range', default=(-5,-1),        type=float, help='Tune the directionality of coupling between M and E')
-parser.add_argument('--lambda_tune_T_ME_range',default=(-1,4),     type=float, help='Tune the directionality of coupling between T and ME')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-4,1),     type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_T_ME_range',default=(-1,4),         type=float, help='Tune the directionality of coupling between T and ME')
+# If optimization is off
+# parser.add_argument('--alpha_M',               default=1.0,            type=float, help='M reconstruction loss weight')
+# parser.add_argument('--alpha_E',               default=1.0,            type=float, help='E reconstruction loss weight')
+# parser.add_argument('--alpha_ME',              default=1.0,            type=float, help='ME reconstruction loss weight')
+# parser.add_argument('--lambda_tune_T_E_range', default=1.0,            type=float, help='Tune the directionality of coupling between T and E')
+# parser.add_argument('--lambda_tune_E_T_range', default=0.0,            type=float, help='Tune the directionality of coupling between E and T')
+# parser.add_argument('--lambda_tune_T_M_range', default=1.0,            type=float, help='Tune the directionality of coupling between T and M')
+# parser.add_argument('--lambda_tune_M_T_range', default=0.0,            type=float, help='Tune the directionality of coupling between M and T')
+# parser.add_argument('--lambda_tune_ME_M_range',default=1.0,            type=float, help='Tune the directionality of coupling between ME and M')
+# parser.add_argument('--lambda_tune_M_ME_range',default=0.0,            type=float, help='Tune the directionality of coupling between M and ME')
+# parser.add_argument('--lambda_tune_ME_E_range',default=1.0,            type=float, help='Tune the directionality of coupling between ME and E')
+# parser.add_argument('--lambda_tune_E_ME_range',default=0.0,            type=float, help='Tune the directionality of coupling between E and ME')
+# parser.add_argument('--lambda_tune_E_M_range', default=1.0,            type=float, help='Tune the directionality of coupling between E and M')
+# parser.add_argument('--lambda_tune_M_E_range', default=0.0,            type=float, help='Tune the directionality of coupling between M and E')
+# parser.add_argument('--lambda_tune_T_ME_range',default=0.9,            type=float, help='Tune the directionality of coupling between T and ME')
+# parser.add_argument('--lambda_tune_ME_T_range',default=0.1,            type=float, help='Tune the directionality of coupling between ME and T')
 
 
-
-def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=0):
+def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=0, optimization=True):
+    ''' Set the input and output and the optimization database path.
+    Args:
+        config_file: Name of the config.toml file which points to the input data
+        exp_name: Name of the folder in which all model outputs
+        opt_storage_db: Name of the database file to store the optuna study
+        fold_n: which fold is running
+        optimization: if True then an optimization is running, otherwise the model hyper-param are given
+    '''
     paths = load_config(config_file=config_file, verbose=False)
     paths['result'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/'
     paths['opt_storage_db'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/{opt_storage_db}'
     Path(paths['result']).mkdir(parents=False, exist_ok=True)
-    #paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
-    #if os.path.exists(paths['tb_logs']):
-    #    shutil.rmtree(paths['tb_logs'])
-    #Path(paths['tb_logs']).mkdir(parents=True, exist_ok=False)
+    # only if optimization is running, then we save the log file in tensorboard format
+    if not optimization:
+        paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
+        if os.path.exists(paths['tb_logs']):
+            shutil.rmtree(paths['tb_logs'])
+        Path(paths['tb_logs']).mkdir(parents=True, exist_ok=False)
     return paths
 
+
 def save_ckp(state, checkpoint_dir, fname):
+    '''
+    Save model checkpint.
+    Args:
+        state: model stat dict
+        checkpoint_dir: path to the folder to save the checkpoint
+        fname: name of the checkpoint file to output
+    '''
     filename = fname + '.pt'
     f_path = os.path.join(checkpoint_dir, filename)
     torch.save(state, f_path)
 
+
 def init_losses(loss_dict):
+    '''
+    Initialize the loss dict to zero.
+    Args:
+        loss_dict: loss dictionary 
+    '''
     t_loss = {}
     for k in loss_dict.keys():
         t_loss[k] = 0.
     return t_loss
 
-def set_requires_grad(module, val):
-    for p in module.parameters():
-        p.requires_grad = val
 
 def rm_emp_end_str(myarray):
+    '''
+    Remove the empty space at the end of the strings in an array.
+    '''
     return np.array([mystr.rstrip() for mystr in myarray])
 
-def save_results(model, dataloader, D, fname, train_ind, val_ind):
+def calculate_arbor_densities_from_nmfs(rec_nmf, input_datamat):
+    '''Reconstruct the arbor densities from the recnstructed nmfs
+    Args:
+        rec_nmf: reconstructed nmfs 
+        input_datamat: input mat file which is loaded
+    '''
+    min_lim = 0
+    rec_channel = {}
+    for channel in ['ax', 'de', 'api', 'bas']:
+        comp_name = "M_nmf_components_" + channel
+        total_var_name = "M_nmf_total_vars_" + channel
+        col_limit = (min_lim , min_lim + input_datamat[comp_name].shape[0])
+        rec_channel[channel] = (np.dot(rec_nmf[:, col_limit[0]:col_limit[1]] * input_datamat[total_var_name], input_datamat[comp_name])).reshape(-1, 120, 4)
+        min_lim = col_limit[1]
+    return np.stack((rec_channel['ax'], rec_channel['de'], rec_channel['api'] , rec_channel['bas'] ), axis=3) 
+
+
+def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
     '''
     Takes the model, run it in the evaluation mode to calculate the embeddings and reconstructions for printing out.
+    Args:
+        model: the model 
+        dataloader: the dataloader
+        input_datamat: the input mat file that is loaded
+        fname: name of the output pkl file that the results going to be saved in
+        train_ind: the indices of the tarin cells
+        val_ind: the indices of the validation cells
     '''
     model.eval()
 
     for all_data in iter(dataloader):
         with torch.no_grad():
-            loss_dict, z_dict, xr_dict = model(all_data)
+            _, z_dict, xr_dict = model(all_data)
     
-    # Reconstruct the arbor densities from the recnstructed pcs
-    min_lim = 0
-    rec_channel = {}
-    rec_nmf = tonumpy(xr_dict['xrm'])
-    for channel in ['ax', 'de', 'api', 'bas']:
-        comp_name = "M_nmf_components_" + channel
-        total_var_name = "M_nmf_total_vars_" + channel
-        col_limit = (min_lim , min_lim + D[comp_name].shape[0])
-        rec_channel[channel] = (np.dot(rec_nmf[:, col_limit[0]:col_limit[1]] * D[total_var_name], D[comp_name])).reshape(-1, 120, 4)
-        min_lim = col_limit[1]
+    rec_arbor_density = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xr_dict['xrm']), input_datamat=input_datamat)
     
-
-    rec_arbor_density = np.stack((rec_channel['ax'], rec_channel['de'], rec_channel['api'] , rec_channel['bas'] ), axis=3) 
         
     savedict = {'XT': tonumpy(all_data['xt']),
                 'XM': tonumpy(all_data['xm']),
@@ -145,29 +194,29 @@ def save_results(model, dataloader, D, fname, train_ind, val_ind):
                 'is_t_1d':tonumpy(all_data['is_t_1d']),
                 'is_e_1d':tonumpy(all_data['is_e_1d']),
                 'is_m_1d':tonumpy(all_data['is_m_1d']), 
-                'cluster_id': D['cluster_id'],
-                'gene_ids': D['gene_ids'],
-                'e_features': D['E_features'],
-                'specimen_id': rm_emp_end_str(D['specimen_id']),
-                'cluster_label': rm_emp_end_str(D['cluster_label']),
-                'merged_cluster_label_at40': rm_emp_end_str(D['merged_cluster_label_at40']),
-                'merged_cluster_label_at50': rm_emp_end_str(D['merged_cluster_label_at50']),
-                'merged_cluster_label_at60': rm_emp_end_str(D['merged_cluster_label_at60']),
-                'cluster_color': rm_emp_end_str(D['cluster_color']),
-                'platform': D['platform'],
-                'class':  D['class'],
-                'class_id': D['class_id'],
-                'group': D['group'],
-                'subgroup': D['subgroup'],
-                'hist_ax_de_api_bas' : D['hist_ax_de_api_bas'],
-                'M_nmf_total_vars_ax': D['M_nmf_total_vars_ax'],
-                'M_nmf_total_vars_de': D['M_nmf_total_vars_de'],
-                'M_nmf_total_vars_api': D['M_nmf_total_vars_api'],
-                'M_nmf_total_vars_bas': D['M_nmf_total_vars_bas'],
-                'M_nmf_components_ax': D['M_nmf_components_ax'],
-                'M_nmf_components_de': D['M_nmf_components_de'],
-                'M_nmf_components_api': D['M_nmf_components_api'],
-                'M_nmf_components_bas': D['M_nmf_components_bas'],
+                'cluster_id': input_datamat['cluster_id'],
+                'gene_ids': input_datamat['gene_ids'],
+                'e_features': input_datamat['E_features'],
+                'specimen_id': rm_emp_end_str(input_datamat['specimen_id']),
+                'cluster_label': rm_emp_end_str(input_datamat['cluster_label']),
+                'merged_cluster_label_at40': rm_emp_end_str(input_datamat['merged_cluster_label_at40']),
+                'merged_cluster_label_at50': rm_emp_end_str(input_datamat['merged_cluster_label_at50']),
+                'merged_cluster_label_at60': rm_emp_end_str(input_datamat['merged_cluster_label_at60']),
+                'cluster_color': rm_emp_end_str(input_datamat['cluster_color']),
+                'platform': input_datamat['platform'],
+                'class':  input_datamat['class'],
+                'class_id': input_datamat['class_id'],
+                'group': input_datamat['group'],
+                'subgroup': input_datamat['subgroup'],
+                'hist_ax_de_api_bas' : input_datamat['hist_ax_de_api_bas'],
+                'M_nmf_total_vars_ax': input_datamat['M_nmf_total_vars_ax'],
+                'M_nmf_total_vars_de': input_datamat['M_nmf_total_vars_de'],
+                'M_nmf_total_vars_api': input_datamat['M_nmf_total_vars_api'],
+                'M_nmf_total_vars_bas': input_datamat['M_nmf_total_vars_bas'],
+                'M_nmf_components_ax': input_datamat['M_nmf_components_ax'],
+                'M_nmf_components_de': input_datamat['M_nmf_components_de'],
+                'M_nmf_components_api': input_datamat['M_nmf_components_api'],
+                'M_nmf_components_bas': input_datamat['M_nmf_components_bas'],
                 'train_ind': train_ind,
                 'val_ind': val_ind}
 
@@ -218,26 +267,30 @@ def Criterion(model_config, loss_dict):
                     model_config['KLD_beta'] * loss_dict['KLD_t'] + \
                     model_config['KLD_beta'] * loss_dict['KLD_e'] + \
                     model_config['KLD_beta'] * loss_dict['KLD_m'] + \
-                    model_config['KLD_beta'] * loss_dict['KLD_me_paired'] 
-                         
+                    model_config['KLD_beta'] * loss_dict['KLD_me_paired']      
     return criterion
 
 
 
 def Leiden_community_detection(data):
-
+    '''Take the data points, creat a graph with 12 nn and apply leiden community detection
+    Args:
+        data: the embedding coordinates
+    '''
     # Create adj matrix with 12 nn
     A = kneighbors_graph(data, 12, mode='distance', include_self=True)
     # Create a network_x graph
     G = nx.convert_matrix.from_numpy_array(A)
     # Run Leiden community detection algorithm
     comm = algorithms.leiden(G)
-
     return comm
 
 
 def run_Leiden_community_detection(model, dataloader):
-    
+    '''
+    Takes the model and dataloader to run the model in the evaluation mode and compute
+    the number of leiden communities on the embedding
+    '''
     model.eval()
     for all_data in iter(dataloader):
         _, z_dict, _ = model(all_data) 
@@ -253,7 +306,7 @@ def run_Leiden_community_detection(model, dataloader):
     
     n_t_types = []
     n_me_types = []
-    # Instead of running it only one, we run it 10 times and then take the max
+    # Instead of running it only once, we run it 10 times and then take the max
     for i in range(10):
         ncomm = len(Leiden_community_detection(zt[is_t_1d]).communities)
         n_t_types.append(ncomm)
@@ -262,17 +315,16 @@ def run_Leiden_community_detection(model, dataloader):
 
     n_t_types = np.median(n_t_types)
     n_me_types = np.median(n_me_types)
-    
     model_score = np.min([n_t_types , n_me_types])
-
     return model_score
 
 
 def main(exp_name="TEST",
          variational=False,
          load_model=False,
-         opt_storage_db="test.db",
          db_load_if_exist=True,
+         optimization=True,
+         opt_storage_db="test.db",
          config_file="config.toml", 
          n_epochs=10, 
          fold_n=0, 
@@ -306,19 +358,16 @@ def main(exp_name="TEST",
 
     # Classification function #################################################
     def run_classification(model, dataloader):
+        '''
+        Take the model and the dataloader, to run the model in the evaluation mode, obtain the emd 
+        and run the classisification task on the t cells'''
+
         model.eval()
         for all_data in iter(dataloader):
             _, z_dict, _ = model(all_data) 
 
         is_t_1d = tonumpy(all_data['is_t_1d'])
-        is_e_1d = tonumpy(all_data['is_e_1d'])
-        is_m_1d = tonumpy(all_data['is_m_1d'])
-        is_me_1d = np.logical_and(is_m_1d, is_e_1d)
-        leaf_labels = np.array(dat.cluster_label) #TODO these labels should become part of dataloader
-        merged_T_labels_at40 = np.array(dat.merged_cluster_label_at40)
-        merged_T_labels_at50 = np.array(dat.merged_cluster_label_at50)
-        merged_T_labels_at60 = np.array(dat.merged_cluster_label_at60)
-        T_labels = merged_T_labels_at50
+        T_labels = np.array(dat.merged_cluster_label_at50)
 
         zt = tonumpy(z_dict['zt'])
         ze = tonumpy(z_dict['ze'])
@@ -338,9 +387,6 @@ def main(exp_name="TEST",
     
     def build_model(params):
         ''' Config and build the model'''
-        
-        for k,v in params.items(): 
-            params[k] = np.exp(v)
 
         model_config = dict(variational=variational,
                             latent_dim=latent_dim, 
@@ -401,6 +447,7 @@ def main(exp_name="TEST",
                      lambda_tune_M_ME_range=None, 
                      previous_ML_model_weights_to_load=None
                      ):
+            
             self.alpha_E = alpha_E
             self.alpha_M = alpha_M      
             self.alpha_ME = alpha_ME   
@@ -423,39 +470,42 @@ def main(exp_name="TEST",
             self._current_optimizer = None
 
         def __call__(self, trial):
-            params = {'alpha_E': trial.suggest_float('alpha_E', self.alpha_E[0], self.alpha_E[1]),
-                      'alpha_M': trial.suggest_float('alpha_M', self.alpha_M[0], self.alpha_M[1]),
-                      'alpha_ME': trial.suggest_float('alpha_ME', self.alpha_ME[0], self.alpha_ME[1]),
-                      'lambda_tune_T_E': trial.suggest_float('lambda_tune_T_E', self.lambda_tune_T_E_range[0], self.lambda_tune_T_E_range[1]),
-                      'lambda_tune_E_T': trial.suggest_float('lambda_tune_E_T', self.lambda_tune_E_T_range[0], self.lambda_tune_E_T_range[1]),
-                      'lambda_tune_T_M': trial.suggest_float('lambda_tune_T_M', self.lambda_tune_T_M_range[0], self.lambda_tune_T_M_range[1]),
-                      'lambda_tune_M_T': trial.suggest_float('lambda_tune_M_T', self.lambda_tune_M_T_range[0], self.lambda_tune_M_T_range[1]),
-                      'lambda_tune_E_M': trial.suggest_float('lambda_tune_E_M', self.lambda_tune_E_M_range[0], self.lambda_tune_E_M_range[1]),
-                      'lambda_tune_M_E': trial.suggest_float('lambda_tune_M_E', self.lambda_tune_M_E_range[0], self.lambda_tune_M_E_range[1]),
-                      'lambda_tune_T_ME': trial.suggest_float('lambda_tune_T_ME', self.lambda_tune_T_ME_range[0], self.lambda_tune_T_ME_range[1]),
-                      'lambda_tune_ME_T': trial.suggest_float('lambda_tune_ME_T', self.lambda_tune_ME_T_range[0], self.lambda_tune_ME_T_range[1]),
-                      'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
-                      'lambda_tune_M_ME': trial.suggest_float('lambda_tune_M_ME', self.lambda_tune_M_ME_range[0], self.lambda_tune_M_ME_range[1]),
-                      'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1]),
-                      'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}  
-
-            # params = {'alpha_E': 1.2869859370743415,
-            #           'alpha_M': 1.9711963739421188,
-            #           'alpha_ME': 0.6168165409554247,
-            #           'lambda_tune_E_M': -1.9776075823513382,
-            #           'lambda_tune_E_ME': -1.0644703858364666,
-            #           'lambda_tune_E_T': -4.888852617109678,
-            #           'lambda_tune_ME_E': 2.644502410424172,
-            #           'lambda_tune_ME_M': 2.842288735271968,
-            #           'lambda_tune_ME_T': -0.41742677002205725,
-            #           'lambda_tune_M_E': -4.163691716432162,
-            #           'lambda_tune_M_ME': -2.23157440178539,
-            #           'lambda_tune_M_T': -5.9691106528827795,
-            #           'lambda_tune_T_E': 3.2456391602797465,
-            #           'lambda_tune_T_M': 4.940357566343783,
-            #           'lambda_tune_T_ME': 3.957540393765548}       
+            if optimization:
+                params = {'alpha_E': trial.suggest_float('alpha_E', self.alpha_E[0], self.alpha_E[1]),
+                        'alpha_M': trial.suggest_float('alpha_M', self.alpha_M[0], self.alpha_M[1]),
+                        'alpha_ME': trial.suggest_float('alpha_ME', self.alpha_ME[0], self.alpha_ME[1]),
+                        'lambda_tune_T_E': trial.suggest_float('lambda_tune_T_E', self.lambda_tune_T_E_range[0], self.lambda_tune_T_E_range[1]),
+                        'lambda_tune_E_T': trial.suggest_float('lambda_tune_E_T', self.lambda_tune_E_T_range[0], self.lambda_tune_E_T_range[1]),
+                        'lambda_tune_T_M': trial.suggest_float('lambda_tune_T_M', self.lambda_tune_T_M_range[0], self.lambda_tune_T_M_range[1]),
+                        'lambda_tune_M_T': trial.suggest_float('lambda_tune_M_T', self.lambda_tune_M_T_range[0], self.lambda_tune_M_T_range[1]),
+                        'lambda_tune_E_M': trial.suggest_float('lambda_tune_E_M', self.lambda_tune_E_M_range[0], self.lambda_tune_E_M_range[1]),
+                        'lambda_tune_M_E': trial.suggest_float('lambda_tune_M_E', self.lambda_tune_M_E_range[0], self.lambda_tune_M_E_range[1]),
+                        'lambda_tune_T_ME': trial.suggest_float('lambda_tune_T_ME', self.lambda_tune_T_ME_range[0], self.lambda_tune_T_ME_range[1]),
+                        'lambda_tune_ME_T': trial.suggest_float('lambda_tune_ME_T', self.lambda_tune_ME_T_range[0], self.lambda_tune_ME_T_range[1]),
+                        'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
+                        'lambda_tune_M_ME': trial.suggest_float('lambda_tune_M_ME', self.lambda_tune_M_ME_range[0], self.lambda_tune_M_ME_range[1]),
+                        'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1]),
+                        'lambda_tune_E_ME': trial.suggest_float('lambda_tune_E_ME', self.lambda_tune_E_ME_range[0], self.lambda_tune_E_ME_range[1])}  
+                
+                for k,v in params.items(): 
+                    params[k] = np.exp(v) 
+            else:
+                params = {'alpha_E': self.alpha_E,
+                    'alpha_M': self.alpha_M,
+                    'alpha_ME': self.alpha_ME,
+                    'lambda_tune_T_E': self.lambda_tune_T_E_range,
+                    'lambda_tune_E_T': self.lambda_tune_E_T_range,
+                    'lambda_tune_T_M': self.lambda_tune_T_M_range,
+                    'lambda_tune_M_T': self.lambda_tune_M_T_range,
+                    'lambda_tune_E_M': self.lambda_tune_E_M_range,
+                    'lambda_tune_M_E': self.lambda_tune_M_E_range,
+                    'lambda_tune_T_ME': self.lambda_tune_T_ME_range,
+                    'lambda_tune_ME_T': self.lambda_tune_ME_T_range,
+                    'lambda_tune_ME_M': self.lambda_tune_ME_M_range,
+                    'lambda_tune_M_ME':self.lambda_tune_M_ME_range,
+                    'lambda_tune_ME_E': self.lambda_tune_ME_E_range,
+                    'lambda_tune_E_ME': self.lambda_tune_E_ME_range} 
             
-           
             model, model_config = build_model(params)
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -485,23 +535,11 @@ def main(exp_name="TEST",
         optimizer_to(optimizer,device)
 
         # Training -----------
-        # x_inh = []
-        # x_exc = []
-        # inh =[]
-        # exc = []
-        # i =0 
+
         for epoch in range(n_epochs):
             print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
-                # print(i)
-                # inh.append(tonumpy(torch.sum(batch['group']==0)))
-                # exc.append(tonumpy(torch.sum(batch['group']==1)))
-                # x_inh.append(tonumpy(torch.sum(batch['subgroup']==2)))
-                # x_exc.append(tonumpy(torch.sum(batch['subgroup']==3)))
-                # i += 1
-                # if ((i%100)==0):
-                #     print("here", np.mean(inh), np.mean(exc), np.mean(x_inh), np.mean(x_exc))
                 optimizer.zero_grad()
                 # forward pass -----------
                 loss_dict, _, _ = model(batch)
@@ -542,7 +580,7 @@ def main(exp_name="TEST",
 
     # Main code ###############################################################
     # Set the device -----------
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db)
