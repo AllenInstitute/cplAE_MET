@@ -274,7 +274,7 @@ def main(exp_name="TEST",
 
         # Training -----------
         for epoch in range(n_epochs):
-            print(epoch)
+            # print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
@@ -351,7 +351,8 @@ def main(exp_name="TEST",
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db, creat_tb_logs= not optimization)
-    tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
+    if not optimization:
+        tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
     dat, D = MET_exc_inh.from_file(dir_pth['MET_data'])
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
@@ -437,7 +438,8 @@ def main(exp_name="TEST",
 
         save_results(objective.best_model, dataloader, D, fname, train_ind, val_ind)
 
-    tb_writer.close()
+    if not optimization:
+        tb_writer.close()
 
 if __name__ == '__main__':
     args = parser.parse_args()
