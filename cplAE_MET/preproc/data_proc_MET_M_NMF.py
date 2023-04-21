@@ -136,10 +136,11 @@ def main(config_file='config_preproc.toml'):
 
     #writing the sample_ids and some meta data
     model_input_mat["specimen_id"] = result['specimen_id'].to_list()
-    model_input_mat["soma_depth"] = result['soma_depth'].to_list()
+    # model_input_mat["soma_depth"] = result['soma_depth'].to_list()
     model_input_mat['platform'] = result['platform'].to_list()
     model_input_mat["class"] = result['class'].to_list()
     model_input_mat["group"] = result['group'].to_list()
+    model_input_mat["subgroup"] = result['subgroup'].to_list()
     model_input_mat["class_id"] = result['class_id'].to_list()
     model_input_mat["cluster_id"] = result['Tree_first_cl_id'].to_list()
     model_input_mat["cluster_color"] = result['Tree_first_cl_color'].to_list()
@@ -155,15 +156,11 @@ def main(config_file='config_preproc.toml'):
     model_input_mat['E_features'] = [c for c in E_data.columns if c not in ["specimen_id"]]
 
     #Writing the M_feature total variance that was used for scaling 
-    model_input_mat['M_nmf_total_vars_ax'] = all_M_data['nmf_total_vars_ax']
-    model_input_mat['M_nmf_total_vars_de'] = all_M_data['nmf_total_vars_de']
-    model_input_mat['M_nmf_total_vars_api'] = all_M_data['nmf_total_vars_api']
-    model_input_mat['M_nmf_total_vars_bas'] = all_M_data['nmf_total_vars_bas']
+    model_input_mat['M_nmf_total_vars_inh'] = all_M_data['nmf_total_vars_inh']
+    model_input_mat['M_nmf_total_vars_exc'] = all_M_data['nmf_total_vars_exc']
 
-    model_input_mat['M_nmf_components_ax'] = all_M_data['nmf_components_ax']
-    model_input_mat['M_nmf_components_de'] = all_M_data['nmf_components_de']
-    model_input_mat['M_nmf_components_api'] = all_M_data['nmf_components_api']
-    model_input_mat['M_nmf_components_bas'] = all_M_data['nmf_components_bas']
+    model_input_mat['M_nmf_components_inh'] = all_M_data['nmf_components_inh']
+    model_input_mat['M_nmf_components_exc'] = all_M_data['nmf_components_exc']
 
     model_input_mat['hist_ax_de_api_bas'] = all_M_data['hist_ax_de_api_bas']
 

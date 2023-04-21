@@ -13,7 +13,7 @@ from sklearn.metrics import silhouette_score
 import cplAE_MET.utils.utils as ut
 from sklearn.preprocessing import StandardScaler
 from cplAE_MET.utils.utils import loadpkl
-from cplAE_MET.models.bayesian_optimization import Leiden_community_detection
+from cplAE_MET.models.optuna_utils import Leiden_community_detection
 from cplAE_MET.models.classification_functions import run_LDA
 from sklearn.model_selection import KFold
 

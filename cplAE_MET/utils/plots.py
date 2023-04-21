@@ -223,7 +223,6 @@ def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), cell_mask=None):
         ylim (tuple): plot limits. Defaults to (-5, 5).
         cell_mask: If given, it is a list of True and False to mask the specimen ids, all the true cells will be shown in gray color
     """
-    xlim=ylim=zlim=(-3,3)
     is_me_1d = np.logical_and(output['is_e_1d'], output['is_m_1d'])
     is_te_1d = np.logical_and(output['is_e_1d'], output['is_t_1d'])
     is_mt_1d = np.logical_and(output['is_m_1d'], output['is_t_1d'])
@@ -234,38 +233,38 @@ def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), cell_mask=None):
 
     ax = fig.add_subplot(141, projection='3d')
     ax.scatter(output['zt'][output['is_t_1d']][:,2], output['zt'][output['is_t_1d']][:,1], 
-                output['zt'][output['is_t_1d']][:,0], c=output['cluster_color'][output['is_t_1d']],s=1)
+                output['zt'][output['is_t_1d']][:,0], c=output['cluster_color'][output['is_t_1d']],s=3)
     if cell_mask is not None:
         ax.scatter(output['zt'][cell_mask][:,2], output['zt'][cell_mask][:,1], 
-                output['zt'][cell_mask][:,0], c="#808080",s=20)
+                output['zt'][cell_mask][:,0], c="#808080",s=15)
     ax.set(title='T', xlim=xlim, ylim=ylim, zlim=zlim)
 
 
     ax = fig.add_subplot(142, projection='3d')
     ax.scatter(output['ze'][is_te_1d][:,2], output['ze'][is_te_1d][:,1], 
-                output['ze'][is_te_1d][:,0], c=output['cluster_color'][is_te_1d],s=1)
+                output['ze'][is_te_1d][:,0], c=output['cluster_color'][is_te_1d],s=3)
     if cell_mask:
         ax.scatter(output['ze'][cell_mask][:,2], output['ze'][cell_mask][:,1], 
-                output['ze'][cell_mask][:,0], c="#808080",s=20)
+                output['ze'][cell_mask][:,0], c="#808080",s=15)
     ax.set(title='E', xlim=xlim, ylim=ylim, zlim=zlim)
 
 
     ax = fig.add_subplot(143, projection='3d')
     ax.scatter(output['zme_paired'][is_met_1d][:,2], output['zme_paired'][is_met_1d][:,1], 
-                output['zme_paired'][is_met_1d][:,0], c=output['cluster_color'][is_met_1d],s=1)
+                output['zme_paired'][is_met_1d][:,0], c=output['cluster_color'][is_met_1d],s=3)
     if cell_mask is not None:
         ax.scatter(output['zme_paired'][cell_mask][:,2], output['zme_paired'][cell_mask][:,1], 
-                output['zme_paired'][cell_mask][:,0], c="#808080",s=20)
+                output['zme_paired'][cell_mask][:,0], c="#808080",s=15)
     ax.set(title='ME', xlim=xlim, ylim=ylim, zlim=zlim)
 
 
     ax = fig.add_subplot(144, projection='3d')
     ax.scatter(output['zm'][is_mt_1d][:,2], output['zm'][is_mt_1d][:,1], 
-                output['zm'][is_mt_1d][:,0], c=output['cluster_color'][is_mt_1d], s=1)
-    # ax.view_init(-180, 60)
+                output['zm'][is_mt_1d][:,0], c=output['cluster_color'][is_mt_1d], s=3)
+    # ax.view_init(-90, 60)
     if cell_mask is not None:
         ax.scatter(output['zm'][cell_mask][:,2], output['zm'][cell_mask][:,1], 
-                output['zm'][cell_mask][:,0], c="#808080", s=20)
+                output['zm'][cell_mask][:,0], c="#808080", s=15)
     ax.set(title='M', xlim=xlim, ylim=ylim, zlim=zlim)
 
 

@@ -13,7 +13,7 @@ from cplAE_MET.utils.load_config import load_config
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',    default='config_preproc.toml', type=str,   help='config file with data paths')
+parser.add_argument('--config_file',    default='test.toml', type=str,   help='config file with data paths')
 
 
 

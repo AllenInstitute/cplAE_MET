@@ -9,7 +9,6 @@ import toml
 import cplAE_MET.utils.utils as ut
 from cplAE_MET.utils.tree_helpers import HTree, get_merged_ordered_classes, simplify_tree
 
-
 def get_paths(inputmat_fileid, warn=True, write_toml=False):
     """Get paths for all data used in the analysis. 
     

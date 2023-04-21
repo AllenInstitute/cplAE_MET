@@ -105,8 +105,8 @@ class Model_ME_T(nn.Module):
         loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...])
 
 
-        loss_dict['BCELoss_m'] = self.compute_BCE_loss(xrm[is_m_1d][valid_xm[is_m_1d]], xm[is_m_1d][valid_xm[is_m_1d]])
-        loss_dict['BCELoss_me_m'] = self.compute_BCE_loss(xrm[is_me_1d][valid_xm[is_me_1d]], xm[is_me_1d][valid_xm[is_me_1d]])
+        # loss_dict['BCELoss_m'] = self.compute_BCE_loss(xrm[is_m_1d][valid_xm[is_m_1d]], xm[is_m_1d][valid_xm[is_m_1d]])
+        # loss_dict['BCELoss_me_m'] = self.compute_BCE_loss(xrm[is_me_1d][valid_xm[is_me_1d]], xm[is_me_1d][valid_xm[is_me_1d]])
         
         loss_dict['cpl_me->t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
         loss_dict['cpl_t->me'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
@@ -127,7 +127,6 @@ class Model_ME_T(nn.Module):
         loss_dict['cpl_e->m'] = self.compute_cpl_loss(zm[is_me_1d, ...], ze[is_me_1d, ...].detach())
 
         if self.variational:
-            # print(mu_t, mu_e, mu_m, mu_me, log_sigma_e, log_sigma_m, log_sigma_t, log_sigma_me)
             loss_dict['KLD_t'] = self.compute_KLD_loss(mu_t, log_sigma_t, is_t_1d)
             loss_dict['KLD_e'] = self.compute_KLD_loss(mu_e, log_sigma_e, is_e_1d)
             loss_dict['KLD_m'] = self.compute_KLD_loss(mu_m, log_sigma_m, is_m_1d)

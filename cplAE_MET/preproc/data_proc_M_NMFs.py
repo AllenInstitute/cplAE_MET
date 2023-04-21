@@ -19,7 +19,7 @@ from cplAE_MET.utils.analysis_helpers import get_NMF_explained_variance_ratio
 
 
 config_file = 'config_preproc.toml'
-nmf_comp_th = 0.90
+nmf_comp_th = 0.99
 
 # %%
 def set_paths(config_file=None):
@@ -78,6 +78,7 @@ for col, key in enumerate(['ax', 'de', 'api', 'bas']):
 
 print("Number of inh cells with the arbor density:", valid['ax'].sum())
 print("Number of exc cells with the arbor density:", valid['api'].sum())
+assert (np.all(np.where(valid['ax'])[0]==np.where(valid['de'])[0]))
 
 # Now for each channel, we mask for the valid cells and then we look if there is any
 # nan value in the cells arbor densities. If there is any nan, we should either 
@@ -94,19 +95,73 @@ for k in arbor_density.keys():
     arbor_density[k] = arbor_density[k].reshape(arbor_density[k].shape[0], -1)
     print("Number of cells in this channel for PCA calculations. The rest are removed if they had nans:", k, keep_cells[k].sum())
 
+
+# %%
+# concat nmfs for ax and de together and for api and bas together
+arbor_density['inh'] = np.concatenate((arbor_density['ax'], arbor_density['de']), axis=1)
+arbor_density['exc'] = np.concatenate((arbor_density['api'], arbor_density['bas']), axis=1)
+keep_cells['inh'] = keep_cells['ax']
+keep_cells['exc'] = keep_cells['api']
+arbor_density.pop("ax")
+arbor_density.pop("de")
+arbor_density.pop("api")
+arbor_density.pop("bas")
+
+# %%
+assert (np.all(np.where(valid['ax'])[0]==np.where(valid['de'])[0]))
+assert (np.all(np.where(valid['api'])[0]==np.where(valid['bas'])[0]))
+valid['inh'] = valid['ax']
+valid['exc'] = valid['api']
+valid.pop('ax')
+valid.pop('de')
+valid.pop('api')
+valid.pop('bas')
+
+# %% 
+keep_cells['exc'] = keep_cells['api']
+keep_cells['inh'] = keep_cells['ax']
+keep_cells.pop('ax')
+keep_cells.pop('de')
+keep_cells.pop('api')
+keep_cells.pop('bas')
+
+
 # %%
 # Run NMF and keep as many as components that is necessary keep the reconstuction error less than the threshold
 NMF_comps = {}
-for k, v in arbor_density.items():
-        NMF_comps[k] = 1
-        for n_comp in np.arange(10,100):
-            var = get_NMF_explained_variance_ratio(v, n_comp)
-            print(k , var)
-            if var >= nmf_comp_th:
-                 NMF_comps[k] = n_comp
-                 break
+# start = [75, 90, 95, 80]
+# i = 0
+# for k, v in arbor_density.items():
+#         NMF_comps[k] = 1
+#         for n_comp in np.arange(start[i],200):
+#             var = get_NMF_explained_variance_ratio(v, n_comp)
+#             print(k , var)
+#             if var >= nmf_comp_th:
+#                  NMF_comps[k] = n_comp
+#                  break
+#         i += 1
 
-        
+# number of comp for 99% explained var
+# NMF_comps['ax'] = 79
+# NMF_comps['de'] = 92
+# NMF_comps['api'] = 99
+# NMF_comps['bas'] = 82
+
+# number of comp for 97% explained var
+# NMF_comps['ax'] = 40
+# NMF_comps['de'] = 66
+# NMF_comps['api'] = 74
+# NMF_comps['bas'] = 52
+
+# number of comp for 90% explained var
+# NMF_comps['ax'] = 12
+# NMF_comps['de'] = 27
+# NMF_comps['api'] = 35
+# NMF_comps['bas'] = 24
+
+NMF_comps['inh'] = 200
+NMF_comps['exc'] = 200
+
 # %%
 # Compute nmf trnsforms and save the components for later reconstructions in the model
 NMF_components = {}
@@ -127,6 +182,7 @@ total_var = pd.DataFrame(columns=NMF_transforms.keys())
 
 for k in NMF_transforms.keys():
     v = np.sqrt(np.sum(pd.DataFrame(NMF_transforms[k]).var(axis=0)))
+    print("total var along:", k, "is:", v)
     Scaled_NMF[k] = NMF_transforms[k] / v
     total_var.loc[0, k] = v
 
@@ -151,7 +207,7 @@ Scaled_NMF = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id']
 df = Scaled_NMF.melt(value_vars=Scaled_NMF[[c for c in Scaled_NMF.columns if c != "specimen_id"]])
 sns.catplot(x="variable", y="value", kind='box', data=df, palette=sns.color_palette(["skyblue"]), aspect=4.4)
 ax = plt.gca()
-ax.set(**{'title': 'Scaled PC features', 'xlabel': '', 'ylabel': ''})
+ax.set(**{'title': 'Scaled NMF features', 'xlabel': '', 'ylabel': ''})
 ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
 plt.show()
 
@@ -161,14 +217,16 @@ print("Scaled NMFs size:", Scaled_NMF.shape)
 m_cells = ~np.isnan(soma_depth)
 m_cells = [id for i, id in enumerate(arbor_ids) if m_cells[i]]
 
-sd = pd.DataFrame({"specimen_id": m_cells, "soma_depth": soma_depth[~np.isnan(soma_depth)]})
+# sd = pd.DataFrame({"specimen_id": m_cells, "soma_depth": soma_depth[~np.isnan(soma_depth)]})
 print("Super important to set the nan values for the M cells PCs equal to zero before combining all other cells to the M cells")
 print("this is because later on, we will mask only the m cells for the loss function and in there, we need to compute the loss")
 print("on all the 4 channels. becasue if we dont do this then we will not include all the 4 channels in the loss calculations")
 Scaled_NMF = Scaled_NMF.fillna(0)
 
-data_frames = [Scaled_NMF, sd]
-df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='inner'), data_frames)
+# data_frames = [Scaled_NMF, sd]
+# df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='inner'), data_frames)
+
+df_merged = Scaled_NMF
 df_merged = df_merged.merge(pd.DataFrame(locked_specimen_ids, columns=["specimen_id"]), on="specimen_id", how='right')
 
 # Make sure the order is the same as the locked id spec_ids
@@ -186,18 +244,34 @@ plt.show()
 
 print("Size of Merged PCs features:", df_merged.shape)
 
+# %%
+# from cplAE_MET.utils.plots import plot_m
+
+# m_nmfs = np.array(df_merged.drop(columns=["specimen_id"]))
+
+# min_lim = 0
+# rec_channel = {}
+# for channel in ['inh', 'exc']:
+#     col_limit = (min_lim , min_lim + NMF_components[channel].shape[0])
+#     rec_channel[channel] = (np.dot(m_nmfs[:, col_limit[0]:col_limit[1]] * total_var[channel][0], NMF_components[channel]))
+#     min_lim = col_limit[1]
+
+# ax = rec_channel['inh'][:,0:480].reshape(-1, 120, 4)
+# de = rec_channel['inh'][:,480:].reshape(-1, 120, 4)
+# api = rec_channel['exc'][:,0:480].reshape(-1, 120, 4)
+# bas = rec_channel['exc'][:,480:].reshape(-1, 120, 4)
+
+# rec_arbor_density = np.stack((ax, de, api, bas ), axis=3) 
+
+# %%
 sio.savemat(dir_pth['m_output_file'], {'hist_ax_de_api_bas': arbor_dens['hist_ax_de_api_bas'],
                                        'm_features': np.array(df_merged.drop(columns=["specimen_id"])),
                                        'm_features_names': np.array(df_merged.drop(columns=["specimen_id"]).columns.to_list()),
-                                       'soma_depth': arbor_dens['soma_depth'][0],
+                                    #    'soma_depth': arbor_dens['soma_depth'][0],
                                        'specimen_id': df_merged['specimen_id'].to_list(),
-                                       'nmf_components_ax': NMF_components['ax'],
-                                       'nmf_components_de': NMF_components['de'],
-                                       'nmf_components_api': NMF_components['api'],
-                                       'nmf_components_bas': NMF_components['bas'],
-                                       'nmf_total_vars_ax': total_var['ax'][0],
-                                       'nmf_total_vars_de': total_var['de'][0],
-                                       'nmf_total_vars_api': total_var['api'][0],
-                                       'nmf_total_vars_bas': total_var['bas'][0]}, do_compression=True)
+                                       'nmf_components_inh': NMF_components['inh'],
+                                       'nmf_components_exc': NMF_components['exc'],
+                                       'nmf_total_vars_inh': total_var['inh'][0],
+                                       'nmf_total_vars_exc': total_var['exc'][0]}, do_compression=True)
 print("Done")
 # %%

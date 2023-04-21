@@ -19,15 +19,9 @@ def set_paths(config_file=None):
  paths = load_config(config_file=config_file, verbose=False)
 
  paths['input'] = f'{str(paths["data_dir"])}'
- paths['arbor_density_file'] = f'{str(paths["arbor_density_file"])}'
-#  paths['arbor_density_PC_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_file"])}'
- paths['arbor_density_PC_vars_file'] = f'{paths["input"]}/{str(paths["arbor_density_PC_vars_file"])}'
- paths['m_output_file'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
-
  paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
-
  paths['anno'] = f'{paths["input"]}/{str(paths["t_anno_output_file"])}'
- paths['m_input'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
+ paths['m_input'] = f'{paths["input"]}/{str(paths["m_output_file"])}'
  paths['t_input'] = f'{paths["input"]}/{str(paths["t_data_output_file"])}'
  paths['e_input'] = f'{paths["input"]}/{str(paths["e_output_file"])}'
  paths['met_output'] = f'{paths["input"]}/{str(paths["met_output_file"])}'
@@ -48,9 +42,11 @@ def main(config_file='config_preproc.toml'):
     print("shape of E data:", E_data.shape)
     T_data = pd.read_csv(dir_pth['t_input'])
     print("shape of T data:", T_data.shape)
-    M_data = pd.read_csv(dir_pth['m_output_file'])
+    all_M_data = sio.loadmat(dir_pth['m_input'])
+    M_data = pd.DataFrame(all_M_data['m_pcs_features'], columns=[col.rstrip() for col in all_M_data['m_pc_features_names']])
+    M_data['specimen_id'] = [str(id).rstrip() for id in all_M_data['specimen_id']]
     print("shape of m features data:", M_data.shape)
-    M_pc_vars = pd.read_csv(dir_pth['arbor_density_PC_vars_file'])
+    arbor_densities = all_M_data['hist_ax_de_api_bas']
     gene_id = pd.read_csv(dir_pth['gene_id_input'])
     print("Loading T annotations")
     T_ann = pd.read_csv(dir_pth['anno'])
@@ -58,9 +54,7 @@ def main(config_file='config_preproc.toml'):
 
     print("...................................................")
     print("read specimen ids from m data and align other with that")
-    M_data['specimen_id'] = [str(i) for i in M_data['specimen_id']]
-    m_anno = pd.DataFrame({"specimen_id": np.array([mystr.rstrip() for mystr in M_data['specimen_id']])})
-    M_data['specimen_id'] = [mystr.rstrip() for mystr in M_data['specimen_id']]
+    m_anno = pd.DataFrame({"specimen_id": M_data['specimen_id']})
 
     m_anno['specimen_id'] = m_anno['specimen_id'].astype(str)
     E_data['specimen_id'] = E_data['specimen_id'].astype(str)
@@ -116,13 +110,17 @@ def main(config_file='config_preproc.toml'):
     model_input_mat["M_dat"] = np.array(result[[c for c in M_data.columns if c not in ["specimen_id"]]])
 
     #writing the sample_ids and some meta data
-    model_input_mat["specimen_id"] = result.specimen_id.to_list()
-    model_input_mat["cluster_id"] = result.Tree_first_cl_id.to_list()
-    model_input_mat["cluster_color"] = result.Tree_first_cl_color.to_list()
-    model_input_mat["cluster_label"] = result.Tree_first_cl_label.to_list()
-    model_input_mat["merged_cluster_label_at40"] = result.merged_types_40.to_list()
-    model_input_mat["merged_cluster_label_at50"] = result.merged_types_50.to_list()
-    model_input_mat["merged_cluster_label_at60"] = result.merged_types_60.to_list()
+    model_input_mat["specimen_id"] = result['specimen_id'].to_list()
+    model_input_mat["soma_depth"] = result['soma_depth'].to_list()
+    model_input_mat['platform'] = result['platform'].to_list()
+    model_input_mat["class"] = result['class'].to_list()
+    model_input_mat["group"] = result['group'].to_list()
+    model_input_mat["cluster_id"] = result['Tree_first_cl_id'].to_list()
+    model_input_mat["cluster_color"] = result['Tree_first_cl_color'].to_list()
+    model_input_mat["cluster_label"] = result['Tree_first_cl_label'].to_list()
+    model_input_mat["merged_cluster_label_at40"] = result['merged_types_40'].to_list()
+    model_input_mat["merged_cluster_label_at50"] = result['merged_types_50'].to_list()
+    model_input_mat["merged_cluster_label_at60"] = result['merged_types_60'].to_list()
 
 
     #Writing the E_feature and M_features names
@@ -131,7 +129,22 @@ def main(config_file='config_preproc.toml'):
     model_input_mat['E_features'] = [c for c in E_data.columns if c not in ["specimen_id"]]
 
     #Writing the M_feature total variance that was used for scaling 
-    model_input_mat['M_features_total_var'] = M_pc_vars
+    model_input_mat['M_pca_total_vars_ax'] = all_M_data['pca_total_vars_ax']
+    model_input_mat['M_pca_total_vars_de'] = all_M_data['pca_total_vars_de']
+    model_input_mat['M_pca_total_vars_api'] = all_M_data['pca_total_vars_api']
+    model_input_mat['M_pca_total_vars_bas'] = all_M_data['pca_total_vars_bas']
+
+    model_input_mat['M_pca_means_ax'] = all_M_data['pca_means_ax']
+    model_input_mat['M_pca_means_de'] = all_M_data['pca_means_de']
+    model_input_mat['M_pca_means_api'] = all_M_data['pca_means_api']
+    model_input_mat['M_pca_means_bas'] = all_M_data['pca_means_bas']
+
+    model_input_mat['M_pca_components_ax'] = all_M_data['pca_components_ax']
+    model_input_mat['M_pca_components_de'] = all_M_data['pca_components_de']
+    model_input_mat['M_pca_components_api'] = all_M_data['pca_components_api']
+    model_input_mat['M_pca_components_bas'] = all_M_data['pca_components_bas']
+
+    model_input_mat['hist_ax_de_api_bas'] = all_M_data['hist_ax_de_api_bas']
 
     #Saving input mat
     print("Size of M data:", model_input_mat['M_dat'].shape)
@@ -140,7 +153,7 @@ def main(config_file='config_preproc.toml'):
     print("saving!")
 
     sio.savemat(dir_pth['met_output'], model_input_mat)
-
+    print("Done")
     return
 
 

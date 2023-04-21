@@ -3,14 +3,14 @@ from torch import nn
 
 
 class Enc_zme_int_to_zme(nn.Module):
-    def __init__(self, in_dim=22, out_dim=3, variational=False):
+    def __init__(self, in_dim=16, out_dim=3, variational=False):
         super(Enc_zme_int_to_zme, self).__init__()
         self.variational = variational
-        self.fc_0 = nn.Linear(in_dim, 22)
-        self.fc_1 = nn.Linear(22, 22)
-        # self.fc_2 = nn.Linear(22, out_dim, bias=False)
-        self.fc_mu = nn.Linear(22, out_dim, bias=False)
-        self.fc_sigma = nn.Linear(22, out_dim, bias=False)
+        self.fc_0 = nn.Linear(in_dim, 16)
+        self.fc_1 = nn.Linear(16, 16)
+        # self.fc_2 = nn.Linear(16, out_dim, bias=False)
+        self.fc_mu = nn.Linear(16, out_dim, bias=False)
+        self.fc_sigma = nn.Linear(16, out_dim, bias=False)
         self.bn = nn.BatchNorm1d(out_dim,  eps=1e-5, momentum=0.05, affine=False, track_running_stats=True)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
@@ -29,11 +29,11 @@ class Enc_zme_int_to_zme(nn.Module):
 
 
 class Dec_zme_to_zme_int(nn.Module):
-    def __init__(self, in_dim=3, out_dim=22):
+    def __init__(self, in_dim=3, out_dim=16):
         super(Dec_zme_to_zme_int, self).__init__()
-        self.fc_0 = nn.Linear(in_dim, 22)
-        self.fc_1 = nn.Linear(22, 22)
-        self.fc_2 = nn.Linear(22, out_dim)
+        self.fc_0 = nn.Linear(in_dim, 16)
+        self.fc_1 = nn.Linear(16, 16)
+        self.fc_2 = nn.Linear(16, out_dim)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
         return
@@ -47,7 +47,7 @@ class Dec_zme_to_zme_int(nn.Module):
         x = self.elu(self.fc_0(zme))
         x = self.relu(self.fc_1(x))
         x = self.relu(self.fc_2(x))
-        xm_int, xe_int = torch.split(x,[11,11], dim = 1)
+        xm_int, xe_int = torch.split(x,[8,8], dim = 1)
         return xm_int, xe_int
 
 

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import scipy.io as sio
+from collections import Counter
 from sklearn.model_selection import StratifiedKFold
 
 
@@ -105,14 +106,10 @@ class MET_exc_inh(object):
         D['E_features'] = data['E_features']
         D['M_features'] = data['M_features']
         D['hist_ax_de_api_bas'] = data['hist_ax_de_api_bas']
-        D['M_nmf_total_vars_ax'] = data['M_nmf_total_vars_ax']
-        D['M_nmf_total_vars_de'] = data['M_nmf_total_vars_de']
-        D['M_nmf_total_vars_api'] = data['M_nmf_total_vars_api']
-        D['M_nmf_total_vars_bas'] = data['M_nmf_total_vars_bas']
-        D['M_nmf_components_ax'] = data['M_nmf_components_ax']
-        D['M_nmf_components_de'] = data['M_nmf_components_de']
-        D['M_nmf_components_api'] = data['M_nmf_components_api']
-        D['M_nmf_components_bas'] = data['M_nmf_components_bas']
+        D['M_nmf_total_vars_inh'] = data['M_nmf_total_vars_inh']
+        D['M_nmf_total_vars_exc'] = data['M_nmf_total_vars_exc']
+        D['M_nmf_components_inh'] = data['M_nmf_components_inh']
+        D['M_nmf_components_exc'] = data['M_nmf_components_exc']
 
         # removing extra whitespaces from strings
         D['cluster_label'] = np.array([c.strip() for c in D['cluster_label']])
@@ -215,3 +212,59 @@ class MET_exc_inh(object):
         val_ind = val_ind[~np.isin(val_ind, exclude_ind)]
         train_ind = np.concatenate([train_ind, exclude_ind])
         return train_ind, val_ind
+    
+    def make_weights_for_balanced_classes(self, n_met, met_subclass_id , batch_size):
+        '''Takes class and subclass labels of the cells. and return the weights in such a way that ~50% of the cells
+        in each batch are from each class. The weights are in a way that in each class expected 54 cell are met cells. the 
+        subclass id of the met cells are 2 and 3. 54 is the expected value of the met cells in the inh side ... 
+        We need a balanced amount of met cells from exc and inh classes during the coupling. 
+        Args:
+            train_classes: the class labels of each cells, either 0 or 1
+            train_subclasses: the subclass labels of each cell. If cells are met and their class is 0, then their subclass
+            is 2. If they are met and their class is 1, then their subclass if 3. The rest of the cells in class 0 have subclass 
+            0 and the rest of the cells in class 1 have subclass 1.
+            n_met: number of met cells in each bach from each class
+            met_subclass_id: the subclass id for the met cells in each class. from these subclass ids, we will sampling 
+            n_met cells. 
+            batch_size: batch size
+
+        example: if the batch_size is 1000, roughly 500 will be inh and 500 will be exc. from those 500 in each class, 54
+        will be met cells.
+        '''
+        train_classes = self.group.copy()
+        train_subclasses = self.subgroup.copy()
+
+        # desired prob of choosing a met cell from each class
+        met_prob = n_met/(batch_size/2)
+        others_prob = 1 - met_prob
+         
+        # class and subclass relationship: dic={0:0, 1:1, 2:0, 3:1}
+        dic = {}
+        for i, j in zip(train_classes, train_subclasses):
+            dic[j] = i
+
+        # count of class and subclasses and the total number of cells  
+        class_counts = Counter(train_classes)
+        subclass_counts = Counter(train_subclasses)
+        N = float(sum(class_counts.values()))
+        
+        # to each cell, we assign a weight based on their classes. so if we use these weights then we can sample 50% from each class
+        weight_per_class = {}  
+        for k, v in class_counts.items():    
+            weight_per_class[k] = N/float(v)
+
+        # renormalize in such a way so that we still sample 500 from each class but the expected value for met cell sampling is 54 
+        # in each class 
+        weight_per_subclass = {}   
+        for k, v in subclass_counts.items():
+            c = dic[k]
+            if k in met_subclass_id:
+                weight_per_subclass[k] = (weight_per_class[c] * met_prob/v) * class_counts[c]
+            else: 
+                weight_per_subclass[k] = (weight_per_class[c] * others_prob/v) * class_counts[c]
+
+        weights = [0] * len(train_subclasses)
+        for idx, val in enumerate(train_subclasses):                                          
+            weights[idx] = weight_per_subclass[val]
+
+        return weights

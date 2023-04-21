@@ -1,6 +1,7 @@
 import csv
 import os
 import shutil
+import torch
 import numpy as np
 import pickle
 from pathlib import Path
@@ -32,6 +33,18 @@ def loadpkl(fname):
     with open(fname, 'rb') as f:
         X = pickle.load(f)
         return X
+    
+def save_ckp(state, checkpoint_dir, fname):
+    '''
+    Save model checkpint.
+    Args:
+        state: model stat dict
+        checkpoint_dir: path to the folder to save the checkpoint
+        fname: name of the checkpoint file to output
+    '''
+    filename = fname + '.pt'
+    f_path = os.path.join(checkpoint_dir, filename)
+    torch.save(state, f_path)
 
 def set_preproc_paths(config_file=None):
     '''Set up all the preproc files path, this function is used in the notebooks'''
@@ -65,20 +78,28 @@ def set_preproc_paths(config_file=None):
     return paths
 
 
-def set_input_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=0, creat_tb_logs=False):
-    '''The path to the input data which is read by the model as well as the path to the
-    output and tensor board are set here'''
 
+def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=0, creat_tb_logs=False):
+    ''' Set the input and output and the optimization database path.
+    Args:
+        config_file: Name of the config.toml file which points to the input data
+        exp_name: Name of the folder in which all model outputs
+        opt_storage_db: Name of the database file to store the optuna study
+        fold_n: which fold is running
+        optimization: if True then an optimization is running, otherwise the model hyper-param are given
+    '''
     paths = load_config(config_file=config_file, verbose=False)
     paths['result'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/'
     paths['opt_storage_db'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/{opt_storage_db}'
     Path(paths['result']).mkdir(parents=False, exist_ok=True)
-    paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
+    # only if optimization is running, then we save the log file in tensorboard format
     if creat_tb_logs:
+        paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
         if os.path.exists(paths['tb_logs']):
             shutil.rmtree(paths['tb_logs'])
         Path(paths['tb_logs']).mkdir(parents=True, exist_ok=False)
     return paths
+
 
 def get_all_1d_mask(dat):
     '''takes the MET_exc_inh object that has isT_1d, isM_1d and isE_1d masks and
@@ -102,4 +123,10 @@ def get_all_1d_mask(dat):
 
     return mask
 
+
+def rm_emp_end_str(myarray):
+    '''
+    Remove the empty space at the end of the strings in an array.
+    '''
+    return np.array([mystr.rstrip() for mystr in myarray])
     
