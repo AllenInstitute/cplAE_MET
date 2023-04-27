@@ -17,7 +17,7 @@ class Enc_xe_to_ze_int(nn.Module):
                  gnoise_std=None, 
                  gnoise_std_frac=0.05,
                  dropout_p=0.2, 
-                 out_dim=8):
+                 out_dim=10):
         super(Enc_xe_to_ze_int, self).__init__()
         if gnoise_std is not None:
             self.gnoise_std = gnoise_std * gnoise_std_frac
@@ -52,7 +52,7 @@ class Enc_ze_int_to_ze(nn.Module):
     """
 
     def __init__(self, 
-                 in_dim=8, 
+                 in_dim=10, 
                  out_dim=3,
                  variational=False):
         super(Enc_ze_int_to_ze, self).__init__()
@@ -76,7 +76,7 @@ class Dec_ze_to_ze_int(nn.Module):
     """Decodes `ze` into `ze_int`
     """
 
-    def __init__(self, in_dim=3, out_dim=8):
+    def __init__(self, in_dim=3, out_dim=10):
         super(Dec_ze_to_ze_int, self).__init__()
         self.fc_0 = nn.Linear(in_dim, out_dim)
         self.fc_1 = nn.Linear(out_dim, out_dim)
@@ -99,7 +99,7 @@ class Dec_ze_int_to_xe(nn.Module):
     """Decodes `ze_int` into the reconstruction `xe`
     """
 
-    def __init__(self, in_dim=8, out_dim=82):
+    def __init__(self, in_dim=10, out_dim=82):
         super(Dec_ze_int_to_xe, self).__init__()
         self.fc_0 = nn.Linear(in_dim, 40)
         self.fc_1 = nn.Linear(40, 40)

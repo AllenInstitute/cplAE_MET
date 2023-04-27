@@ -13,7 +13,7 @@ from cplAE_MET.utils.load_config import load_config
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',    default='test.toml', type=str,   help='config file with data paths')
+parser.add_argument('--config_file',    default='config_preproc.toml', type=str,   help='config file with data paths')
 
 
 
@@ -106,16 +106,16 @@ def main(config_file='config_preproc.toml'):
                     im1 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[1]}_{spec_id}.csv', header=None).values
 
                     # #convert arbor density to arbor mass
-                    mass0 = undo_radial_correction(im0)
-                    mass1 = undo_radial_correction(im1)
+                    # mass0 = undo_radial_correction(im0)
+                    # mass1 = undo_radial_correction(im1)
 
                     # Normalize so that the mass sum is 350
-                    mass0 = mass0 * 350 / np.sum(mass0)
-                    mass1 = mass1 * 350 / np.sum(mass1)
+                    # mass0 = mass0 * 350 / np.sum(mass0)
+                    # mass1 = mass1 * 350 / np.sum(mass1)
 
                     #compute the arbor density from the arbor mass again
-                    im0 = do_radial_correction(mass0)
-                    im1 = do_radial_correction(mass1)
+                    # im0 = do_radial_correction(mass0)
+                    # im1 = do_radial_correction(mass1)
 
                     if exc_or_inh == "inh":
                         im[i, :, :, 0:2] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))

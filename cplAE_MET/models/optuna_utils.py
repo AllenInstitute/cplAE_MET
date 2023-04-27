@@ -18,16 +18,25 @@ def run_classification(model, dataloader, train_ind, val_ind, T_labels):
             _, z_dict, _ = model(all_data) 
 
         is_t_1d = tonumpy(all_data['is_t_1d'])
+        is_train_1d = np.array([False for i in (range(len(is_t_1d)))])
+        is_train_1d[train_ind] = True
+        is_test_1d = np.array([False for i in (range(len(is_t_1d)))])
+        is_test_1d[val_ind] = True 
+        is_t_train_1d = np.logical_and(is_t_1d, is_train_1d)
+        is_t_test_1d = np.logical_and(is_t_1d, is_test_1d)
+        t_train_ind = np.where(is_t_train_1d)
+        t_test_ind = np.where(is_t_test_1d)
+
 
         zt = tonumpy(z_dict['zt'])
         ze = tonumpy(z_dict['ze'])
         zm = tonumpy(z_dict['zm'])
         zme_paired = tonumpy(z_dict['zme_paired'])
-        
-        _, _, clf = run_LDA(zt[is_t_1d], 
-                            T_labels[is_t_1d],
-                            train_test_ids={'train': train_ind, 
-                                            'val': val_ind})
+
+        _, _, clf = run_LDA(zt, 
+                            T_labels,
+                            train_test_ids={'train': t_train_ind, 
+                                            'val': t_test_ind})
         
         te_cpl_score = clf.score(ze[val_ind], T_labels[val_ind]) * 100
         tm_cpl_score = clf.score(zm[val_ind], T_labels[val_ind]) * 100

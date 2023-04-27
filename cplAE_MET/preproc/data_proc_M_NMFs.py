@@ -129,36 +129,6 @@ keep_cells.pop('bas')
 # %%
 # Run NMF and keep as many as components that is necessary keep the reconstuction error less than the threshold
 NMF_comps = {}
-# start = [75, 90, 95, 80]
-# i = 0
-# for k, v in arbor_density.items():
-#         NMF_comps[k] = 1
-#         for n_comp in np.arange(start[i],200):
-#             var = get_NMF_explained_variance_ratio(v, n_comp)
-#             print(k , var)
-#             if var >= nmf_comp_th:
-#                  NMF_comps[k] = n_comp
-#                  break
-#         i += 1
-
-# number of comp for 99% explained var
-# NMF_comps['ax'] = 79
-# NMF_comps['de'] = 92
-# NMF_comps['api'] = 99
-# NMF_comps['bas'] = 82
-
-# number of comp for 97% explained var
-# NMF_comps['ax'] = 40
-# NMF_comps['de'] = 66
-# NMF_comps['api'] = 74
-# NMF_comps['bas'] = 52
-
-# number of comp for 90% explained var
-# NMF_comps['ax'] = 12
-# NMF_comps['de'] = 27
-# NMF_comps['api'] = 35
-# NMF_comps['bas'] = 24
-
 NMF_comps['inh'] = 200
 NMF_comps['exc'] = 200
 

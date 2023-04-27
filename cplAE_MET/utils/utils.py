@@ -106,9 +106,9 @@ def get_all_1d_mask(dat):
     returns all different masks from those three'''
 
     mask = {}
-    mask['is_t_1d'] = dat.isT_1d
-    mask['is_e_1d'] = dat.isE_1d
-    mask['is_m_1d'] = dat.isM_1d
+    mask['is_t_1d'] = dat['is_t_1d']
+    mask['is_e_1d'] = dat['is_e_1d']
+    mask['is_m_1d'] = dat['is_m_1d']
     mask['is_me_1d'] = np.logical_and(mask['is_m_1d'], mask['is_e_1d'])
     mask['is_te_1d'] = np.logical_and(mask['is_t_1d'], mask['is_e_1d'])
     mask['is_tm_1d'] = np.logical_and(mask['is_t_1d'], mask['is_m_1d'])
@@ -120,6 +120,12 @@ def get_all_1d_mask(dat):
     mask['is_te_only_1d'] = np.logical_and(mask['is_te_1d'], ~mask['is_m_1d'])
     mask['is_tm_only_1d'] = np.logical_and(mask['is_tm_1d'], ~mask['is_e_1d'])
     mask['is_me_only_1d'] = np.logical_and(mask['is_me_1d'], ~mask['is_t_1d'])
+    
+    dat['platform'] = np.array([i.rstrip() for i in dat['platform']])
+    mask['is_patchseq_1d'] = dat['platform']=="patchseq"
+    mask['is_fMOST_1d'] = dat['platform']=="fMOST"
+    mask['is_ME_1d'] = dat['platform']=="ME"
+    mask['is_EM_1d'] = dat['platform']=="EM"
 
     return mask
 

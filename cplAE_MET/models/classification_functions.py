@@ -57,26 +57,19 @@ def run_LDA(X, y, min_label_size=7, train_test_ids=None, test_size=None):
 
     '''
     # We need to remove the cells that are within T types with small number of cells
-    small_types_mask = get_small_types_mask(y, min_label_size)
-
     if train_test_ids:
-        # first we remove the small type cells from the train and test/val cells
-        train_mask = [i for i in train_test_ids['train'] if i in np.where(small_types_mask)[0]]
-        test_mask = [i for i in train_test_ids['val'] if i in np.where(small_types_mask)[0]]
 
-        # apply the mask
-        X_train = X[train_mask]
-        X_test = X[test_mask]
-        y_train = y[train_mask]
-        y_test = y[test_mask]
+        X_train = X[train_test_ids['train']]
+        X_test = X[train_test_ids['val']]
+        y_train = y[train_test_ids['train']]
+        y_test = y[train_test_ids['val']]
 
     else:
-        X = X[small_types_mask]
-        y = y[small_types_mask]
         X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
 
     clf = LinearDiscriminantAnalysis()
     clf.fit(X_train, y_train)
     classification_acc = clf.score(X_test, y_test) * 100
     n_class = len(Counter(y_test))
+    # print(classification_acc, n_class, clf)
     return classification_acc, n_class, clf

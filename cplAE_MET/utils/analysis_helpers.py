@@ -442,7 +442,7 @@ def get_communities_sorted_node_labels(comm_obj):
     return sorted_node_labels
 
 
-def get_LDA_classification(output, level="cluster_label"):
+def get_LDA_classification(output, level, reporting_on, train_inds, test_inds):
     '''Take the model output and the cluster label or the merged cluster labels and run LDA classification'''
 
     is_t_1d = output['is_t_1d']
@@ -451,34 +451,64 @@ def get_LDA_classification(output, level="cluster_label"):
     is_te_1d = np.logical_and(is_t_1d, is_e_1d)
     is_tm_1d = np.logical_and(is_m_1d, is_t_1d)
     is_met_1d = np.logical_and(is_m_1d, is_te_1d)
+    
+    if reporting_on=="kfold":
+        X_train = output['zt'][is_t_1d]
+        y_train = np.array([i.rstrip() for i in output[level][is_t_1d]])
+        y = np.array([i.rstrip() for i in output[level]])
+    
+        kf = KFold(n_splits=10, random_state=None, shuffle=False)
+        t_cpl_score = []
+        te_cpl_score = []
+        tm_cpl_score = []
+        met_cpl_score = []
+        for i, (train_index, test_index) in enumerate(kf.split(X_train)):
+            _, _, clf = run_LDA(X_train, y_train, train_test_ids= {'train': train_index, 'val': test_index})
+            # This is the test acc on the t autoencoder
+            t_cpl_score.append(clf.score(X_train[test_index], y_train[test_index]) * 100)
+            # These are test acc on other autoencoders
+            te_cpl_score.append(clf.score(output['ze'][is_te_1d], y[is_te_1d]) * 100)
+            tm_cpl_score.append(clf.score(output['zm'][is_tm_1d], y[is_tm_1d]) * 100)
+            met_cpl_score.append(clf.score(output['zme_paired'][is_met_1d], y[is_met_1d]) * 100)
 
-    X_train = output['zt'][is_t_1d]
-    y_train = np.array([i.rstrip() for i in output[level][is_t_1d]])
-    y = np.array([i.rstrip() for i in output[level]])
+        df = pd.DataFrame(columns=["t_clusters", "t_class_acc", "et_class_acc", "met_class_acc", "mt_class_acc"])
+        df.loc[0, "t_clusters"] = len(np.unique(y_train))
+        df.loc[0, "t_class_acc"] = "{:.2f}".format(np.mean(t_cpl_score))
+        df.loc[0, "et_class_acc"] = "{:.2f}".format(np.mean(te_cpl_score))
+        df.loc[0, "met_class_acc"] = "{:.2f}".format(np.mean(met_cpl_score))
+        df.loc[0, "mt_class_acc"] = "{:.2f}".format(np.mean(tm_cpl_score))
+    
+    if reporting_on=="test_cells":
+        assert (train_inds is not None)
+        assert (test_inds is not None)
+        is_train = np.array([True  if i in train_inds else False for i in range(len(is_t_1d))])
+        is_test = np.array([True  if i in test_inds else False for i in range(len(is_t_1d))])
+        
+        re_ind_train = np.where(np.logical_and(is_train, is_t_1d))
+        re_ind_test = np.where(np.logical_and(is_test, is_t_1d))
+ 
 
-    kf = KFold(n_splits=10, random_state=None, shuffle=False)
-    te_cpl_score = []
-    tm_cpl_score = []
-    met_cpl_score = []
-    for i, (train_index, test_index) in enumerate(kf.split(X_train)):
-        _, _, clf = run_LDA(X_train, y_train, train_test_ids= {'train': train_index, 'val': test_index})
-        te_cpl_score.append(clf.score(output['ze'][is_te_1d], y[is_te_1d]) * 100)
-        tm_cpl_score.append(clf.score(output['zm'][is_tm_1d], y[is_tm_1d]) * 100)
-        met_cpl_score.append(clf.score(output['zme_paired'][is_met_1d], y[is_met_1d]) * 100)
+        X_train = output['zt']
+        y_train = np.array([i.rstrip() for i in output[level]])
+        y = np.array([i.rstrip() for i in output[level]])
 
-    df = pd.DataFrame(columns=["t_clusters", "et_class_acc", "met_class_acc", "mt_class_acc"])
-    df.loc[0, "t_clusters"] = len(np.unique(y_train))
-    df.loc[0, "et_class_acc"] = "{:.2f}".format(np.mean(te_cpl_score))
-    df.loc[0, "met_class_acc"] = "{:.2f}".format(np.mean(met_cpl_score))
-    df.loc[0, "mt_class_acc"] = "{:.2f}".format(np.mean(tm_cpl_score))
+        _, _, clf = run_LDA(X_train, y_train, train_test_ids= {'train': re_ind_train, 'val': re_ind_test})
+
+        df = pd.DataFrame(columns=["t_clusters", "t_class_acc", "et_class_acc", "met_class_acc", "mt_class_acc"])
+        df.loc[0, "t_clusters"] = len(np.unique(y_train))
+        df.loc[0, "t_class_acc"] = "{:.2f}".format(clf.score(X_train[re_ind_test], y_train[re_ind_test]) * 100)
+        df.loc[0, "et_class_acc"] = "{:.2f}".format(clf.score(output['ze'][test_inds], y[test_inds]) * 100)
+        df.loc[0, "met_class_acc"] = "{:.2f}".format(clf.score(output['zme_paired'][test_inds], y[test_inds]) * 100)
+        df.loc[0, "mt_class_acc"] = "{:.2f}".format(clf.score(output['zm'][test_inds], y[test_inds]) * 100)
+        
 
     return df
 
 
-def summary_classification_results(output):
-    df = pd.concat([get_LDA_classification(output, level = "cluster_label"),
-                    get_LDA_classification(output, level = "merged_cluster_label_at40"),
-                    get_LDA_classification(output, level = "merged_cluster_label_at50")]
+def summary_classification_results(output, reporting_on="kfold", train_inds=None, test_inds=None):
+    df = pd.concat([get_LDA_classification(output, level = "cluster_label", reporting_on=reporting_on, train_inds=train_inds, test_inds=test_inds),
+                    get_LDA_classification(output, level = "merged_cluster_label_at40", reporting_on=reporting_on, train_inds=train_inds, test_inds=test_inds),
+                    get_LDA_classification(output, level = "merged_cluster_label_at50", reporting_on=reporting_on, train_inds=train_inds, test_inds=test_inds)]
                     )
     return df
 
