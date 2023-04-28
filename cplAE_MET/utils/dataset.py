@@ -106,10 +106,10 @@ class MET_exc_inh(object):
         D['E_features'] = data['E_features']
         D['M_features'] = data['M_features']
         D['hist_ax_de_api_bas'] = data['hist_ax_de_api_bas']
-        D['M_nmf_total_vars_inh'] = data['M_nmf_total_vars_inh']
-        D['M_nmf_total_vars_exc'] = data['M_nmf_total_vars_exc']
-        D['M_nmf_components_inh'] = data['M_nmf_components_inh']
-        D['M_nmf_components_exc'] = data['M_nmf_components_exc']
+        # D['M_nmf_total_vars_inh'] = data['M_nmf_total_vars_inh']
+        # D['M_nmf_total_vars_exc'] = data['M_nmf_total_vars_exc']
+        # D['M_nmf_components_inh'] = data['M_nmf_components_inh']
+        # D['M_nmf_components_exc'] = data['M_nmf_components_exc']
 
         # removing extra whitespaces from strings
         D['cluster_label'] = np.array([c.strip() for c in D['cluster_label']])

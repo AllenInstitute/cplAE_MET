@@ -55,6 +55,13 @@ def calculate_arbor_densities_from_nmfs(rec_nmf, input_datamat):
     api = rec_channel['exc'][:,0:480].reshape(-1, 120, 4)
     bas = rec_channel['exc'][:,480:].reshape(-1, 120, 4)
 
+    return np.stack((ax, de, api, bas ), axis=3)
+
+def calculate_arbor_densities(xrm):
+    ax = xrm[:,0:480].reshape(-1, 120, 4)
+    de = xrm[:,  480 : 480*2].reshape(-1, 120, 4)
+    api = xrm[:, 480*2 : 480*3].reshape(-1, 120, 4)
+    bas = xrm[:, 480*3:].reshape(-1, 120, 4)
     return np.stack((ax, de, api, bas ), axis=3) 
 
 
@@ -81,9 +88,14 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
     zm_int_from_ze = model.ae_m.dec_zm_to_zm_int(z_dict['ze'])
     xrm_from_ze = model.ae_m.dec_zm_int_to_xm(zm_int_from_ze)
 
-    rec_arbor_density = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xr_dict['xrm']), input_datamat=input_datamat)
-    rec_arbor_density_from_zt = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_zt), input_datamat=input_datamat)
-    rec_arbor_density_from_ze = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_ze), input_datamat=input_datamat)
+    # rec_arbor_density = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xr_dict['xrm']), input_datamat=input_datamat)
+    # rec_arbor_density_from_zt = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_zt), input_datamat=input_datamat)
+    # rec_arbor_density_from_ze = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_ze), input_datamat=input_datamat)
+
+    rec_arbor_density = calculate_arbor_densities(tonumpy(xr_dict['xrm']))
+    rec_arbor_density_from_zt = calculate_arbor_densities(tonumpy(xrm_from_zt))
+    rec_arbor_density_from_ze = calculate_arbor_densities(tonumpy(xrm_from_ze))
+
         
     savedict = {'XT': tonumpy(all_data['xt']),
                 'XM': tonumpy(all_data['xm']),
@@ -118,10 +130,10 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
                 'group': input_datamat['group'],
                 'subgroup': input_datamat['subgroup'],
                 'hist_ax_de_api_bas' : input_datamat['hist_ax_de_api_bas'],
-                'M_nmf_total_vars_inh': input_datamat['M_nmf_total_vars_inh'],
-                'M_nmf_total_vars_exc': input_datamat['M_nmf_total_vars_exc'],
-                'M_nmf_components_inh': input_datamat['M_nmf_components_inh'],
-                'M_nmf_components_exc': input_datamat['M_nmf_components_exc'],
+                # 'M_nmf_total_vars_inh': input_datamat['M_nmf_total_vars_inh'],
+                # 'M_nmf_total_vars_exc': input_datamat['M_nmf_total_vars_exc'],
+                # 'M_nmf_components_inh': input_datamat['M_nmf_components_inh'],
+                # 'M_nmf_components_exc': input_datamat['M_nmf_components_exc'],
                 'train_ind': train_ind,
                 'val_ind': val_ind}
 

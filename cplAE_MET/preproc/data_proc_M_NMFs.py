@@ -98,50 +98,56 @@ for k in arbor_density.keys():
 
 # %%
 # concat nmfs for ax and de together and for api and bas together
-arbor_density['inh'] = np.concatenate((arbor_density['ax'], arbor_density['de']), axis=1)
-arbor_density['exc'] = np.concatenate((arbor_density['api'], arbor_density['bas']), axis=1)
-keep_cells['inh'] = keep_cells['ax']
-keep_cells['exc'] = keep_cells['api']
-arbor_density.pop("ax")
-arbor_density.pop("de")
-arbor_density.pop("api")
-arbor_density.pop("bas")
+# arbor_density['inh'] = np.concatenate((arbor_density['ax'], arbor_density['de']), axis=1)
+# arbor_density['exc'] = np.concatenate((arbor_density['api'], arbor_density['bas']), axis=1)
+# keep_cells['inh'] = keep_cells['ax']
+# keep_cells['exc'] = keep_cells['api']
+# arbor_density.pop("ax")
+# arbor_density.pop("de")
+# arbor_density.pop("api")
+# arbor_density.pop("bas")
 
 # %%
-assert (np.all(np.where(valid['ax'])[0]==np.where(valid['de'])[0]))
-assert (np.all(np.where(valid['api'])[0]==np.where(valid['bas'])[0]))
-valid['inh'] = valid['ax']
-valid['exc'] = valid['api']
-valid.pop('ax')
-valid.pop('de')
-valid.pop('api')
-valid.pop('bas')
+# assert (np.all(np.where(valid['ax'])[0]==np.where(valid['de'])[0]))
+# assert (np.all(np.where(valid['api'])[0]==np.where(valid['bas'])[0]))
+# valid['inh'] = valid['ax']
+# valid['exc'] = valid['api']
+# valid.pop('ax')
+# valid.pop('de')
+# valid.pop('api')
+# valid.pop('bas')
 
 # %% 
-keep_cells['exc'] = keep_cells['api']
-keep_cells['inh'] = keep_cells['ax']
-keep_cells.pop('ax')
-keep_cells.pop('de')
-keep_cells.pop('api')
-keep_cells.pop('bas')
+# keep_cells['exc'] = keep_cells['api']
+# keep_cells['inh'] = keep_cells['ax']
+# keep_cells.pop('ax')
+# keep_cells.pop('de')
+# keep_cells.pop('api')
+# keep_cells.pop('bas')
 
 
 # %%
 # Run NMF and keep as many as components that is necessary keep the reconstuction error less than the threshold
-NMF_comps = {}
-NMF_comps['inh'] = 200
-NMF_comps['exc'] = 200
+# NMF_comps = {}
+# NMF_comps['inh'] = 400
+# NMF_comps['exc'] = 400
+# NMF_comps['ax'] = 480
+# NMF_comps['de'] = 480
+# NMF_comps['api'] = 480
+# NMF_comps['bas'] = 480
 
 # %%
 # Compute nmf trnsforms and save the components for later reconstructions in the model
 NMF_components = {}
 NMF_transforms = {}
 for k, v in arbor_density.items():
-    model = NMF(n_components=NMF_comps[k], init='random', random_state=0, max_iter=200)
-    W = model.fit_transform(v)
-    H = model.components_
-    NMF_components[k] = H
-    NMF_transforms[k] = W
+    # model = NMF(n_components=NMF_comps[k], init='random', random_state=0, max_iter=200)
+    # W = model.fit_transform(v)
+    # H = model.components_
+    # NMF_components[k] = H
+    # NMF_transforms[k] = W
+    NMF_transforms[k] = v
+
     print(k, NMF_transforms[k].shape) 
 
 
@@ -161,8 +167,8 @@ for k in NMF_transforms.keys():
 # plot nmf transformations to see if we need scaling
 for k in Scaled_NMF.keys():
     Scaled_NMF[k] = pd.DataFrame(Scaled_NMF[k])
-    scaling_thr = np.abs(np.max(Scaled_NMF[k].std(axis=0, skipna=True, numeric_only=True)) * 6)
-    Scaled_NMF[k] = Scaled_NMF[k][(Scaled_NMF[k] < scaling_thr) & (Scaled_NMF[k] > -1 * scaling_thr)]
+    # scaling_thr = np.abs(np.max(Scaled_NMF[k].std(axis=0, skipna=True, numeric_only=True)) * 6)
+    # Scaled_NMF[k] = Scaled_NMF[k][(Scaled_NMF[k] < scaling_thr) & (Scaled_NMF[k] > -1 * scaling_thr)]
     Scaled_NMF[k].columns = [k + "_" + str(i) for i in range(Scaled_NMF[k].shape[1])]
     valid_ids = [id for i, id in enumerate(arbor_ids) if valid[k][i]]
     valid_ids = [id for i, id in enumerate(valid_ids) if keep_cells[k][i]]
@@ -217,7 +223,7 @@ print("Size of Merged PCs features:", df_merged.shape)
 # %%
 # from cplAE_MET.utils.plots import plot_m
 
-# m_nmfs = np.array(df_merged.drop(columns=["specimen_id"]))
+m_nmfs = np.array(df_merged.drop(columns=["specimen_id"]))
 
 # min_lim = 0
 # rec_channel = {}
@@ -233,15 +239,35 @@ print("Size of Merged PCs features:", df_merged.shape)
 
 # rec_arbor_density = np.stack((ax, de, api, bas ), axis=3) 
 
+# m_nmfs = np.array(df_merged.drop(columns=["specimen_id"]))
+
+# min_lim = 0
+# rec_channel = {}
+# for channel in ['ax', 'de', 'api', 'bas']:
+#     col_limit = (min_lim , min_lim + NMF_components[channel].shape[0])
+#     rec_channel[channel] = (np.dot(m_nmfs[:, col_limit[0]:col_limit[1]] * total_var[channel][0], NMF_components[channel])).reshape(-1, 120, 4)
+#     min_lim = col_limit[1]
+    
+# rec_arbor_density1 = np.stack((rec_channel['ax'], rec_channel['de'], rec_channel['api'], rec_channel['bas'] ), axis=3)
+#%%
+# from cplAE_MET.utils.plots import plot_z_3d, plot_m
+# cell = 300
+# cell=5000
+# plot_m(arbor_dens['hist_ax_de_api_bas'][cell,])
+# plot_m(rec_arbor_density1[cell,])
+# plot_m(rec_arbor_density[cell,])
+
+
+
 # %%
 sio.savemat(dir_pth['m_output_file'], {'hist_ax_de_api_bas': arbor_dens['hist_ax_de_api_bas'],
                                        'm_features': np.array(df_merged.drop(columns=["specimen_id"])),
                                        'm_features_names': np.array(df_merged.drop(columns=["specimen_id"]).columns.to_list()),
                                     #    'soma_depth': arbor_dens['soma_depth'][0],
-                                       'specimen_id': df_merged['specimen_id'].to_list(),
-                                       'nmf_components_inh': NMF_components['inh'],
-                                       'nmf_components_exc': NMF_components['exc'],
-                                       'nmf_total_vars_inh': total_var['inh'][0],
-                                       'nmf_total_vars_exc': total_var['exc'][0]}, do_compression=True)
+                                       'specimen_id': df_merged['specimen_id'].to_list()}, do_compression=True)#,
+                                    #    'nmf_components_inh': NMF_components['inh'],
+                                    #    'nmf_components_exc': NMF_components['exc'],
+                                    #    'nmf_total_vars_inh': total_var['inh'][0],
+                                    #    'nmf_total_vars_exc': total_var['exc'][0]}, do_compression=True)
 print("Done")
 # %%

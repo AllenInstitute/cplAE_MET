@@ -156,11 +156,11 @@ def main(config_file='config_preproc.toml'):
     model_input_mat['E_features'] = [c for c in E_data.columns if c not in ["specimen_id"]]
 
     #Writing the M_feature total variance that was used for scaling 
-    model_input_mat['M_nmf_total_vars_inh'] = all_M_data['nmf_total_vars_inh']
-    model_input_mat['M_nmf_total_vars_exc'] = all_M_data['nmf_total_vars_exc']
+    # model_input_mat['M_nmf_total_vars_inh'] = all_M_data['nmf_total_vars_inh']
+    # model_input_mat['M_nmf_total_vars_exc'] = all_M_data['nmf_total_vars_exc']
 
-    model_input_mat['M_nmf_components_inh'] = all_M_data['nmf_components_inh']
-    model_input_mat['M_nmf_components_exc'] = all_M_data['nmf_components_exc']
+    # model_input_mat['M_nmf_components_inh'] = all_M_data['nmf_components_inh']
+    # model_input_mat['M_nmf_components_exc'] = all_M_data['nmf_components_exc']
 
     model_input_mat['hist_ax_de_api_bas'] = all_M_data['hist_ax_de_api_bas']
 
