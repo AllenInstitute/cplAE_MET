@@ -125,8 +125,10 @@ def plot_m(density_map,
         vmax: max of color bar
     """
     n_channels = len(channel)
-    f, ax = plt.subplots(1, n_channels, figsize=(8, n_channels))
+    print(n_channels)
+    f, ax = plt.subplots(1, n_channels, figsize=(8, 4))
     for i in range(len(ax)):
+        # vmax = np.max(density_map[:, :, i])
         ax[i].imshow(np.squeeze(density_map[:, :, i]),
                      aspect='auto',
                      vmin=vmin, vmax=vmax,
@@ -210,6 +212,67 @@ def plot_z_v2(output, xlim=(-5, 5), ylim=(-5, 5), zme_paired=None):
     plt.show()
     return
 
+
+def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), cell_mask=None):
+    """plots M,E,T representations
+
+    Args:
+        zm (np.array):
+        ze (np.array):
+        zt (np.array):
+        dat (cluster_color):
+        xlim (tuple): plot limits. Defaults to (-5, 5).
+        ylim (tuple): plot limits. Defaults to (-5, 5).
+        cell_mask: If given, it is a list of True and False to mask the specimen ids, all the true cells will be shown in gray color
+    """
+    is_me_1d = np.logical_and(output['is_e_1d'], output['is_m_1d'])
+    is_te_1d = np.logical_and(output['is_e_1d'], output['is_t_1d'])
+    is_mt_1d = np.logical_and(output['is_m_1d'], output['is_t_1d'])
+    is_met_1d = np.logical_and(is_me_1d, output['is_t_1d'])
+
+
+    fig = plt.figure(figsize=(20,5))
+
+    ax = fig.add_subplot(141, projection='3d')
+    ax.scatter(output['zt'][output['is_t_1d']][:,0], output['zt'][output['is_t_1d']][:,1], 
+                output['zt'][output['is_t_1d']][:,2], c=output['cluster_color'][output['is_t_1d']],s=3)
+    if cell_mask is not None:
+        ax.scatter(output['zt'][cell_mask][:,0], output['zt'][cell_mask][:,1], 
+                output['zt'][cell_mask][:,2], c="#808080",s=15)
+    ax.set(title='T', xlim=xlim, ylim=ylim, zlim=zlim)
+
+
+    ax = fig.add_subplot(142, projection='3d')
+    ax.scatter(output['ze'][is_te_1d][:,0], output['ze'][is_te_1d][:,1], 
+                output['ze'][is_te_1d][:,2], c=output['cluster_color'][is_te_1d],s=3)
+    if cell_mask:
+        ax.scatter(output['ze'][cell_mask][:,0], output['ze'][cell_mask][:,1], 
+                output['ze'][cell_mask][:,2], c="#808080",s=15)
+    ax.set(title='E', xlim=xlim, ylim=ylim, zlim=zlim)
+
+
+    ax = fig.add_subplot(143, projection='3d')
+    ax.scatter(output['zme_paired'][is_met_1d][:,0], output['zme_paired'][is_met_1d][:,1], 
+                output['zme_paired'][is_met_1d][:,2], c=output['cluster_color'][is_met_1d],s=3)
+    if cell_mask is not None:
+        ax.scatter(output['zme_paired'][cell_mask][:,0], output['zme_paired'][cell_mask][:,1], 
+                output['zme_paired'][cell_mask][:,2], c="#808080",s=15)
+    ax.set(title='ME', xlim=xlim, ylim=ylim, zlim=zlim)
+
+
+    ax = fig.add_subplot(144, projection='3d')
+    ax.scatter(output['zm'][is_mt_1d][:,0], output['zm'][is_mt_1d][:,1], 
+                output['zm'][is_mt_1d][:,2], c=output['cluster_color'][is_mt_1d], s=3)
+    # ax.view_init(-90, 60)
+    if cell_mask is not None:
+        ax.scatter(output['zm'][cell_mask][:,0], output['zm'][cell_mask][:,1], 
+                output['zm'][cell_mask][:,2], c="#808080", s=15)
+    ax.set(title='M', xlim=xlim, ylim=ylim, zlim=zlim)
+
+
+    plt.tight_layout()
+    plt.show()
+    return
 
 def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), cell_mask=None):
     """plots M,E,T representations

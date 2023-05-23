@@ -10,6 +10,7 @@ class MET_exc_inh(object):
         self.XT = dat['XT']
         self.XE = dat['XE']
         self.XM = dat['XM']
+        self.Xsd = dat['Xsd']
         self.cluster_label = dat['cluster_label']
         self.merged_cluster_label_at40 = dat['merged_cluster_label_at40']
         self.merged_cluster_label_at50 = dat['merged_cluster_label_at50']
@@ -35,6 +36,7 @@ class MET_exc_inh(object):
         return MET_exc_inh(dict(XT=self.XT[inds[0]],
                                 XE=self.XE[inds[0]],
                                 XM=self.XM[inds[0]],
+                                Xsd=self.Xsd[inds[0]],
                                 cluster_label=self.cluster_label[inds[0]],
                                 merged_cluster_label_at40=self.merged_cluster_label_at40[inds[0]],
                                 merged_cluster_label_at50=self.merged_cluster_label_at50[inds[0]],
@@ -90,6 +92,7 @@ class MET_exc_inh(object):
         D['XT'] = data['T_dat']
         D['XE'] = data['E_dat']
         D['XM'] = data['M_dat']
+        D['Xsd'] = data['soma_depth']
         D['cluster_label'] = data['cluster_label']
         D['merged_cluster_label_at40'] = data['merged_cluster_label_at40']
         D['merged_cluster_label_at50'] = data['merged_cluster_label_at50']
@@ -110,6 +113,14 @@ class MET_exc_inh(object):
         # D['M_nmf_total_vars_exc'] = data['M_nmf_total_vars_exc']
         # D['M_nmf_components_inh'] = data['M_nmf_components_inh']
         # D['M_nmf_components_exc'] = data['M_nmf_components_exc']
+        # D['M_nmf_total_vars_ax'] = data['M_nmf_total_vars_ax']
+        # D['M_nmf_total_vars_de'] = data['M_nmf_total_vars_de']
+        # D['M_nmf_total_vars_api'] = data['M_nmf_total_vars_api']
+        # D['M_nmf_total_vars_bas'] = data['M_nmf_total_vars_bas']
+        # D['M_nmf_components_ax'] = data['M_nmf_components_ax']
+        # D['M_nmf_components_de'] = data['M_nmf_components_de']
+        # D['M_nmf_components_api'] = data['M_nmf_components_api']
+        # D['M_nmf_components_bas'] = data['M_nmf_components_bas']
 
         # removing extra whitespaces from strings
         D['cluster_label'] = np.array([c.strip() for c in D['cluster_label']])

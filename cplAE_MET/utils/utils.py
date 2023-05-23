@@ -88,7 +88,7 @@ def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=
         fold_n: which fold is running
         optimization: if True then an optimization is running, otherwise the model hyper-param are given
     '''
-    paths = load_config(config_file=config_file, verbose=False)
+    paths, config_file_path = load_config(config_file=config_file, verbose=False)
     paths['result'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/'
     paths['opt_storage_db'] = f'{str(paths["package_dir"] / "data/results")}/{exp_name}/{opt_storage_db}'
     Path(paths['result']).mkdir(parents=False, exist_ok=True)
@@ -98,6 +98,7 @@ def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=
         if os.path.exists(paths['tb_logs']):
             shutil.rmtree(paths['tb_logs'])
         Path(paths['tb_logs']).mkdir(parents=True, exist_ok=False)
+    paths['config_file'] = config_file_path
     return paths
 
 

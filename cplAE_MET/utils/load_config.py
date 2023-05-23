@@ -25,4 +25,4 @@ def load_config(config_file=None, verbose=False):
     if verbose:
         for key in config.keys():
             print(f'{key}: {config[key]}')
-    return config
+    return config, config_file
