@@ -210,27 +210,19 @@ class Model_ME_T_conv(nn.Module):
         
 
         # t arm
-        zt, xrt, mu_t, log_sigma_t = self.ae_t(xt)
+        zt, xrt, _, _ = self.ae_t(xt)
 
         # # e arm
-        _, ze, _, xre, mu_e, log_sigma_e = self.ae_e(xe)
+        _, ze, _, xre, _, _ = self.ae_e(xe)
 
         # m arm
-        _, zm, _, xrm, mu_m, log_sigma_m = self.ae_m(xm)
+        _, zm, _, xrm, _, _ = self.ae_m(xm)
         
-        # me arm
+        # # me arm
         ze_int_enc_paired = self.me_e_encoder(xe)
         zm_int_enc_paired = self.me_m_encoder(xm)
-
-        if self.variational:
-            mu_me, sigma_me = self.ae_me.enc_zme_int_to_zme(zm_int_enc_paired, ze_int_enc_paired)
-            log_sigma_me = (sigma_me + 1e-6).log()
-            zme_paired = self.ae_me.dec_zme_to_zme_int.reparametrize(mu_me, sigma_me)
-        else:
-            zme_paired = self.ae_me.enc_zme_int_to_zme(zm_int_enc_paired, ze_int_enc_paired)
-            mu_me = []
-            log_sigma_me = []
-
+        zme_paired = self.ae_me.enc_zme_int_to_zme(zm_int_enc_paired, ze_int_enc_paired)
+            
         zm_int_dec_paired, ze_int_dec_paired = self.ae_me.dec_zme_to_zme_int(zme_paired)
         xre_me_paired = self.me_e_decoder(ze_int_dec_paired)
         xrm_me_paired = self.me_m_decoder(zm_int_dec_paired, 
@@ -239,13 +231,30 @@ class Model_ME_T_conv(nn.Module):
 
         # Loss calculations
         loss_dict={}
+
+        loss_dict['rec_t'] = self.compute_rec_loss(xt, xrt, valid_xt, is_t_1d)
+        loss_dict['rec_e'] = self.compute_rec_loss(xe, xre, valid_xe, is_e_1d)
         loss_dict['rec_m'] = self.compute_rec_loss(xm, xrm, valid_xm, is_m_1d)
-        # loss_dict['rec_m_me'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_me_paired[is_me_1d, ...], valid_xm[is_me_1d, ...], is_me_1d)
-        # loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...], is_me_1d)
+        loss_dict['rec_m_me'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_me_paired[is_me_1d, ...], valid_xm[is_me_1d, ...], is_me_1d)
+        loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...], is_me_1d)
 
+        loss_dict['cpl_me->t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
+        loss_dict['cpl_t->me'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
 
-        # loss_dict['BCELoss_m'] = self.compute_BCE_loss(xrm[is_m_1d][valid_xm[is_m_1d]], xm[is_m_1d][valid_xm[is_m_1d]])
-        # loss_dict['BCELoss_me_m'] = self.compute_BCE_loss(xrm[is_me_1d][valid_xm[is_me_1d]], xm[is_me_1d][valid_xm[is_me_1d]])
+        loss_dict['cpl_me->m'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), zm[is_me_1d, ...])
+        loss_dict['cpl_m->me'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...], zm[is_me_1d, ...].detach())
+
+        loss_dict['cpl_me->e'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), ze[is_me_1d, ...])
+        loss_dict['cpl_e->me'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...], ze[is_me_1d, ...].detach())
+
+        loss_dict['cpl_t->e'] = self.compute_cpl_loss(zt[is_te_1d, ...].detach(), ze[is_te_1d, ...])
+        loss_dict['cpl_e->t'] = self.compute_cpl_loss(zt[is_te_1d, ...], ze[is_te_1d, ...].detach())
+
+        loss_dict['cpl_t->m'] = self.compute_cpl_loss(zt[is_tm_1d, ...].detach(), zm[is_tm_1d, ...])
+        loss_dict['cpl_m->t'] = self.compute_cpl_loss(zt[is_tm_1d, ...], zm[is_tm_1d, ...].detach())
+
+        loss_dict['cpl_m->e'] = self.compute_cpl_loss(zm[is_me_1d, ...].detach(), ze[is_me_1d, ...])
+        loss_dict['cpl_e->m'] = self.compute_cpl_loss(zm[is_me_1d, ...], ze[is_me_1d, ...].detach())
 
 
         ############################## get output dicts

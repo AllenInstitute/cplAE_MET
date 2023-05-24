@@ -18,7 +18,7 @@ import optuna
 from cplAE_MET.utils.dataset import MET_exc_inh
 from cplAE_MET.utils.utils import set_paths, save_ckp
 from cplAE_MET.models.torch_utils import MET_dataset
-from cplAE_MET.models.model_classes import Model_ME_T
+from cplAE_MET.models.model_classes import Model_ME_T_conv
 
 from cplAE_MET.models.train_utils import init_losses, save_results, optimizer_to, Criterion
 from cplAE_MET.models.optuna_utils import run_classification
@@ -27,11 +27,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',           default='config_10k.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='MET_10k_stratified_1920arbor_50met_removed_mass_norm_v0',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='MET_10k_stratified_1920arbor_50met_removed_mass_norm_v0.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
+parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
+parser.add_argument('--optimization',          default=False,           type=bool,  help='if False then the hyperparam are read from the input args')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
@@ -42,34 +42,34 @@ parser.add_argument('--latent_dim',            default=3,              type=int,
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
 parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_E',               default=(-4,2),         type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=(-2,2),         type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_ME',              default=(-2,2),         type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
-parser.add_argument('--lambda_TM',             default=1.0,            type=float, help='coupling loss weight between T and M')
-parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
-parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
-parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_E_T_range', default=(-6,-3),        type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_ME_E_range',default=(2,6),          type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_ME_M_range',default=(2,6),          type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-6,-2),        type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_M_T_range', default=(-4,0),         type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_T_E_range', default=(3,6),          type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_T_M_range', default=(0,5),          type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_T_ME_range',default=(-1,4),         type=float, help='Tune the directionality of coupling between T and ME')
+# parser.add_argument('--alpha_E',               default=(-4,2),         type=float, help='E reconstruction loss weight')
+# parser.add_argument('--alpha_M',               default=(-2,2),         type=float, help='M reconstruction loss weight')
+# parser.add_argument('--alpha_ME',              default=(-2,2),         type=float, help='ME reconstruction loss weight')
+parser.add_argument('--lambda_TE',             default=0.0,            type=float, help='coupling loss weight between T and E')
+parser.add_argument('--lambda_TM',             default=0.0,            type=float, help='coupling loss weight between T and M')
+parser.add_argument('--lambda_ME_T',           default=0.0,            type=float, help='coupling loss weight between ME and T')
+parser.add_argument('--lambda_ME_M',           default=0.0,            type=float, help='coupling loss weight between ME and M')
+parser.add_argument('--lambda_ME_E',           default=0.0,            type=float, help='coupling loss weight between ME and E')
+# parser.add_argument('--lambda_tune_E_T_range', default=(-6,-3),        type=float, help='Tune the directionality of coupling between E and T')
+# parser.add_argument('--lambda_tune_ME_E_range',default=(2,6),          type=float, help='Tune the directionality of coupling between ME and E')
+# parser.add_argument('--lambda_tune_ME_M_range',default=(2,6),          type=float, help='Tune the directionality of coupling between ME and M')
+# parser.add_argument('--lambda_tune_ME_T_range',default=(-6,-2),        type=float, help='Tune the directionality of coupling between ME and T')
+# parser.add_argument('--lambda_tune_M_T_range', default=(-4,0),         type=float, help='Tune the directionality of coupling between M and T')
+# parser.add_argument('--lambda_tune_T_E_range', default=(3,6),          type=float, help='Tune the directionality of coupling between T and E')
+# parser.add_argument('--lambda_tune_T_M_range', default=(0,5),          type=float, help='Tune the directionality of coupling between T and M')
+# parser.add_argument('--lambda_tune_T_ME_range',default=(-1,4),         type=float, help='Tune the directionality of coupling between T and ME')
 # If optimization is off
-# parser.add_argument('--alpha_E',               default=-2.518659435321765,            type=float, help='E reconstruction loss weight')
-# parser.add_argument('--alpha_M',               default=-1.0868595731769475,            type=float, help='M reconstruction loss weight')
-# parser.add_argument('--alpha_ME',              default=-0.2584645482925703,            type=float, help='ME reconstruction loss weight')
-# parser.add_argument('--lambda_tune_E_T_range', default=-5.964269814438085,            type=float, help='Tune the directionality of coupling between E and T')
-# parser.add_argument('--lambda_tune_ME_E_range',default=5.79191530020224,            type=float, help='Tune the directionality of coupling between ME and E')
-# parser.add_argument('--lambda_tune_ME_M_range',default=5.44841100847209,            type=float, help='Tune the directionality of coupling between ME and M')
-# parser.add_argument('--lambda_tune_ME_T_range',default=-4.702109557828222,            type=float, help='Tune the directionality of coupling between ME and T')
-# parser.add_argument('--lambda_tune_M_T_range', default=-3.5914452978996207,            type=float, help='Tune the directionality of coupling between M and T')
-# parser.add_argument('--lambda_tune_T_E_range', default=3.5909869712376783,            type=float, help='Tune the directionality of coupling between T and E')
-# parser.add_argument('--lambda_tune_T_M_range', default=2.0566115256506334,            type=float, help='Tune the directionality of coupling between T and M')
-# parser.add_argument('--lambda_tune_T_ME_range',default=2.8688827728713155,            type=float, help='Tune the directionality of coupling between T and ME')
+parser.add_argument('--alpha_E',               default=1,            type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_M',               default=1,            type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_ME',              default=1,            type=float, help='ME reconstruction loss weight')
+parser.add_argument('--lambda_tune_E_T_range', default=0,            type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_ME_E_range',default=0,            type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_ME_M_range',default=0,            type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_T_range',default=0,            type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_M_T_range', default=0,            type=float, help='Tune the directionality of coupling between M and T')
+parser.add_argument('--lambda_tune_T_E_range', default=0,            type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_T_M_range', default=0,            type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_T_ME_range',default=0,            type=float, help='Tune the directionality of coupling between T and ME')
 
 
 
@@ -141,7 +141,7 @@ def main(exp_name="TEST",
                                       lambda_tune_ME_E=params['lambda_tune_ME_E']) 
                             )  
 
-        model = Model_ME_T(model_config)
+        model = Model_ME_T_conv(model_config)
         return model, model_config
 
 
@@ -192,6 +192,10 @@ def main(exp_name="TEST",
                         'lambda_tune_ME_T': trial.suggest_float('lambda_tune_ME_T', self.lambda_tune_ME_T_range[0], self.lambda_tune_ME_T_range[1]),
                         'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
                         'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1])}
+                
+                for k,v in params.items(): 
+                    params[k] = np.exp(v)
+
             else:
                 params = {'alpha_E': self.alpha_E,
                     'alpha_M': self.alpha_M,
@@ -205,8 +209,7 @@ def main(exp_name="TEST",
                     'lambda_tune_ME_M': self.lambda_tune_ME_M_range,
                     'lambda_tune_ME_E': self.lambda_tune_ME_E_range}
                 
-            for k,v in params.items(): 
-                    params[k] = np.exp(v) 
+             
             
             model, model_config = build_model(params)
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -239,7 +242,7 @@ def main(exp_name="TEST",
 
         # Training -----------
         for epoch in range(n_epochs):
-            # print(epoch)
+            print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
@@ -268,36 +271,40 @@ def main(exp_name="TEST",
                     val_loss, _, _ = model(val_batch)
             
             if not optimization:
-                if ((epoch % 1000) == 0):
+                if ((epoch % 100) == 0):
                     fname = dir_pth['result'] + f"checkpoint_epoch_{epoch}.pkl"
                     save_results(model, dataloader, D, fname, train_ind, val_ind)
 
                 # TODO
                 # Logging -----------
-                tb_writer.add_scalar('Train/MSE_XT', train_loss['rec_t'], epoch)
-                tb_writer.add_scalar('Validation/MSE_XT', val_loss['rec_t'], epoch)
+                # tb_writer.add_scalar('Train/MSE_XT', train_loss['rec_t'], epoch)
+                # tb_writer.add_scalar('Validation/MSE_XT', val_loss['rec_t'], epoch)
                 tb_writer.add_scalar('Train/MSE_XM', train_loss['rec_m'], epoch)
                 tb_writer.add_scalar('Validation/MSE_XM', val_loss['rec_m'], epoch)
-                tb_writer.add_scalar('Train/MSE_XE', train_loss['rec_e'], epoch)
-                tb_writer.add_scalar('Validation/MSE_XE', val_loss['rec_e'], epoch)
-                tb_writer.add_scalar('Train/MSE_XME', train_loss['rec_m_me'] + train_loss['rec_e_me'], epoch)
-                tb_writer.add_scalar('Validation/MSE_XME', val_loss['rec_m_me']+ val_loss['rec_e_me'], epoch)
-                tb_writer.add_scalar('Train/cpl_T->E', train_loss['cpl_t->e'], epoch)
-                tb_writer.add_scalar('Validation/cpl_T->E', val_loss['cpl_t->e'], epoch)
-                tb_writer.add_scalar('Train/cpl_E->T', train_loss['cpl_e->t'], epoch)
-                tb_writer.add_scalar('Validation/cpl_E->T', val_loss['cpl_e->t'], epoch)
-                tb_writer.add_scalar('Train/cpl_T->M', train_loss['cpl_t->m'], epoch)
-                tb_writer.add_scalar('Validation/cpl_T->M', val_loss['cpl_t->m'], epoch)
-                tb_writer.add_scalar('Train/cpl_M->T', train_loss['cpl_m->t'], epoch)
-                tb_writer.add_scalar('Validation/cpl_M->T', val_loss['cpl_m->t'], epoch)
-                tb_writer.add_scalar('Train/cpl_ME->T', train_loss['cpl_me->t'], epoch)
-                tb_writer.add_scalar('Validation/cpl_ME->T', val_loss['cpl_me->t'], epoch)
-                tb_writer.add_scalar('Train/cpl_T->ME', train_loss['cpl_t->me'], epoch)
-                tb_writer.add_scalar('Validation/cpl_T->ME', val_loss['cpl_t->me'], epoch)
-                tb_writer.add_scalar('Train/cpl_ME->M', train_loss['cpl_me->m'], epoch)
-                tb_writer.add_scalar('Validation/cpl_ME->M', val_loss['cpl_me->m'], epoch)
-                tb_writer.add_scalar('Train/cpl_ME->E', train_loss['cpl_me->e'], epoch)
-                tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)       
+                # tb_writer.add_scalar('Train/BCELoss_XM', train_loss['BCELoss_m'], epoch)
+                # tb_writer.add_scalar('Validation/BCELoss_XM', val_loss['BCELoss_m'], epoch)
+                # tb_writer.add_scalar('Train/MSE_XE', train_loss['rec_e'], epoch)
+                # tb_writer.add_scalar('Validation/MSE_XE', val_loss['rec_e'], epoch)
+                # tb_writer.add_scalar('Train/MSE_M_XME', train_loss['rec_m_me'], epoch)
+                # tb_writer.add_scalar('Validation/MSE_M_XME', val_loss['rec_m_me'], epoch)
+                # tb_writer.add_scalar('Train/BCELoss_XM', train_loss['BCELoss_m'], epoch)
+                # tb_writer.add_scalar('Validation/BCELoss_XM', val_loss['BCELoss_m'], epoch)
+                # tb_writer.add_scalar('Train/cpl_T->E', train_loss['cpl_t->e'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_T->E', val_loss['cpl_t->e'], epoch)
+                # tb_writer.add_scalar('Train/cpl_E->T', train_loss['cpl_e->t'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_E->T', val_loss['cpl_e->t'], epoch)
+                # tb_writer.add_scalar('Train/cpl_T->M', train_loss['cpl_t->m'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_T->M', val_loss['cpl_t->m'], epoch)
+                # tb_writer.add_scalar('Train/cpl_M->T', train_loss['cpl_m->t'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_M->T', val_loss['cpl_m->t'], epoch)
+                # tb_writer.add_scalar('Train/cpl_ME->T', train_loss['cpl_me->t'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_ME->T', val_loss['cpl_me->t'], epoch)
+                # tb_writer.add_scalar('Train/cpl_T->ME', train_loss['cpl_t->me'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_T->ME', val_loss['cpl_t->me'], epoch)
+                # tb_writer.add_scalar('Train/cpl_ME->M', train_loss['cpl_me->m'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_ME->M', val_loss['cpl_me->m'], epoch)
+                # tb_writer.add_scalar('Train/cpl_ME->E', train_loss['cpl_me->e'], epoch)
+                # tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)       
 
         model_score = run_classification(model, dataloader, train_ind, val_ind, T_labels_for_classification)
         return model, model_score
@@ -320,15 +327,16 @@ def main(exp_name="TEST",
 
     # Copy the running code into the result dir -----------
     shutil.copy(__file__, dir_pth['result'])
+    shutil.copy(dir_pth['config_file'], dir_pth['result']) 
  
     # Weighted sampling strategy -----------
-    weights = train_dat.make_weights_for_balanced_classes(n_met = 54, met_subclass_id = [2, 3], batch_size=1000)                                                                
-    weights = torch.DoubleTensor(weights)                                       
-    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights)) 
+    # weights = train_dat.make_weights_for_balanced_classes(n_met = 54, met_subclass_id = [2, 3], batch_size=1000)                                                                
+    # weights = torch.DoubleTensor(weights)                                       
+    # sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights)) 
     
     # Dataset and Dataloader -----------
     train_dataset = MET_dataset(train_dat, device=device)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, drop_last=True, sampler=sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
 
     val_dataset = MET_dataset(val_dat, device=device)
