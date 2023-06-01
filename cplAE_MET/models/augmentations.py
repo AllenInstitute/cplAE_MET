@@ -28,10 +28,14 @@ def get_padded_im(im, pad):
         padded_im
     """
     assert np.ndim(im)==5, 'im.shape should have shape (N,1,H,W,C)' 
+    is_m_1d = np.all(~np.isnan(im), axis=(1,2,3,4))
+
     padded_shape = np.array(im.shape)
     padded_shape[2] = padded_shape[2] + pad * 2
     padded_im = np.zeros(padded_shape).astype(float)
     padded_im[:, 0, pad:-pad, :, :] = im[:, 0, ...]
+    padded_im[~is_m_1d] = np.nan
+    
     return padded_im
 
 

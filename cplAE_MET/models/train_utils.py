@@ -81,21 +81,57 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
         val_ind: the indices of the validation cells
     '''
     model.eval()
-
-    for all_data in iter(dataloader):
-        with torch.no_grad():
-            _, z_dict, xr_dict = model(all_data)
     
-    zm_int_from_zt = model.ae_m.dec_zm_to_zm_int(z_dict['zt'])
+    z_dict = {"zt": [], "ze": [], "zm": [], "zme_paired": []}
+    xr_dict = {"xrt": [], "xre": [], "xrm": [], "xrm_me_paired": [], "xre_me_paired": []}
+    is_1d = {'is_t_1d': [], "is_e_1d": [], "is_m_1d": []}
+
+    for i, batch in enumerate(iter(dataloader)):
+        with torch.no_grad():
+            is_1d['is_t_1d'].append(batch['is_t_1d'])
+            is_1d['is_e_1d'].append(batch['is_e_1d'])
+            is_1d['is_m_1d'].append(batch['is_m_1d'])
+
+            _, z_di, xr_di = model(batch)
+            
+            z_dict["zt"].append(z_di["zt"])
+            z_dict["ze"].append(z_di["ze"])
+            z_dict["zm"].append(z_di["zm"])
+            z_dict["zme_paired"].append(z_di["zme_paired"])
+
+            xr_dict["xrt"].append(xr_di["xrt"])
+            xr_dict["xre"].append(xr_di["xre"])
+            xr_dict["xrm"].append(xr_di["xrm"])
+            xr_dict["xrm_me_paired"].append(xr_di["xrm_me_paired"])
+            xr_dict["xre_me_paired"].append(xr_di["xre_me_paired"])
+            
+    is_1d['is_t_1d'] = torch.cat(is_1d['is_t_1d'])
+    is_1d['is_e_1d'] = torch.cat(is_1d['is_e_1d'])
+    is_1d['is_m_1d'] = torch.cat(is_1d['is_m_1d'])
+            
+    z_dict["zt"] = torch.cat(z_dict["zt"])
+    z_dict["ze"] = torch.cat(z_dict["ze"])
+    z_dict["zm"] = torch.cat(z_dict["zm"])
+    z_dict["zme_paired"] = torch.cat(z_dict["zme_paired"])
+
+    xr_dict["xrt"] = torch.cat(xr_dict["xrt"])
+    xr_dict["xre"] = torch.cat(xr_dict["xre"])
+    xr_dict["xrm"] = torch.cat(xr_dict["xrm"])
+    xr_dict["xrm_me_paired"] = torch.cat(xr_dict["xrm_me_paired"])
+    xr_dict["xre_me_paired"] = torch.cat(xr_dict["xre_me_paired"])
+
+
+      
+    # zm_int_from_zt = model.ae_m.dec_zm_to_zm_int(z_dict['zt'])
     # xrm_from_zt = model.ae_m.dec_zm_int_to_xm(zm_int_from_zt, model.me_m_encoder.pool_0_ind,
     #                                       self.me_m_encoder.pool_1_ind)
     
-    zm_int_from_ze = model.ae_m.dec_zm_to_zm_int(z_dict['ze'])
+    # zm_int_from_ze = model.ae_m.dec_zm_to_zm_int(z_dict['ze'])
     # xrm_from_ze = model.ae_m.dec_zm_int_to_xm(zm_int_from_ze)
 
-    rec_arbor_density =  tonumpy(xr_dict['xrm'])
-    rec_arbor_density_from_zt = tonumpy(xr_dict['xrm'])
-    rec_arbor_density_from_ze = tonumpy(xr_dict['xrm'])
+    # rec_arbor_density =  tonumpy(xr_dict['xrm'])
+    # rec_arbor_density_from_zt = tonumpy(xr_dict['xrm'])
+    # rec_arbor_density_from_ze = tonumpy(xr_dict['xrm'])
     # rec_arbor_density = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xr_dict['xrm']), input_datamat=input_datamat)
     # rec_arbor_density_from_zt = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_zt), input_datamat=input_datamat)
     # rec_arbor_density_from_ze = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_ze), input_datamat=input_datamat)
@@ -105,24 +141,24 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
     # rec_arbor_density_from_ze = calculate_arbor_densities(tonumpy(xrm_from_ze))
 
         
-    savedict = {'XT': tonumpy(all_data['xt']),
-                'XM': tonumpy(all_data['xm']),
-                'XE': tonumpy(all_data['xe']),
+    savedict = {'XT': input_datamat['XT'],
+                'XM': input_datamat['XM'],
+                'XE': input_datamat['XE'],
                 'XrT': tonumpy(xr_dict['xrt']),
                 'XrE': tonumpy(xr_dict['xre']),
                 'XrM': tonumpy(xr_dict['xrm']),
                 'XrM_me_paired': tonumpy(xr_dict['xrm_me_paired']),
                 'XrE_me_paired': tonumpy(xr_dict['xre_me_paired']),
-                'rec_arbor_density': rec_arbor_density,
-                'rec_arbor_density_from_zt': rec_arbor_density_from_zt,
-                'rec_arbor_density_from_ze': rec_arbor_density_from_ze,
+                # 'rec_arbor_density': rec_arbor_density,
+                # 'rec_arbor_density_from_zt': rec_arbor_density_from_zt,
+                # 'rec_arbor_density_from_ze': rec_arbor_density_from_ze,
                 'zm': tonumpy(z_dict['zm']),
                 'ze': tonumpy(z_dict['ze']),
                 'zt': tonumpy(z_dict['zt']),
                 'zme_paired': tonumpy(z_dict['zme_paired']),
-                'is_t_1d':tonumpy(all_data['is_t_1d']),
-                'is_e_1d':tonumpy(all_data['is_e_1d']),
-                'is_m_1d':tonumpy(all_data['is_m_1d']), 
+                'is_t_1d':tonumpy(is_1d['is_t_1d']),
+                'is_e_1d':tonumpy(is_1d['is_e_1d']),
+                'is_m_1d':tonumpy(is_1d['is_m_1d']), 
                 'cluster_id': input_datamat['cluster_id'],
                 'gene_ids': input_datamat['gene_ids'],
                 'e_features': input_datamat['E_features'],
