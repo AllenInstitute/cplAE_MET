@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 # For community detection
 import networkx as nx
@@ -13,11 +14,30 @@ def run_classification(model, dataloader, train_ind, val_ind, T_labels):
         Take the model and the dataloader, to run the model in the evaluation mode, obtain the emd 
         and run the classisification task on the t cells'''
 
-        model.eval()
-        for all_data in iter(dataloader):
-            _, z_dict, _ = model(all_data) 
+        z_dict = {"zt": [], "ze": [], "zm": [], "zme_paired": []}
+        is_t_1d = []
 
-        is_t_1d = tonumpy(all_data['is_t_1d'])
+        model.eval()
+        for i, batch in enumerate(iter(dataloader)):
+            with torch.no_grad():
+
+                is_t_1d.append(batch['is_t_1d'])
+
+                _, z_di, _ = model(batch) 
+
+                z_dict["zt"].append(z_di["zt"])
+                z_dict["ze"].append(z_di["ze"])
+                z_dict["zm"].append(z_di["zm"])
+                z_dict["zme_paired"].append(z_di["zme_paired"])
+
+            
+        is_t_1d = torch.cat(is_t_1d)
+        z_dict["zt"] = torch.cat(z_dict["zt"])
+        z_dict["ze"] = torch.cat(z_dict["ze"])
+        z_dict["zm"] = torch.cat(z_dict["zm"])
+        z_dict["zme_paired"] = torch.cat(z_dict["zme_paired"])
+
+        is_t_1d = tonumpy(is_t_1d)
         is_train_1d = np.array([False for i in (range(len(is_t_1d)))])
         is_train_1d[train_ind] = True
         is_test_1d = np.array([False for i in (range(len(is_t_1d)))])
