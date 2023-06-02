@@ -84,6 +84,7 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
     
     z_dict = {"zt": [], "ze": [], "zm": [], "zme_paired": []}
     xr_dict = {"xrt": [], "xre": [], "xrm": [], "xrm_me_paired": [], "xre_me_paired": []}
+    x_dict = {"xt": [], "xe": [], "xm": []}
     is_1d = {'is_t_1d': [], "is_e_1d": [], "is_m_1d": []}
 
     for i, batch in enumerate(iter(dataloader)):
@@ -91,6 +92,10 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
             is_1d['is_t_1d'].append(batch['is_t_1d'])
             is_1d['is_e_1d'].append(batch['is_e_1d'])
             is_1d['is_m_1d'].append(batch['is_m_1d'])
+
+            x_dict['xt'].append(batch['xt'])
+            x_dict['xe'].append(batch['xe'])
+            x_dict['xm'].append(batch['xm'])
 
             _, z_di, xr_di = model(batch)
             
@@ -108,6 +113,10 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
     is_1d['is_t_1d'] = torch.cat(is_1d['is_t_1d'])
     is_1d['is_e_1d'] = torch.cat(is_1d['is_e_1d'])
     is_1d['is_m_1d'] = torch.cat(is_1d['is_m_1d'])
+
+    x_dict["xt"] = torch.cat(x_dict["xt"])
+    x_dict["xe"] = torch.cat(x_dict["xe"])
+    x_dict["xm"] = torch.cat(x_dict["xm"])
             
     z_dict["zt"] = torch.cat(z_dict["zt"])
     z_dict["ze"] = torch.cat(z_dict["ze"])
@@ -141,9 +150,9 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
     # rec_arbor_density_from_ze = calculate_arbor_densities(tonumpy(xrm_from_ze))
 
         
-    savedict = {'XT': input_datamat['XT'],
-                'XM': input_datamat['XM'],
-                'XE': input_datamat['XE'],
+    savedict = {'XT': tonumpy(x_dict['xt']),
+                'XM': tonumpy(x_dict['xm']),
+                'XE': tonumpy(x_dict['xe']),
                 'XrT': tonumpy(xr_dict['xrt']),
                 'XrE': tonumpy(xr_dict['xre']),
                 'XrM': tonumpy(xr_dict['xrm']),
