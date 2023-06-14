@@ -21,6 +21,7 @@ class MET_exc_inh(object):
         self.group = dat['group']
         self.subgroup = dat['subgroup']
         self.class_id = dat['class_id']
+        self.platform = dat['platform']
 
 
     @staticmethod
@@ -46,7 +47,8 @@ class MET_exc_inh(object):
                                 specimen_id=self.specimen_id[inds[0]],
                                 group=self.group[inds[0]],
                                 subgroup=self.subgroup[inds[0]],
-                                class_id=self.class_id[inds[0]]))
+                                class_id=self.class_id[inds[0]],
+                                platform=self.platform[inds[0]]))
 
 
     def __repr__(self):
@@ -131,6 +133,8 @@ class MET_exc_inh(object):
         D['gene_ids'] = np.array([c.strip() for c in D['gene_ids']])
         D['E_features'] = np.array([c.strip() for c in D['E_features']])
         D['M_features'] = np.array([c.strip() for c in D['M_features']])
+        D['platform'] = np.array([c.strip() for c in D['platform']])
+        D['platform'] = np.array([1 if c=="EM" else 0 for c in D['platform']]) #set EM cells to 1 and the rest to 0 
 
         # convention for annotations
         isnan = D['cluster_label']=='nan'

@@ -30,7 +30,7 @@ def run_classification(model, dataloader, train_ind, val_ind, T_labels):
                 z_dict["zm"].append(z_di["zm"])
                 z_dict["zme_paired"].append(z_di["zme_paired"])
 
-            
+
         is_t_1d = torch.cat(is_t_1d)
         z_dict["zt"] = torch.cat(z_dict["zt"])
         z_dict["ze"] = torch.cat(z_dict["ze"])
@@ -46,7 +46,6 @@ def run_classification(model, dataloader, train_ind, val_ind, T_labels):
         is_t_test_1d = np.logical_and(is_t_1d, is_test_1d)
         t_train_ind = np.where(is_t_train_1d)
         t_test_ind = np.where(is_t_test_1d)
-
 
         zt = tonumpy(z_dict['zt'])
         ze = tonumpy(z_dict['ze'])
