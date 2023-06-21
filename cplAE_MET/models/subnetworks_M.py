@@ -10,11 +10,11 @@ class Enc_xm_to_zm_int(nn.Module):
 
     def __init__(self, out_dim=10):
         super(Enc_xm_to_zm_int, self).__init__()
-        self.conv_0 = nn.Conv3d(1, 10, kernel_size=(7, 3, 1), padding=(3, 1, 0))
+        self.conv_0 = nn.Conv3d(1, 10, kernel_size=(7, 1, 1), padding=(3, 1, 0))
         self.pool_0 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-        self.conv_1 = nn.Conv3d(10, 10, kernel_size=(7, 3, 1), padding=(3, 1, 0))
+        self.conv_1 = nn.Conv3d(10, 10, kernel_size=(7, 1, 1), padding=(3, 1, 0))
         self.pool_1 = nn.MaxPool3d((4, 1, 1), return_indices=True)
-        self.fc_0 = nn.Linear(2400, out_dim)
+        self.fc_0 = nn.Linear(3000, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
@@ -81,9 +81,9 @@ class Dec_zm_int_to_xm(nn.Module):
 
     def __init__(self, in_dim=10):
         super(Dec_zm_int_to_xm, self).__init__()
-        self.fc_0 = nn.Linear(in_dim, 2400)
-        self.convT_0 = nn.ConvTranspose3d(10, 10, kernel_size=(7, 3, 1), padding=(3, 1, 0))
-        self.convT_1 = nn.ConvTranspose3d(10, 1, kernel_size=(7, 3, 1), padding=(3, 1, 0))
+        self.fc_0 = nn.Linear(in_dim, 3000)
+        self.convT_0 = nn.ConvTranspose3d(10, 10, kernel_size=(7, 1, 1), padding=(3, 1, 0))
+        self.convT_1 = nn.ConvTranspose3d(10, 1, kernel_size=(7, 1, 1), padding=(3, 1, 0))
         self.unpool_0 = nn.MaxUnpool3d((4, 1, 1))
         self.unpool_1 = nn.MaxUnpool3d((4, 1, 1))
         self.elu = nn.ELU()
@@ -94,7 +94,7 @@ class Dec_zm_int_to_xm(nn.Module):
         x = zm_int[:, 0:10]
         # xrsd = torch.clamp(zm_int[:, 10].view(-1), min=0, max=1)
         x = self.elu(self.fc_0(x))
-        x = x.view(-1, 10, 15, 4, 4)
+        x = x.view(-1, 10, 15, 5, 4)
         x = self.elu(self.unpool_0(x, enc_pool_1_ind))
         x = self.convT_0(x)
         x = self.elu(self.unpool_1(x, enc_pool_0_ind))

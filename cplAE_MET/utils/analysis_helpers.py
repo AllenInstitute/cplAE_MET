@@ -557,11 +557,13 @@ def summarize_data_output_pkl(exp_name, pkl_output_file):
     is_me_only = np.logical_and(is_me_1d, ~is_t_1d)
     is_tm_only = np.logical_and(is_tm_1d, ~is_e_1d)
 
+
     if "platform" in output.keys():
-        output["platform"] = [i.rstrip() for i in output["platform"]]
+        # output["platform"] = [i.rstrip() for i in output["platform"]]
+        plats = np.unique(output["platform"])
 
         summary1 = pd.DataFrame(columns=["platform", "T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"])
-        for i, p in enumerate(["patchseq", "ME", "EM", "fMOST"]):
+        for i, p in enumerate(plats):
             platform_mask = np.array([True if i==p else False for i in output["platform"]])
             summary1.loc[i, "platform"] = p
             summary1.loc[i, "T"] = np.sum(np.logical_and(platform_mask, is_t_only))
@@ -573,7 +575,7 @@ def summarize_data_output_pkl(exp_name, pkl_output_file):
             summary1.loc[i, "M&E&T"] = np.sum(np.logical_and(platform_mask, is_met_1d))
             summary1.loc[i, "total"] = int(platform_mask.sum())
         summary1.loc[4,"platform"] = "all"
-        summary1.loc[4, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary1.sum(axis=0).to_list()[1:]
+        summary1.loc[4, ["T", "E", "M", "E&T", "M&T", "M&E", "M&E&T", "total"]]= summary1.sum(axis=0).to_list()
 
     if "class" in output.keys():
         output["class"] = [i.rstrip() for i in output["class"]]

@@ -30,10 +30,10 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='TEM_11k_2conv_10_10',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='TEM_11k_2conv_10_10.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--exp_name',              default='TEM_35k_3d_M120x1_2conv_10_10',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='TEM_35k_3d_M120x1_2conv_10_10.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--optimization',          default=False,           type=bool,  help='if False then the hyperparam are read from the input args')
+parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
@@ -44,34 +44,34 @@ parser.add_argument('--latent_dim',            default=3,              type=int,
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
 parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
-# parser.add_argument('--alpha_E',               default=(-2,6),         type=float, help='E reconstruction loss weight')
-# parser.add_argument('--alpha_M',               default=(-2,6),         type=float, help='M reconstruction loss weight')
-# parser.add_argument('--alpha_ME',              default=(-2,6),         type=float, help='ME reconstruction loss weight')
+parser.add_argument('--alpha_E',               default=(-2,6),         type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_M',               default=(-2,6),         type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_ME',              default=(-2,6),         type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
 parser.add_argument('--lambda_TM',             default=1.0,            type=float, help='coupling loss weight between T and M')
 parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
 parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-# parser.add_argument('--lambda_tune_E_T_range', default=(-2,2),        type=float, help='Tune the directionality of coupling between E and T')
-# parser.add_argument('--lambda_tune_ME_E_range',default=(1,6),          type=float, help='Tune the directionality of coupling between ME and E')
-# parser.add_argument('--lambda_tune_ME_M_range',default=(1,6),          type=float, help='Tune the directionality of coupling between ME and M')
-# parser.add_argument('--lambda_tune_ME_T_range',default=(-6,0),        type=float, help='Tune the directionality of coupling between ME and T')
-# parser.add_argument('--lambda_tune_M_T_range', default=(-6,0),         type=float, help='Tune the directionality of coupling between M and T')
-# parser.add_argument('--lambda_tune_T_E_range', default=(1,6),          type=float, help='Tune the directionality of coupling between T and E')
-# parser.add_argument('--lambda_tune_T_M_range', default=(1,6),          type=float, help='Tune the directionality of coupling between T and M')
-# parser.add_argument('--lambda_tune_T_ME_range',default=(1,6),         type=float, help='Tune the directionality of coupling between T and ME')
+parser.add_argument('--lambda_tune_E_T_range', default=(-2,2),        type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_ME_E_range',default=(1,6),          type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_ME_M_range',default=(1,6),          type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_T_range',default=(-6,0),        type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_M_T_range', default=(-6,0),         type=float, help='Tune the directionality of coupling between M and T')
+parser.add_argument('--lambda_tune_T_E_range', default=(1,6),          type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_T_M_range', default=(1,6),          type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_T_ME_range',default=(1,6),         type=float, help='Tune the directionality of coupling between T and ME')
 # If optimization is off
-parser.add_argument('--alpha_E',               default=1,            type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=1,            type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_ME',              default=1,            type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_tune_E_T_range', default=0,            type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_ME_E_range',default=1,            type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_ME_M_range',default=1,            type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_T_range',default=0.1,            type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_M_T_range', default=0,            type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_T_E_range', default=1,            type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_T_M_range', default=1,            type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_T_ME_range',default=0.9,            type=float, help='Tune the directionality of coupling between T and ME')
+# parser.add_argument('--alpha_E',               default=1,            type=float, help='E reconstruction loss weight')
+# parser.add_argument('--alpha_M',               default=1,            type=float, help='M reconstruction loss weight')
+# parser.add_argument('--alpha_ME',              default=1,            type=float, help='ME reconstruction loss weight')
+# parser.add_argument('--lambda_tune_E_T_range', default=0,            type=float, help='Tune the directionality of coupling between E and T')
+# parser.add_argument('--lambda_tune_ME_E_range',default=1,            type=float, help='Tune the directionality of coupling between ME and E')
+# parser.add_argument('--lambda_tune_ME_M_range',default=1,            type=float, help='Tune the directionality of coupling between ME and M')
+# parser.add_argument('--lambda_tune_ME_T_range',default=0.1,            type=float, help='Tune the directionality of coupling between ME and T')
+# parser.add_argument('--lambda_tune_M_T_range', default=0,            type=float, help='Tune the directionality of coupling between M and T')
+# parser.add_argument('--lambda_tune_T_E_range', default=1,            type=float, help='Tune the directionality of coupling between T and E')
+# parser.add_argument('--lambda_tune_T_M_range', default=1,            type=float, help='Tune the directionality of coupling between T and M')
+# parser.add_argument('--lambda_tune_T_ME_range',default=0.9,            type=float, help='Tune the directionality of coupling between T and ME')
 
 
 
@@ -273,7 +273,7 @@ def main(exp_name="TEST",
                     val_loss, _, _ = model(val_batch)
             
             if not optimization:
-                if ((epoch % 500) == 0):
+                if ((epoch % 200) == 0):
                     fname = dir_pth['result'] + f"checkpoint_epoch_{epoch}.pkl"
                     save_results(model, dataloader, D, fname, train_ind, val_ind)
 
@@ -319,15 +319,17 @@ def main(exp_name="TEST",
         tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
     dat, D = MET_exc_inh.from_file(dir_pth['MET_data'])
 
-    dat.XM = np.expand_dims(dat.XM, axis=1)
+    # dat.XM = np.expand_dims(dat.XM, axis=1)
+    # dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
+    dat.XM = np.expand_dims(np.expand_dims(dat.XM, axis=1), axis=3)
     dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
 
     # soma depth is range (0,1) <-- check this
     pad = 60
-    norm2pixel_factor = 100
-    padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
+    # norm2pixel_factor = 100
+    # padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
     dat.XM = get_padded_im(im=dat.XM, pad=pad)
-    dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
+    # dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
 
 
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
