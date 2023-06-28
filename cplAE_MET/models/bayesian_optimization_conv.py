@@ -1,5 +1,6 @@
 # From python
 import os
+import time
 import sys
 import shutil
 import logging
@@ -30,15 +31,15 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='TEM_35k_3d_M120x1_2conv_10_10',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='TEM_35k_3d_M120x1_2conv_10_10.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
 parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2500,           type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=10,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -61,17 +62,17 @@ parser.add_argument('--lambda_tune_T_E_range', default=(1,6),          type=floa
 parser.add_argument('--lambda_tune_T_M_range', default=(1,6),          type=float, help='Tune the directionality of coupling between T and M')
 parser.add_argument('--lambda_tune_T_ME_range',default=(1,6),         type=float, help='Tune the directionality of coupling between T and ME')
 # If optimization is off
-# parser.add_argument('--alpha_E',               default=1,            type=float, help='E reconstruction loss weight')
-# parser.add_argument('--alpha_M',               default=1,            type=float, help='M reconstruction loss weight')
-# parser.add_argument('--alpha_ME',              default=1,            type=float, help='ME reconstruction loss weight')
-# parser.add_argument('--lambda_tune_E_T_range', default=0,            type=float, help='Tune the directionality of coupling between E and T')
-# parser.add_argument('--lambda_tune_ME_E_range',default=1,            type=float, help='Tune the directionality of coupling between ME and E')
-# parser.add_argument('--lambda_tune_ME_M_range',default=1,            type=float, help='Tune the directionality of coupling between ME and M')
-# parser.add_argument('--lambda_tune_ME_T_range',default=0.1,            type=float, help='Tune the directionality of coupling between ME and T')
-# parser.add_argument('--lambda_tune_M_T_range', default=0,            type=float, help='Tune the directionality of coupling between M and T')
-# parser.add_argument('--lambda_tune_T_E_range', default=1,            type=float, help='Tune the directionality of coupling between T and E')
-# parser.add_argument('--lambda_tune_T_M_range', default=1,            type=float, help='Tune the directionality of coupling between T and M')
-# parser.add_argument('--lambda_tune_T_ME_range',default=0.9,            type=float, help='Tune the directionality of coupling between T and ME')
+# parser.add_argument('--alpha_E',               default=0.6976620484317287,            type=float, help='E reconstruction loss weight')
+# parser.add_argument('--alpha_M',               default=40.03286196341046,            type=float, help='M reconstruction loss weight')
+# parser.add_argument('--alpha_ME',              default=15.974083022187301,            type=float, help='ME reconstruction loss weight')
+# parser.add_argument('--lambda_tune_E_T_range', default=0.3358137381397763,            type=float, help='Tune the directionality of coupling between E and T')
+# parser.add_argument('--lambda_tune_ME_E_range',default=21.050493665565867,            type=float, help='Tune the directionality of coupling between ME and E')
+# parser.add_argument('--lambda_tune_ME_M_range',default=116.1077028505363,            type=float, help='Tune the directionality of coupling between ME and M')
+# parser.add_argument('--lambda_tune_ME_T_range',default=0.32921997711736584,            type=float, help='Tune the directionality of coupling between ME and T')
+# parser.add_argument('--lambda_tune_M_T_range', default=0.9847437344403749,            type=float, help='Tune the directionality of coupling between M and T')
+# parser.add_argument('--lambda_tune_T_E_range', default=2.9444633879464397,            type=float, help='Tune the directionality of coupling between T and E')
+# parser.add_argument('--lambda_tune_T_M_range', default=8.647506184361285,            type=float, help='Tune the directionality of coupling between T and M')
+# parser.add_argument('--lambda_tune_T_ME_range',default=160.96596430835461,            type=float, help='Tune the directionality of coupling between T and ME')
 
 
 
@@ -223,7 +224,14 @@ def main(exp_name="TEST",
                 print("loaded previous best model weights and optimizer")
                 print(self.previous_ML_model_weights_to_load)
 
+
+            start_time = time.time()
+        
+
             trained_model, score = train_and_evaluate(model_config, model, optimizer, trial)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Time taken for T_AE: {elapsed_time} seconds")
             self._current_model = trained_model
             self._current_optimizer = optimizer
 
@@ -311,8 +319,9 @@ def main(exp_name="TEST",
 
     # Main code ###############################################################
     # Set the device -----------
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-     
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    # device = "cpu"
+
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db, creat_tb_logs= not optimization)
     if not optimization:
@@ -325,10 +334,10 @@ def main(exp_name="TEST",
     dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
 
     # soma depth is range (0,1) <-- check this
-    pad = 60
+    # pad = 0
     # norm2pixel_factor = 100
     # padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
-    dat.XM = get_padded_im(im=dat.XM, pad=pad)
+    # dat.XM = get_padded_im(im=dat.XM, pad=pad)
     # dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
 
 
@@ -344,13 +353,13 @@ def main(exp_name="TEST",
     shutil.copy(dir_pth['config_file'], dir_pth['result']) 
  
     # Weighted sampling strategy -----------
-    # weights = train_dat.make_weights_for_balanced_classes(n_met = 54, met_subclass_id = [2, 3], batch_size=1000)                                                                
-    # weights = torch.DoubleTensor(weights)                                       
-    # sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights)) 
+    weights = train_dat.make_weights_for_balanced_classes(n_met = 54, met_subclass_id = [2, 3], batch_size=1000)                                                                
+    weights = torch.DoubleTensor(weights)                                       
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights)) 
     
     # Dataset and Dataloader -----------
     train_dataset = MET_dataset(train_dat, device=device)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, drop_last=True, sampler=sampler)
 
 
     val_dataset = MET_dataset(val_dat, device=device)

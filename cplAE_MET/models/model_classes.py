@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn as nn
 from cplAE_MET.models.subnetwork_M_PCs_features import AE_M, Dec_zm_int_to_xm, Enc_xm_to_zm_int
@@ -208,17 +209,16 @@ class Model_ME_T_conv(nn.Module):
         is_me_1d=torch.logical_and(input['is_m_1d'], input['is_e_1d'])
         is_met_1d=torch.logical_and(is_me_1d, input['is_t_1d'])
         
-
         # t arm
         zt, xrt, _, _ = self.ae_t(xt)
 
-        # # e arm
+        # e arm
         _, ze, _, xre, _, _ = self.ae_e(xe)
-
+        
         # m arm
         _, zm, _, xrm, _, _ = self.ae_m(xm)
         
-        # # me arm
+        # me arm
         ze_int_enc_paired = self.me_e_encoder(xe)
         zm_int_enc_paired = self.me_m_encoder(xm)
         zme_paired = self.ae_me.enc_zme_int_to_zme(zm_int_enc_paired, ze_int_enc_paired)
@@ -228,6 +228,7 @@ class Model_ME_T_conv(nn.Module):
         xrm_me_paired = self.me_m_decoder(zm_int_dec_paired, 
                                           self.me_m_encoder.pool_0_ind,
                                           self.me_m_encoder.pool_1_ind)
+
 
         # Loss calculations
         loss_dict={}
