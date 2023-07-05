@@ -1,8 +1,12 @@
+import optuna
 import torch
 import numpy as np
 # For community detection
 import networkx as nx
 from cdlib import algorithms
+from optuna.pruners import BasePruner
+from optuna.trial._state import TrialState
+
 from sklearn.neighbors import kneighbors_graph
 
 from cplAE_MET.models.torch_utils import tonumpy
@@ -109,3 +113,36 @@ def run_Leiden_community_detection(model, dataloader):
     n_me_types = np.median(n_me_types)
     model_score = np.min([n_t_types , n_me_types])
     return model_score
+
+
+class LastPlacePruner(BasePruner):
+    def __init__(self, warmup_steps, warmup_trials):
+        self._warmup_steps = warmup_steps
+        self._warmup_trials = warmup_trials
+
+    def prune(self, study: "optuna.study.Study", trial: "optuna.trial.FrozenTrial") -> bool:
+        # Get the latest score reported from this trial
+        step = trial.last_step
+        
+        if step:  # trial.last_step == None when no scores have been reported yet
+            print("trial", trial.number, "step", step)
+            this_score = trial.intermediate_values[step]
+
+            # Get scores from other trials in the study reported at the same step
+            completed_trials = study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))
+            other_scores = [
+                t.intermediate_values[step]
+                for t in completed_trials
+                if step in t.intermediate_values
+            ]
+            other_scores = sorted(other_scores)
+
+            # Prune if this trial at this step has a lower value than all completed trials
+            # at the same step. Note that steps will begin numbering at 0 in the objective
+            # function definition below.
+            if step >= self._warmup_steps and len(other_scores) > self._warmup_trials:
+                if this_score < other_scores[0]:
+                    print(f"prune() True: Trial {trial.number}, Step {step}, Score {this_score}, Other scores {other_scores}")
+                    return True
+            
+        return False

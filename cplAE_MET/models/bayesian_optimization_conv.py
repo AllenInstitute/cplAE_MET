@@ -22,7 +22,7 @@ from cplAE_MET.models.torch_utils import MET_dataset
 from cplAE_MET.models.model_classes import Model_ME_T_conv
 
 from cplAE_MET.models.train_utils import init_losses, save_results, optimizer_to, Criterion
-from cplAE_MET.models.optuna_utils import run_classification
+from cplAE_MET.models.optuna_utils import run_classification, LastPlacePruner
 from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
 
 
@@ -39,28 +39,28 @@ parser.add_argument('--load_model',            default=False,          type=bool
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=10,           type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=50,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
 parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_E',               default=(-2,6),         type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=(-2,6),         type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_ME',              default=(-2,6),         type=float, help='ME reconstruction loss weight')
+parser.add_argument('--alpha_E',               default=(0,6),         type=float, help='E reconstruction loss weight')
+parser.add_argument('--alpha_M',               default=(-2,4),         type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_ME',              default=(-4,2),         type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
 parser.add_argument('--lambda_TM',             default=1.0,            type=float, help='coupling loss weight between T and M')
 parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
 parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_E_T_range', default=(-2,2),        type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_ME_E_range',default=(1,6),          type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_ME_M_range',default=(1,6),          type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-6,0),        type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_M_T_range', default=(-6,0),         type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_T_E_range', default=(1,6),          type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_T_M_range', default=(1,6),          type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_T_ME_range',default=(1,6),         type=float, help='Tune the directionality of coupling between T and ME')
+parser.add_argument('--lambda_tune_E_T_range', default=(-4,2),        type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_ME_E_range',default=(0,8),          type=float, help='Tune the directionality of coupling between ME and E')
+parser.add_argument('--lambda_tune_ME_M_range',default=(2,5),          type=float, help='Tune the directionality of coupling between ME and M')
+parser.add_argument('--lambda_tune_ME_T_range',default=(-4,0),        type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_M_T_range', default=(-8,-2),         type=float, help='Tune the directionality of coupling between M and T')
+parser.add_argument('--lambda_tune_T_E_range', default=(3,6),          type=float, help='Tune the directionality of coupling between T and E')
+parser.add_argument('--lambda_tune_T_M_range', default=(-1,5),          type=float, help='Tune the directionality of coupling between T and M')
+parser.add_argument('--lambda_tune_T_ME_range',default=(-1,4),         type=float, help='Tune the directionality of coupling between T and ME')
 # If optimization is off
 # parser.add_argument('--alpha_E',               default=0.6976620484317287,            type=float, help='E reconstruction loss weight')
 # parser.add_argument('--alpha_M',               default=40.03286196341046,            type=float, help='M reconstruction loss weight')
@@ -108,7 +108,6 @@ def main(exp_name="TEST",
          batch_size=1000, 
          opt_n_trials=1,
          opset=0):
-
 
     
     def build_model(params):
@@ -162,7 +161,10 @@ def main(exp_name="TEST",
                      lambda_tune_ME_T_range=None,
                      lambda_tune_ME_E_range=None,
                      lambda_tune_ME_M_range=None,
-                     previous_ML_model_weights_to_load=None
+                     previous_ML_model_weights_to_load=None #,
+                    #  warmup_steps =None,
+                    #  warmup_trials=None,
+                    #  pruning_steps=None
                      ):
             
             self.alpha_E = alpha_E
@@ -177,6 +179,9 @@ def main(exp_name="TEST",
             self.lambda_tune_ME_E_range = lambda_tune_ME_E_range
             self.lambda_tune_ME_M_range = lambda_tune_ME_M_range
             self.previous_ML_model_weights_to_load = previous_ML_model_weights_to_load
+            # self.warmup_steps = warmup_steps
+            # self.warmup_trials = warmup_trials
+            # self.pruning_steps = pruning_steps
             self.best_model = None
             self._current_model = None
             self.best_optimizer = None
@@ -225,13 +230,11 @@ def main(exp_name="TEST",
                 print(self.previous_ML_model_weights_to_load)
 
 
-            start_time = time.time()
-        
-
+            # start_time = time.time()
             trained_model, score = train_and_evaluate(model_config, model, optimizer, trial)
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print(f"Time taken for T_AE: {elapsed_time} seconds")
+            # end_time = time.time()
+            # elapsed_time = end_time - start_time
+            # print(f"Time taken for T_AE: {elapsed_time} seconds")
             self._current_model = trained_model
             self._current_optimizer = optimizer
 
@@ -252,7 +255,7 @@ def main(exp_name="TEST",
 
         # Training -----------
         for epoch in range(n_epochs):
-            print(epoch)
+            # print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
@@ -312,15 +315,27 @@ def main(exp_name="TEST",
                 tb_writer.add_scalar('Train/cpl_ME->M', train_loss['cpl_me->m'], epoch)
                 tb_writer.add_scalar('Validation/cpl_ME->M', val_loss['cpl_me->m'], epoch)
                 tb_writer.add_scalar('Train/cpl_ME->E', train_loss['cpl_me->e'], epoch)
-                tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)       
+                tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)    
 
+
+            if trial.number > warmup_trials and epoch >= warmup_steps and (epoch-warmup_steps) % pruning_steps ==0:
+                intermediate_value = run_classification(model, dataloader, train_ind, val_ind, T_labels_for_classification)
+                trial.report(intermediate_value, epoch)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
+            
+            # if ((epoch + 1) % 100 == 0):
+            #     intermediate_value = run_classification(model, dataloader, train_ind, val_ind, T_labels_for_classification)
+            #     trial.report(intermediate_value, epoch + 1)
+            #     if trial.should_prune():
+            #         raise optuna.TrialPruned()
+        
         model_score = run_classification(model, dataloader, train_ind, val_ind, T_labels_for_classification)
         return model, model_score
 
     # Main code ###############################################################
     # Set the device -----------
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-    # device = "cpu"
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     # Train test split -----------
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db, creat_tb_logs= not optimization)
@@ -369,14 +384,18 @@ def main(exp_name="TEST",
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False)
 
     # Optimization -------------
+    warmup_steps = 500
+    warmup_trials = 10
+    pruning_steps = 100
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
             
-    study = optuna.create_study(study_name=exp_name,
-                                direction="maximize", 
-                                sampler=optuna.samplers.TPESampler(),
-                                pruner=optuna.pruners.HyperbandPruner(),
-                                storage='sqlite:///'+dir_pth['opt_storage_db'], 
-                                load_if_exists=db_load_if_exist)
+    study = optuna.create_study(study_name = exp_name,
+                                direction = "maximize", 
+                                sampler = optuna.samplers.TPESampler(),
+                                # pruner=optuna.pruners.HyperbandPruner(),
+                                pruner = LastPlacePruner(warmup_steps=warmup_steps, warmup_trials=warmup_trials),
+                                storage = 'sqlite:///'+dir_pth['opt_storage_db'], 
+                                load_if_exists = db_load_if_exist)
     if db_load_if_exist:
         if os.path.exists(dir_pth['opt_storage_db']):
             print("Loading the optimization history from:")
@@ -403,6 +422,9 @@ def main(exp_name="TEST",
                           lambda_tune_ME_M_range = lambda_tune_ME_M_range,
                           lambda_tune_ME_E_range = lambda_tune_ME_E_range,
                           previous_ML_model_weights_to_load = model_to_load)
+                        #   warmup_steps =warmup_steps,
+                        #   warmup_trials=warmup_trials,
+                        #   pruning_steps=pruning_steps)
 
     study.optimize(objective, n_trials=opt_n_trials, callbacks=[objective.callback])
 
