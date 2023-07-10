@@ -15,7 +15,7 @@ class Enc_xm_to_zm_int(nn.Module):
         self.conv_1 = nn.Conv3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_1 = nn.MaxPool3d((2, 1, 1), return_indices=True)
         self.fc_0 = nn.Linear(6000, out_dim)
-        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
+        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
         return
@@ -39,7 +39,7 @@ class Enc_zm_int_to_zm(nn.Module):
         # self.fc_0 = nn.Linear(in_dim, out_dim, bias=False)
         self.fc_mu = nn.Linear(in_dim, out_dim, bias=False)
         self.fc_sigma = nn.Linear(in_dim, out_dim, bias=False)
-        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
+        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False)
         self.variational = variational
         return
 

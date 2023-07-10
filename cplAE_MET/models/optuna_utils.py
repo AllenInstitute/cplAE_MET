@@ -141,6 +141,7 @@ class LastPlacePruner(BasePruner):
             # at the same step. Note that steps will begin numbering at 0 in the objective
             # function definition below.
             if step >= self._warmup_steps and len(other_scores) > self._warmup_trials:
+                print(f"Step {step}, Score {this_score}, Other scores {other_scores}")
                 if this_score < other_scores[0]:
                     print(f"prune() True: Trial {trial.number}, Step {step}, Score {this_score}, Other scores {other_scores}")
                     return True

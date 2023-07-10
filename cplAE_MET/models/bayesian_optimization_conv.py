@@ -31,15 +31,16 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--exp_name',              default='TEM_16k_3d_M120x1_2conv_10_10',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='TEM_16k_3d_M120x1_2conv_10_10.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
 parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
+parser.add_argument('--load_params',           default=False,          type=bool,  help='Load hyperparams from an old model')
+parser.add_argument('--use_defined_params',    default=False,          type=bool,  help='use hyperparams that are defined by user')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
-parser.add_argument('--opset',                 default=0,              type=int,   help='round of operation with n_trials')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=50,           type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=2500,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=3,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -61,18 +62,19 @@ parser.add_argument('--lambda_tune_M_T_range', default=(-8,-2),         type=flo
 parser.add_argument('--lambda_tune_T_E_range', default=(3,6),          type=float, help='Tune the directionality of coupling between T and E')
 parser.add_argument('--lambda_tune_T_M_range', default=(-1,5),          type=float, help='Tune the directionality of coupling between T and M')
 parser.add_argument('--lambda_tune_T_ME_range',default=(-1,4),         type=float, help='Tune the directionality of coupling between T and ME')
+
 # If optimization is off
-# parser.add_argument('--alpha_E',               default=0.6976620484317287,            type=float, help='E reconstruction loss weight')
-# parser.add_argument('--alpha_M',               default=40.03286196341046,            type=float, help='M reconstruction loss weight')
-# parser.add_argument('--alpha_ME',              default=15.974083022187301,            type=float, help='ME reconstruction loss weight')
-# parser.add_argument('--lambda_tune_E_T_range', default=0.3358137381397763,            type=float, help='Tune the directionality of coupling between E and T')
-# parser.add_argument('--lambda_tune_ME_E_range',default=21.050493665565867,            type=float, help='Tune the directionality of coupling between ME and E')
-# parser.add_argument('--lambda_tune_ME_M_range',default=116.1077028505363,            type=float, help='Tune the directionality of coupling between ME and M')
-# parser.add_argument('--lambda_tune_ME_T_range',default=0.32921997711736584,            type=float, help='Tune the directionality of coupling between ME and T')
-# parser.add_argument('--lambda_tune_M_T_range', default=0.9847437344403749,            type=float, help='Tune the directionality of coupling between M and T')
-# parser.add_argument('--lambda_tune_T_E_range', default=2.9444633879464397,            type=float, help='Tune the directionality of coupling between T and E')
-# parser.add_argument('--lambda_tune_T_M_range', default=8.647506184361285,            type=float, help='Tune the directionality of coupling between T and M')
-# parser.add_argument('--lambda_tune_T_ME_range',default=160.96596430835461,            type=float, help='Tune the directionality of coupling between T and ME')
+# parser.add_argument('--alpha_E',               default=0.920145084388561,            type=float, help='E reconstruction loss weight')
+# parser.add_argument('--alpha_M',               default=0.04526157931996336,            type=float, help='M reconstruction loss weight')
+# parser.add_argument('--alpha_ME',              default=-1.6017479025931094,            type=float, help='ME reconstruction loss weight')
+# parser.add_argument('--lambda_tune_E_T_range', default=-1.8014222070452204,            type=float, help='Tune the directionality of coupling between E and T')
+# parser.add_argument('--lambda_tune_ME_E_range',default=1.349031637367409,           type=float, help='Tune the directionality of coupling between ME and E')
+# parser.add_argument('--lambda_tune_ME_M_range',default=3.0977541189700486,          type=float, help='Tune the directionality of coupling between ME and M')
+# parser.add_argument('--lambda_tune_ME_T_range',default=-1.222055403444346,            type=float, help='Tune the directionality of coupling between ME and T')
+# parser.add_argument('--lambda_tune_M_T_range', default=-5.07842857953105,            type=float, help='Tune the directionality of coupling between M and T')
+# parser.add_argument('--lambda_tune_T_E_range', default=4.503961945982062,           type=float, help='Tune the directionality of coupling between T and E')
+# parser.add_argument('--lambda_tune_T_M_range', default=1.3633399700895144,            type=float, help='Tune the directionality of coupling between T and M')
+# parser.add_argument('--lambda_tune_T_ME_range',default=2.384042468594444,           type=float, help='Tune the directionality of coupling between T and ME')
 
 
 
@@ -80,6 +82,8 @@ parser.add_argument('--lambda_tune_T_ME_range',default=(-1,4),         type=floa
 def main(exp_name="TEST",
          variational=False,
          load_model=False,
+         load_params=False,
+         use_defined_params=False,
          db_load_if_exist=True,
          optimization=True,
          opt_storage_db="test.db",
@@ -106,8 +110,7 @@ def main(exp_name="TEST",
          lambda_tune_ME_M_range=(0,2),
          latent_dim=2,
          batch_size=1000, 
-         opt_n_trials=1,
-         opset=0):
+         opt_n_trials=1):
 
     
     def build_model(params):
@@ -161,10 +164,7 @@ def main(exp_name="TEST",
                      lambda_tune_ME_T_range=None,
                      lambda_tune_ME_E_range=None,
                      lambda_tune_ME_M_range=None,
-                     previous_ML_model_weights_to_load=None #,
-                    #  warmup_steps =None,
-                    #  warmup_trials=None,
-                    #  pruning_steps=None
+                     previous_ML_model_weights_to_load=None
                      ):
             
             self.alpha_E = alpha_E
@@ -179,9 +179,6 @@ def main(exp_name="TEST",
             self.lambda_tune_ME_E_range = lambda_tune_ME_E_range
             self.lambda_tune_ME_M_range = lambda_tune_ME_M_range
             self.previous_ML_model_weights_to_load = previous_ML_model_weights_to_load
-            # self.warmup_steps = warmup_steps
-            # self.warmup_trials = warmup_trials
-            # self.pruning_steps = pruning_steps
             self.best_model = None
             self._current_model = None
             self.best_optimizer = None
@@ -189,6 +186,7 @@ def main(exp_name="TEST",
 
         def __call__(self, trial):
             if optimization:
+                print("hyperparams are chosen in a bayesian optimization form")
                 params = {'alpha_E': trial.suggest_float('alpha_E', self.alpha_E[0], self.alpha_E[1]),
                         'alpha_M': trial.suggest_float('alpha_M', self.alpha_M[0], self.alpha_M[1]),
                         'alpha_ME': trial.suggest_float('alpha_ME', self.alpha_ME[0], self.alpha_ME[1]),
@@ -200,25 +198,35 @@ def main(exp_name="TEST",
                         'lambda_tune_ME_T': trial.suggest_float('lambda_tune_ME_T', self.lambda_tune_ME_T_range[0], self.lambda_tune_ME_T_range[1]),
                         'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
                         'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1])}
-                
-                for k,v in params.items(): 
-                    params[k] = np.exp(v)
 
-            else:
+            elif use_defined_params:
+                print("User defined hyperparam set. This is not an optimization anymore!")
                 params = {'alpha_E': self.alpha_E,
-                    'alpha_M': self.alpha_M,
-                    'alpha_ME': self.alpha_ME,
-                    'lambda_tune_T_E': self.lambda_tune_T_E_range,
-                    'lambda_tune_E_T': self.lambda_tune_E_T_range,
-                    'lambda_tune_T_M': self.lambda_tune_T_M_range,
-                    'lambda_tune_M_T': self.lambda_tune_M_T_range,
-                    'lambda_tune_T_ME': self.lambda_tune_T_ME_range,
-                    'lambda_tune_ME_T': self.lambda_tune_ME_T_range,
-                    'lambda_tune_ME_M': self.lambda_tune_ME_M_range,
-                    'lambda_tune_ME_E': self.lambda_tune_ME_E_range}
+                          'alpha_M': self.alpha_M,
+                          'alpha_ME': self.alpha_ME,
+                          'lambda_tune_T_E': self.lambda_tune_T_E_range,
+                          'lambda_tune_E_T': self.lambda_tune_E_T_range,
+                          'lambda_tune_T_M': self.lambda_tune_T_M_range,
+                          'lambda_tune_M_T': self.lambda_tune_M_T_range,
+                          'lambda_tune_T_ME': self.lambda_tune_T_ME_range,
+                          'lambda_tune_ME_T': self.lambda_tune_ME_T_range,
+                          'lambda_tune_ME_M': self.lambda_tune_ME_M_range,
+                          'lambda_tune_ME_E': self.lambda_tune_ME_E_range}
+            elif load_params:
+                print(f"the best model (Trial:{str(study.best_trial.number )}) hyperparams are used. This is not an optimization anymore!")
+                params = study.best_params
+                # params = study.trials[558].params
                 
-             
+            else:
+                raise ValueError("If it is not an optimization, then hyperparams must be provided")
             
+            
+            print(params) 
+
+            for k,v in params.items(): 
+                params[k] = np.exp(v)
+            
+             
             model, model_config = build_model(params)
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -230,11 +238,7 @@ def main(exp_name="TEST",
                 print(self.previous_ML_model_weights_to_load)
 
 
-            # start_time = time.time()
             trained_model, score = train_and_evaluate(model_config, model, optimizer, trial)
-            # end_time = time.time()
-            # elapsed_time = end_time - start_time
-            # print(f"Time taken for T_AE: {elapsed_time} seconds")
             self._current_model = trained_model
             self._current_optimizer = optimizer
 
@@ -255,7 +259,7 @@ def main(exp_name="TEST",
 
         # Training -----------
         for epoch in range(n_epochs):
-            # print(epoch)
+            print(epoch)
             model.train()
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
@@ -285,7 +289,7 @@ def main(exp_name="TEST",
             
             if not optimization:
                 if ((epoch % 200) == 0):
-                    fname = dir_pth['result'] + f"checkpoint_epoch_{epoch}.pkl"
+                    fname = dir_pth['result'] + f"trial353_byhand_checkpoint_epoch_{epoch}.pkl"
                     save_results(model, dataloader, D, fname, train_ind, val_ind)
 
                 # TODO
@@ -318,21 +322,15 @@ def main(exp_name="TEST",
                 tb_writer.add_scalar('Validation/cpl_ME->E', val_loss['cpl_me->e'], epoch)    
 
 
-            if trial.number > warmup_trials and epoch >= warmup_steps and (epoch-warmup_steps) % pruning_steps ==0:
+            if trial.number > warmup_trials and epoch >= warmup_steps and (epoch-warmup_steps) % pruning_steps ==0 and epoch < prunning_stop:
                 intermediate_value = run_classification(model, dataloader, train_ind, val_ind, T_labels_for_classification)
                 trial.report(intermediate_value, epoch)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
-            
-            # if ((epoch + 1) % 100 == 0):
-            #     intermediate_value = run_classification(model, dataloader, train_ind, val_ind, T_labels_for_classification)
-            #     trial.report(intermediate_value, epoch + 1)
-            #     if trial.should_prune():
-            #         raise optuna.TrialPruned()
         
         model_score = run_classification(model, dataloader, train_ind, val_ind, T_labels_for_classification)
         return model, model_score
-
+    
     # Main code ###############################################################
     # Set the device -----------
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -343,18 +341,8 @@ def main(exp_name="TEST",
         tb_writer = SummaryWriter(log_dir=dir_pth['tb_logs'])
     dat, D = MET_exc_inh.from_file(dir_pth['MET_data'])
 
-    # dat.XM = np.expand_dims(dat.XM, axis=1)
-    # dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
     dat.XM = np.expand_dims(np.expand_dims(dat.XM, axis=1), axis=3)
     dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
-
-    # soma depth is range (0,1) <-- check this
-    # pad = 0
-    # norm2pixel_factor = 100
-    # padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
-    # dat.XM = get_padded_im(im=dat.XM, pad=pad)
-    # dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
-
 
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
@@ -387,6 +375,7 @@ def main(exp_name="TEST",
     warmup_steps = 500
     warmup_trials = 10
     pruning_steps = 100
+    prunning_stop = 2000
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
             
     study = optuna.create_study(study_name = exp_name,
@@ -422,9 +411,6 @@ def main(exp_name="TEST",
                           lambda_tune_ME_M_range = lambda_tune_ME_M_range,
                           lambda_tune_ME_E_range = lambda_tune_ME_E_range,
                           previous_ML_model_weights_to_load = model_to_load)
-                        #   warmup_steps =warmup_steps,
-                        #   warmup_trials=warmup_trials,
-                        #   pruning_steps=pruning_steps)
 
     study.optimize(objective, n_trials=opt_n_trials, callbacks=[objective.callback])
 
