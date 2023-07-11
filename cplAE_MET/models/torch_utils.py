@@ -36,7 +36,7 @@ def min_var_loss(zi, zj):
     zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
 
-    return loss_ij
+    return loss_ij, zi_zj_mse
 
 
 def add_noise(x, sd=0.1, clamp_min=None, clamp_max=None, scale_by_x=False):
