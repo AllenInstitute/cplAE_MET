@@ -113,7 +113,8 @@ def plot_m(density_map,
            cluster_label='',
            channel=['Axon', 'Dendrite', 'Apical dendrite', 'Basal dendrite'],
            vmin=0,
-           vmax=20):
+           vmax=20,
+           is_120x4 = False):
     """plot for each channel of the arbor density.
 
     Args:
@@ -123,13 +124,18 @@ def plot_m(density_map,
         channel (list, optional): Names of channels in the density maps. Defaults to ['Axon', 'Dendrite', 'Apical dendrite', 'Basal dendrite'].
         vmin: min of color bar
         vmax: max of color bar
+        is_120x4: is the image 120x4 or 120x1
     """
+    if is_120x4:
+        density_map_shape = (120, 4, 4)
+    else:
+        density_map_shape = (120, 1, 4)
     n_channels = len(channel)
     print(n_channels)
     f, ax = plt.subplots(1, n_channels, figsize=(8, 4))
     for i in range(len(ax)):
         # vmax = np.max(density_map[:, :, i])
-        ax[i].imshow(np.squeeze(density_map[:, :, i]),
+        ax[i].imshow(density_map.reshape(density_map_shape)[:, :, i],
                      aspect='auto',
                      vmin=vmin, vmax=vmax,
                      interpolation="nearest",
@@ -295,40 +301,40 @@ def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), cell_mask=None):
     fig = plt.figure(figsize=(20,5))
 
     ax = fig.add_subplot(141, projection='3d')
-    ax.scatter(output['zt'][output['is_t_1d']][:,0], output['zt'][output['is_t_1d']][:,1], 
-                output['zt'][output['is_t_1d']][:,2], c=output['cluster_color'][output['is_t_1d']],s=3)
     if cell_mask is not None:
         ax.scatter(output['zt'][cell_mask][:,0], output['zt'][cell_mask][:,1], 
-                output['zt'][cell_mask][:,2], c="#808080",s=15)
+                output['zt'][cell_mask][:,2], c="#808080",s=3)
+    ax.scatter(output['zt'][output['is_t_1d']][:,0], output['zt'][output['is_t_1d']][:,1], 
+                output['zt'][output['is_t_1d']][:,2], c=output['cluster_color'][output['is_t_1d']],s=15)
     ax.set(title='T', xlim=xlim, ylim=ylim, zlim=zlim)
 
 
     ax = fig.add_subplot(142, projection='3d')
-    ax.scatter(output['ze'][is_te_1d][:,0], output['ze'][is_te_1d][:,1], 
-                output['ze'][is_te_1d][:,2], c=output['cluster_color'][is_te_1d],s=3)
     if cell_mask:
         ax.scatter(output['ze'][cell_mask][:,0], output['ze'][cell_mask][:,1], 
-                output['ze'][cell_mask][:,2], c="#808080",s=15)
+                output['ze'][cell_mask][:,2], c="#808080",s=3)
+    ax.scatter(output['ze'][is_te_1d][:,0], output['ze'][is_te_1d][:,1], 
+                output['ze'][is_te_1d][:,2], c=output['cluster_color'][is_te_1d],s=15)
     ax.set(title='E', xlim=xlim, ylim=ylim, zlim=zlim)
 
 
     ax = fig.add_subplot(143, projection='3d')
-    ax.scatter(output['zme_paired'][is_met_1d][:,0], output['zme_paired'][is_met_1d][:,1], 
-                output['zme_paired'][is_met_1d][:,2], c=output['cluster_color'][is_met_1d],s=3)
     if cell_mask is not None:
         ax.scatter(output['zme_paired'][cell_mask][:,0], output['zme_paired'][cell_mask][:,1], 
-                output['zme_paired'][cell_mask][:,2], c="#808080",s=15)
+                output['zme_paired'][cell_mask][:,2], c="#808080",s=3)
+    ax.scatter(output['zme_paired'][is_met_1d][:,0], output['zme_paired'][is_met_1d][:,1], 
+                output['zme_paired'][is_met_1d][:,2], c=output['cluster_color'][is_met_1d],s=15)
     ax.set(title='ME', xlim=xlim, ylim=ylim, zlim=zlim)
 
 
     ax = fig.add_subplot(144, projection='3d')
-    ax.scatter(output['zm'][is_mt_1d][:,0], output['zm'][is_mt_1d][:,1], 
-                output['zm'][is_mt_1d][:,2], c=output['cluster_color'][is_mt_1d], s=3)
-    # ax.view_init(-90, 60)
     if cell_mask is not None:
         ax.scatter(output['zm'][cell_mask][:,0], output['zm'][cell_mask][:,1], 
-                output['zm'][cell_mask][:,2], c="#808080", s=15)
+                output['zm'][cell_mask][:,2], c="#808080", s=3)
+    ax.scatter(output['zm'][is_mt_1d][:,0], output['zm'][is_mt_1d][:,1], 
+                output['zm'][is_mt_1d][:,2], c=output['cluster_color'][is_mt_1d], s=15)
     ax.set(title='M', xlim=xlim, ylim=ylim, zlim=zlim)
+    # ax.view_init(-90, 60)
 
 
     plt.tight_layout()

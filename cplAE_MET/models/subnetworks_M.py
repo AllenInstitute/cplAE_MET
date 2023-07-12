@@ -15,7 +15,7 @@ class Enc_xm_to_zm_int(nn.Module):
         self.conv_1 = nn.Conv3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_1 = nn.MaxPool3d((2, 1, 1), return_indices=True)
         self.fc_0 = nn.Linear(6000, out_dim)
-        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True)
+        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
         return
