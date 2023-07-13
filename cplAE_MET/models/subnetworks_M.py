@@ -3,13 +3,15 @@ import torch
 
 class Enc_xm_to_zm_int(nn.Module):
     """Common encoding network for (only M) and (M and E paired) cases.
-    - `xm` expected in [N, C=1, D=240, H=4, W=4] format, with C = 1, D=240, H=4, W=4
+    - `xm` expected in [N, C=1, D=240, H=1, W=4] format, with C = 1, D=240, H=1, W=4
      - Elements of xm expected in range (0, ~40). Missing data is encoded as nans.
      - Output is an intermediate representation, `zm_int`
     """
 
-    def __init__(self, out_dim=10):
+    def __init__(self, out_dim=10, gnoise_std=None):
         super(Enc_xm_to_zm_int, self).__init__()
+        if gnoise_std is not None:
+            self.gnoise_std = gnoise_std 
         self.conv_0 = nn.Conv3d(1, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_0 = nn.MaxPool3d((2, 1, 1), return_indices=True)
         self.conv_1 = nn.Conv3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
@@ -19,9 +21,25 @@ class Enc_xm_to_zm_int(nn.Module):
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
         return
+    
+    def aug_noise(self, x):
+        """
+        Get the image and mask for the nonzero pixels and add gaussian noise to the nonzero pixels if training
+        Args:
+            im: array with the shape of (batch_size x 1 x 120 x 1 x 4)
+        """
+        # get the nanzero mask for M for adding noise
+        mask = x != 0.
+        if self.training:
+            noise = torch.randn(x.shape, device=x.device) * self.gnoise_std
+            return torch.where(mask, x + noise, x)
+        else:
+            return x
+        
 
     def forward(self, xm):
-        x, self.pool_0_ind = self.pool_0(self.relu(self.conv_0(xm)))
+        x = self.aug_noise(xm)
+        x, self.pool_0_ind = self.pool_0(self.relu(self.conv_0(x)))
         x, self.pool_1_ind = self.pool_1(self.relu(self.conv_1(x)))
         x = x.view(x.shape[0], -1)
         # x = self.relu(self.fc_0(x))
@@ -105,7 +123,7 @@ class Dec_zm_int_to_xm(nn.Module):
 class AE_M(nn.Module):
     def __init__(self, config):
         super(AE_M, self).__init__()
-        self.enc_xm_to_zm_int = Enc_xm_to_zm_int()
+        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(gnoise_std=config['M']['gnoise_std'])
         self.enc_zm_int_to_zm = Enc_zm_int_to_zm(out_dim=config['latent_dim'], variational=config['variational'])
         self.dec_zm_to_zm_int = Dec_zm_to_zm_int(in_dim=config['latent_dim'])
         self.dec_zm_int_to_xm = Dec_zm_int_to_xm()

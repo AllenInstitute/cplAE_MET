@@ -167,7 +167,7 @@ class Model_ME_T_conv(nn.Module):
                                              gnoise_std_frac=model_config['E']['gnoise_std_frac'],
                                              dropout_p=model_config['E']['dropout_p'])
         self.me_e_decoder = Dec_ze_int_to_xe()
-        self.me_m_encoder = Enc_xm_to_zm_int()
+        self.me_m_encoder = Enc_xm_to_zm_int(gnoise_std=model_config['M']['gnoise_std'])
         self.me_m_decoder = Dec_zm_int_to_xm()
         self.variational = model_config['variational']
         return

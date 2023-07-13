@@ -24,7 +24,7 @@ class Enc_xe_to_ze_int(nn.Module):
         self.drp = nn.Dropout(p=dropout_p)
         self.fc_0 = nn.Linear(82, 40)
         self.fc_1 = nn.Linear(40, 40)
-        self.bn = nn.BatchNorm1d(40, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
+        self.bn = nn.BatchNorm1d(40, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
         self.fc_2 = nn.Linear(40, 40)
         self.fc_3 = nn.Linear(40, out_dim)
         self.relu = nn.ReLU()

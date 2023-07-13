@@ -31,8 +31,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='TEM_16k_3d_M120x1_2conv_10_10',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='TEM_16k_3d_M120x1_2conv_10_10.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
 parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
 parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
@@ -126,8 +126,7 @@ def main(exp_name="TEST",
                                    gnoise_std_frac=0.05, 
                                    dropout_p=0.2, 
                                    alpha_E=params['alpha_E']),
-                            M=dict(gnoise_std=train_dataset.gnoise_m_std, 
-                                   gnoise_std_frac=0.005, 
+                            M=dict(gnoise_std=0.005, 
                                    dropout_p=0.2, 
                                    alpha_M=params['alpha_M']),
                             TE=dict(lambda_TE=lambda_TE,
