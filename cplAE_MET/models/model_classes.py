@@ -160,14 +160,15 @@ class Model_ME_T_conv(nn.Module):
         super(Model_ME_T_conv, self).__init__()
         
         self.ae_t = AE_T(config=model_config)
-        self.ae_e = AE_E(config=model_config, gnoise_std=model_config['E']['gnoise_std'])
+        self.ae_e = AE_E(config=model_config)
         self.ae_m = AE_M(config=model_config)
         self.ae_me = AE_ME_int(config=model_config)
         self.me_e_encoder = Enc_xe_to_ze_int(gnoise_std=model_config['E']['gnoise_std'],
                                              gnoise_std_frac=model_config['E']['gnoise_std_frac'],
                                              dropout_p=model_config['E']['dropout_p'])
         self.me_e_decoder = Dec_ze_int_to_xe()
-        self.me_m_encoder = Enc_xm_to_zm_int(gnoise_std=model_config['M']['gnoise_std'])
+        self.me_m_encoder = Enc_xm_to_zm_int(gnoise_std=model_config['M']['gnoise_std'], 
+                                             gnoise_std_frac=model_config['M']['gnoise_std_frac'])
         self.me_m_decoder = Dec_zm_int_to_xm()
         self.variational = model_config['variational']
         return

@@ -24,7 +24,7 @@ class Enc_xe_to_ze_int(nn.Module):
         self.drp = nn.Dropout(p=dropout_p)
         self.fc_0 = nn.Linear(82, 40)
         self.fc_1 = nn.Linear(40, 40)
-        self.bn = nn.BatchNorm1d(40, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
+        self.bn = nn.BatchNorm1d(40, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.fc_2 = nn.Linear(40, 40)
         self.fc_3 = nn.Linear(40, out_dim)
         self.relu = nn.ReLU()
@@ -117,12 +117,13 @@ class Dec_ze_int_to_xe(nn.Module):
 
 
 class AE_E(nn.Module):
-    def __init__(self, config, gnoise_std):
+    def __init__(self, config):
         super(AE_E, self).__init__()
-        self.enc_xe_to_ze_int = Enc_xe_to_ze_int(gnoise_std=gnoise_std,
+        self.enc_xe_to_ze_int = Enc_xe_to_ze_int(gnoise_std=config['E']['gnoise_std'],
                                                  gnoise_std_frac=config['E']['gnoise_std_frac'],
                                                  dropout_p=config['E']['dropout_p'])
-        self.enc_ze_int_to_ze = Enc_ze_int_to_ze(out_dim=config['latent_dim'], variational=config['variational'])
+        self.enc_ze_int_to_ze = Enc_ze_int_to_ze(out_dim=config['latent_dim'],
+                                                 variational=config['variational'])
         self.dec_ze_to_ze_int = Dec_ze_to_ze_int(in_dim=config['latent_dim'])
         self.dec_ze_int_to_xe = Dec_ze_int_to_xe()
         self.variational = config['variational']

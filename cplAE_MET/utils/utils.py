@@ -95,9 +95,9 @@ def set_paths(config_file=None, exp_name='DEBUG', opt_storage_db="TEST", fold_n=
     # only if optimization is running, then we save the log file in tensorboard format
     if creat_tb_logs:
         paths['tb_logs'] = f'{str(paths["package_dir"] / "data/results")}/tb_logs/{exp_name}/fold_{str(fold_n)}/'
-        if os.path.exists(paths['tb_logs']):
-            shutil.rmtree(paths['tb_logs'])
-        Path(paths['tb_logs']).mkdir(parents=True, exist_ok=False)
+        # if os.path.exists(paths['tb_logs']):
+        #     shutil.rmtree(paths['tb_logs'])
+        Path(paths['tb_logs']).mkdir(parents=True, exist_ok=True)
     paths['config_file'] = config_file_path
     return paths
 

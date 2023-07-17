@@ -8,31 +8,31 @@ class Enc_xm_to_zm_int(nn.Module):
      - Output is an intermediate representation, `zm_int`
     """
 
-    def __init__(self, out_dim=10, gnoise_std=None):
+    def __init__(self, 
+                 out_dim=10, 
+                 gnoise_std=None,
+                 gnoise_std_frac=0.05):
+        
         super(Enc_xm_to_zm_int, self).__init__()
         if gnoise_std is not None:
-            self.gnoise_std = gnoise_std 
+            self.gnoise_std = gnoise_std * gnoise_std_frac
         self.conv_0 = nn.Conv3d(1, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_0 = nn.MaxPool3d((2, 1, 1), return_indices=True)
         self.conv_1 = nn.Conv3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_1 = nn.MaxPool3d((2, 1, 1), return_indices=True)
         self.fc_0 = nn.Linear(6000, out_dim)
-        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False)
+        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
         return
     
     def aug_noise(self, x):
-        """
-        Get the image and mask for the nonzero pixels and add gaussian noise to the nonzero pixels if training
-        Args:
-            im: array with the shape of (batch_size x 1 x 120 x 1 x 4)
-        """
         # get the nanzero mask for M for adding noise
         mask = x != 0.
-        if self.training:
-            noise = torch.randn(x.shape, device=x.device) * self.gnoise_std
-            return torch.where(mask, x + noise, x)
+        if (self.training) and (self.gnoise_std is not None):
+            x = torch.where(mask, torch.normal(mean=x, std=self.gnoise_std), x)
+            x = torch.clamp(x, min=0)
+            return x
         else:
             return x
         
@@ -57,7 +57,7 @@ class Enc_zm_int_to_zm(nn.Module):
         # self.fc_0 = nn.Linear(in_dim, out_dim, bias=False)
         self.fc_mu = nn.Linear(in_dim, out_dim, bias=False)
         self.fc_sigma = nn.Linear(in_dim, out_dim, bias=False)
-        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False)
+        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
         self.variational = variational
         return
 
@@ -123,7 +123,7 @@ class Dec_zm_int_to_xm(nn.Module):
 class AE_M(nn.Module):
     def __init__(self, config):
         super(AE_M, self).__init__()
-        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(gnoise_std=config['M']['gnoise_std'])
+        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(gnoise_std=config['M']['gnoise_std'], gnoise_std_frac=config['M']['gnoise_std_frac'])
         self.enc_zm_int_to_zm = Enc_zm_int_to_zm(out_dim=config['latent_dim'], variational=config['variational'])
         self.dec_zm_to_zm_int = Dec_zm_to_zm_int(in_dim=config['latent_dim'])
         self.dec_zm_int_to_xm = Dec_zm_int_to_xm()

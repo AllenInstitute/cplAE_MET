@@ -121,6 +121,7 @@ class MET_dataset(Dataset):
         self.platform = met_dataclass_obj.platform
         self.astensor = lambda x: torch.as_tensor(x).float().to(self.device)
         self.gnoise_e_std = torch.var(torch.nan_to_num(self.astensor(self.xe)), dim=0, keepdim=True).sqrt()
+        self.gnoise_m_std = torch.var(torch.nan_to_num(self.astensor(self.xm)), dim=0, keepdim=True).sqrt()
 
         self.is_m_1d = met_dataclass_obj.isM_1d
         self.is_e_1d = met_dataclass_obj.isE_1d
