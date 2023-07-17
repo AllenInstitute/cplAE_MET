@@ -15,6 +15,9 @@ class MET_exc_inh(object):
         self.merged_cluster_label_at40 = dat['merged_cluster_label_at40']
         self.merged_cluster_label_at50 = dat['merged_cluster_label_at50']
         self.merged_cluster_label_at60 = dat['merged_cluster_label_at60']
+        self.merged_cluster_label_at70 = dat['merged_cluster_label_at70']
+        self.merged_cluster_label_at80 = dat['merged_cluster_label_at80']
+        self.merged_cluster_label_at90 = dat['merged_cluster_label_at90']
         self.cluster_id = dat['cluster_id']
         self.cluster_color = dat['cluster_color']
         self.specimen_id = dat['specimen_id']
@@ -42,6 +45,9 @@ class MET_exc_inh(object):
                                 merged_cluster_label_at40=self.merged_cluster_label_at40[inds[0]],
                                 merged_cluster_label_at50=self.merged_cluster_label_at50[inds[0]],
                                 merged_cluster_label_at60=self.merged_cluster_label_at60[inds[0]],
+                                merged_cluster_label_at70=self.merged_cluster_label_at70[inds[0]],
+                                merged_cluster_label_at80=self.merged_cluster_label_at80[inds[0]],
+                                merged_cluster_label_at90=self.merged_cluster_label_at90[inds[0]],
                                 cluster_id=self.cluster_id[inds[0]],
                                 cluster_color=self.cluster_color[inds[0]],
                                 specimen_id=self.specimen_id[inds[0]],
@@ -99,6 +105,9 @@ class MET_exc_inh(object):
         D['merged_cluster_label_at40'] = data['merged_cluster_label_at40']
         D['merged_cluster_label_at50'] = data['merged_cluster_label_at50']
         D['merged_cluster_label_at60'] = data['merged_cluster_label_at60']
+        D['merged_cluster_label_at70'] = data['merged_cluster_label_at70']
+        D['merged_cluster_label_at80'] = data['merged_cluster_label_at80']
+        D['merged_cluster_label_at90'] = data['merged_cluster_label_at90']
         D['cluster_id'] = data['cluster_id'].astype(int)
         D['cluster_color'] = data['cluster_color']
         D['class'] = data['class']
@@ -129,6 +138,9 @@ class MET_exc_inh(object):
         D['merged_cluster_label_at40'] = np.array([c.strip() for c in D['merged_cluster_label_at40']])
         D['merged_cluster_label_at50'] = np.array([c.strip() for c in D['merged_cluster_label_at50']])
         D['merged_cluster_label_at60'] = np.array([c.strip() for c in D['merged_cluster_label_at60']])
+        D['merged_cluster_label_at70'] = np.array([c.strip() for c in D['merged_cluster_label_at70']])
+        D['merged_cluster_label_at80'] = np.array([c.strip() for c in D['merged_cluster_label_at80']])
+        D['merged_cluster_label_at90'] = np.array([c.strip() for c in D['merged_cluster_label_at90']])
         D['cluster_color'] = np.array([c.strip() for c in D['cluster_color']])
         D['gene_ids'] = np.array([c.strip() for c in D['gene_ids']])
         D['E_features'] = np.array([c.strip() for c in D['E_features']])
@@ -141,13 +153,24 @@ class MET_exc_inh(object):
         isnan_merged_at40 = D['merged_cluster_label_at40'] == 'nan'
         isnan_merged_at50 = D['merged_cluster_label_at50'] == 'nan'
         isnan_merged_at60 = D['merged_cluster_label_at60'] == 'nan'
+        isnan_merged_at70 = D['merged_cluster_label_at70'] == 'nan'
+        isnan_merged_at80 = D['merged_cluster_label_at80'] == 'nan'
+        isnan_merged_at90 = D['merged_cluster_label_at90'] == 'nan'
         assert np.all(isnan == isnan_merged_at40) , f"When t types are merged, nans must be the same"
         assert np.all(isnan == isnan_merged_at50) , f"When t types are merged, nans must be the same"
         assert np.all(isnan == isnan_merged_at60) , f"When t types are merged, nans must be the same"
+        assert np.all(isnan == isnan_merged_at70) , f"When t types are merged, nans must be the same"
+        assert np.all(isnan == isnan_merged_at80) , f"When t types are merged, nans must be the same"
+        assert np.all(isnan == isnan_merged_at90) , f"When t types are merged, nans must be the same"
+
         D['cluster_label'][isnan] = 'NA'
         D['merged_cluster_label_at40'][isnan] = 'NA'
         D['merged_cluster_label_at50'][isnan] = 'NA'
         D['merged_cluster_label_at60'][isnan] = 'NA'
+        D['merged_cluster_label_at70'][isnan] = 'NA'
+        D['merged_cluster_label_at80'][isnan] = 'NA'
+        D['merged_cluster_label_at90'][isnan] = 'NA'
+
         D['cluster_id'][isnan] = np.max(D['cluster_id']) + 1
         D['cluster_color'][isnan] = '#888888'
         return D

@@ -297,7 +297,7 @@ def main(exp_name="TEST",
             
             if  optimization:
                 if ((epoch % 1000) == 0):
-                    fname = dir_pth['result'] + f"trial353_3d_manual_load_nognoise_checkpoint_epoch_{epoch}.pkl"
+                    fname = dir_pth['result'] + f"trial_{trial.number}_checkpoint_epoch_{epoch}.pkl"
                     save_results(model, dataloader, D, fname, train_ind, val_ind)
 
                 # TODO

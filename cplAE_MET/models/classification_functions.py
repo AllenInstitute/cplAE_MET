@@ -43,7 +43,7 @@ def run_LogisticRegression(X, y, test_size, min_label_size=7):
     return classification_acc, n_class, clf
 
 
-def run_LDA(X, y, min_label_size=7, train_test_ids=None, test_size=None):
+def run_LDA(X, y, min_label_size=7, train_test_ids=0.1, test_size=None):
     '''
 
     Args:
@@ -68,6 +68,31 @@ def run_LDA(X, y, min_label_size=7, train_test_ids=None, test_size=None):
         X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
 
     clf = LinearDiscriminantAnalysis()
+    clf.fit(X_train, y_train)
+    classification_acc = clf.score(X_test, y_test) * 100
+    n_class = len(Counter(y_test))
+    # print(classification_acc, n_class, clf)
+    return classification_acc, n_class, clf
+
+def run_QDA(X, y, min_label_size=7, test_size=0.1):
+    '''
+
+    Args:
+        X: input array with the size of (n_cells, n_features)
+        y: labels for each X entry with the size of (n_cells, )
+        test_size: float value for the split
+        train_test_ids: the indices of the train and test cells to be used in the classifier
+    Returns:
+        accuracy of the classification task, number of classes and the classifier object
+
+   '''
+    small_types_mask = get_small_types_mask(y, min_label_size)
+    X = X[small_types_mask]
+    y = y[small_types_mask]
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
+
+    clf = QuadraticDiscriminantAnalysis()
     clf.fit(X_train, y_train)
     classification_acc = clf.score(X_test, y_test) * 100
     n_class = len(Counter(y_test))
