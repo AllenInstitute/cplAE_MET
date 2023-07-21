@@ -30,9 +30,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='TEM_16k_5d_M120x1_2conv_10_10',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='TEM_16k_5d_M120x1_2conv_10_10.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--config_file',           default='config_8k.toml',  type=str,   help='config file with data paths')
+parser.add_argument('--exp_name',              default='TEM_8k_noEM_5d_M120x1_2conv_10_10',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='TEM_8k_noEM_5d_M120x1_2conv_10_10.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--tblog_name',            default='TEST',         type=str,   help='tensor board log name')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
 parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
@@ -181,9 +181,12 @@ def main(exp_name="TEST",
             self.lambda_tune_ME_M_range = lambda_tune_ME_M_range
             self.previous_ML_model_weights_to_load = previous_ML_model_weights_to_load
             self.best_model = None
+            self.acceptable_model = None
             self._current_model = None
             self.best_optimizer = None
+            self.acceptable_optimizer = None
             self._current_optimizer = None
+            self._current_value = None
 
         def __call__(self, trial):
             if optimization:
@@ -242,13 +245,17 @@ def main(exp_name="TEST",
             trained_model, score = train_and_evaluate(model_config, model, optimizer, trial)
             self._current_model = trained_model
             self._current_optimizer = optimizer
+            self._current_value = score
 
             return score
 
         def callback(self, study, trial):
-            if study.best_trial == trial:
+            if self._current_value >= study.best_value:
                 self.best_model = self._current_model
                 self.best_optimizer = self._current_optimizer
+            elif abs(self._current_value - study.best_value) <= 5:
+                self.acceptable_model = self._current_model
+                self.acceptable_optimizer = self._current_optimizer
 
 
 
@@ -443,19 +450,37 @@ def main(exp_name="TEST",
                           lambda_tune_ME_E_range = lambda_tune_ME_E_range,
                           previous_ML_model_weights_to_load = model_to_load)
 
+    trial_number = str(len(study.trials) + 1)
     if not optimization:
-        tblog_name = str(len(study.trials) + 1)
-        log_dir = dir_pth['tb_logs'] + "trial" + tblog_name + "/"
+        log_dir = dir_pth['tb_logs'] + "trial" + trial_number + "/"
         tb_writer = SummaryWriter(log_dir=log_dir)
         
 
     study.optimize(objective, n_trials=opt_n_trials, callbacks=[objective.callback])
 
 
+    # save the best acceptable checkpoint and results at the end of the study -----------
+    # This is run only if the model is acceptable in this run ---------------------------
+    # WE accept the models that their score is closer than 5 percernt of the best value so far
+    fname = dir_pth['result'] + f"acceptable_model_trial{trial_number}" 
+
+    if objective.acceptable_model is not None:
+        checkpoint = {
+            'state_dict': objective.acceptable_model.state_dict(),
+            'optimizer': objective.acceptable_optimizer.state_dict()
+            }
+        save_ckp(checkpoint, dir_pth['result'], fname)
+
+        fname = dir_pth['result'] + f"Results_trial_{trial_number}.pkl"
+
+        save_results(objective.acceptable_model, dataloader, D, fname, train_ind, val_ind)
+
+    fname = dir_pth['result'] + f"Best_model_trial{study.best_trial.number}" 
+
+
     # save the best model checkpoint and the best results at the end of the study -----------
     # This is run only if the best model was happend in this run ----------------------------
 
-    fname = dir_pth['result'] + f"Best_model_trial{study.best_trial.number}" 
     if objective.best_model is not None:
         checkpoint = {
             'state_dict': objective.best_model.state_dict(),
