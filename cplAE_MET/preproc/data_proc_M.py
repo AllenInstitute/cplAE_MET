@@ -18,7 +18,7 @@ parser.add_argument('--config_file',    default='config_preproc.toml', type=str,
 
 
 def set_paths(config_file=None):
-    paths = load_config(config_file=config_file, verbose=False)
+    paths, _ = load_config(config_file=config_file, verbose=False)
     paths['input'] = f'{str(paths["data_dir"])}'
     paths['arbor_density_file'] = f'{paths["input"]}/{str(paths["arbor_density_file"])}'
 
@@ -105,18 +105,28 @@ def main(config_file='config_preproc.toml'):
                     im0 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv', header=None).values
                     im1 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[1]}_{spec_id}.csv', header=None).values
 
-                    # #convert arbor density to arbor mass
-                    # mass0 = undo_radial_correction(im0)
-                    # mass1 = undo_radial_correction(im1)
+                    #convert arbor density to arbor mass
+                    mass0 = undo_radial_correction(im0)
+                    mass1 = undo_radial_correction(im1)
 
                     # Normalize so that the mass sum is 350
                     # mass0 = mass0 * 350 / np.sum(mass0)
                     # mass1 = mass1 * 350 / np.sum(mass1)
 
-                    #compute the arbor density from the arbor mass again
+                    # compute the arbor density from the arbor mass again
                     # im0 = do_radial_correction(mass0)
                     # im1 = do_radial_correction(mass1)
 
+                    # convert images from 120x4 to 120x1 shape 
+                    # mass0 = mass0.sum(axis=1)
+                    # mass1 = mass1.sum(axis=1)
+
+                    mass0 = mass0 * 100 / np.sum(mass0)
+                    mass1 = mass1 * 100 / np.sum(mass1)
+
+                    im0 = mass0
+                    im1 = mass1
+                    
                     if exc_or_inh == "inh":
                         im[i, :, :, 0:2] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))
                         im[i, :, :, 2:] = 0.

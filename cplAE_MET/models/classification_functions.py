@@ -43,7 +43,7 @@ def run_LogisticRegression(X, y, test_size, min_label_size=7):
     return classification_acc, n_class, clf
 
 
-def run_LDA(X, y, min_label_size=7, train_test_ids=0.1, test_size=None):
+def run_LDA(X, y, min_label_size=7, test_size=0.1, train_test_ids=None):
     '''
 
     Args:
@@ -74,7 +74,7 @@ def run_LDA(X, y, min_label_size=7, train_test_ids=0.1, test_size=None):
     # print(classification_acc, n_class, clf)
     return classification_acc, n_class, clf
 
-def run_QDA(X, y, min_label_size=7, test_size=0.1):
+def run_QDA(X, y, min_label_size=7, test_size=0.1, train_test_ids=None):
     '''
 
     Args:
@@ -87,10 +87,19 @@ def run_QDA(X, y, min_label_size=7, test_size=0.1):
 
    '''
     small_types_mask = get_small_types_mask(y, min_label_size)
-    X = X[small_types_mask]
-    y = y[small_types_mask]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
+    if train_test_ids:
+        train_ind_again = [i for i in train_test_ids['train'][0] if i in np.where(small_types_mask)[0]]
+        val_ind_again = [i for i in train_test_ids['val'][0] if i in np.where(small_types_mask)[0]]
+        X_train = X[train_ind_again]
+        X_test = X[val_ind_again]
+        y_train = y[train_ind_again]
+        y_test = y[val_ind_again]
+
+    else:
+        X = X[small_types_mask]
+        y = y[small_types_mask]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=0)
 
     clf = QuadraticDiscriminantAnalysis()
     clf.fit(X_train, y_train)

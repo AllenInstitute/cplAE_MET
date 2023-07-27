@@ -30,9 +30,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',           default='config_8k.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='TEM_8k_noEM_5d_M120x1_2conv_10_10',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='TEM_8k_noEM_5d_M120x1_2conv_10_10.db',      type=str,   help='Optuna study storage database')
+parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
+parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
+parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
 parser.add_argument('--tblog_name',            default='TEST',         type=str,   help='tensor board log name')
 parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
 parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
@@ -41,7 +41,7 @@ parser.add_argument('--load_params',           default=False,          type=bool
 parser.add_argument('--use_defined_params',    default=False,          type=bool,  help='use hyperparams that are defined by user')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2500,           type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=5000,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=5,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
@@ -250,12 +250,13 @@ def main(exp_name="TEST",
             return score
 
         def callback(self, study, trial):
-            if self._current_value >= study.best_value:
-                self.best_model = self._current_model
-                self.best_optimizer = self._current_optimizer
-            elif abs(self._current_value - study.best_value) <= 5:
-                self.acceptable_model = self._current_model
-                self.acceptable_optimizer = self._current_optimizer
+            if self._current_value is not None:
+                if self._current_value >= study.best_value:
+                    self.best_model = self._current_model
+                    self.best_optimizer = self._current_optimizer
+                elif abs(self._current_value - study.best_value) <= 5:
+                    self.acceptable_model = self._current_model
+                    self.acceptable_optimizer = self._current_optimizer
 
 
 
@@ -379,8 +380,16 @@ def main(exp_name="TEST",
 
     dat, D = MET_exc_inh.from_file(dir_pth['MET_data'])
 
-    dat.XM = np.expand_dims(np.expand_dims(dat.XM, axis=1), axis=3)
+    dat.XM = np.expand_dims(dat.XM, axis=1)
+    # dat.XM = np.expand_dims(np.expand_dims(dat.XM, axis=1), axis=3)
     dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
+
+    # soma depth is range (0,1) <-- check this
+    pad = 60
+    norm2pixel_factor = 100
+    padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
+    dat.XM = get_padded_im(im=dat.XM, pad=pad)
+    dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
 
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]

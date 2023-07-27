@@ -16,7 +16,7 @@ parser.add_argument('--beta_threshold', default=0.4,                   type=floa
 
 
 def set_paths(config_file=None):
-    paths = load_config(config_file=config_file, verbose=False)
+    paths, _ = load_config(config_file=config_file, verbose=False)
 
     paths['input'] = f'{str(paths["data_dir"])}'
     paths['specimen_ids'] = f'{paths["input"]}/{str(paths["specimen_ids_file"])}'
