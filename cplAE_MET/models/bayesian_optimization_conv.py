@@ -48,17 +48,17 @@ parser.add_argument('--batch_size',            default=1000,           type=int,
 parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
 parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
 parser.add_argument('--alpha_E',               default=(0, 6),         type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=(-2, 4),         type=float, help='M reconstruction loss weight')
+parser.add_argument('--alpha_M',               default=(-3, 3),         type=float, help='M reconstruction loss weight')
 parser.add_argument('--alpha_ME',              default=(-4, 2),         type=float, help='ME reconstruction loss weight')
 parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
 parser.add_argument('--lambda_TM',             default=1.0,            type=float, help='coupling loss weight between T and M')
 parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
 parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_E_T_range', default=(-4, 2),        type=float, help='Tune the directionality of coupling between E and T')
+parser.add_argument('--lambda_tune_E_T_range', default=(-5, 0),        type=float, help='Tune the directionality of coupling between E and T')
 parser.add_argument('--lambda_tune_ME_E_range',default=(0, 8),          type=float, help='Tune the directionality of coupling between ME and E')
 parser.add_argument('--lambda_tune_ME_M_range',default=(2, 5),          type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-4, 0),        type=float, help='Tune the directionality of coupling between ME and T')
+parser.add_argument('--lambda_tune_ME_T_range',default=(-5, -1),        type=float, help='Tune the directionality of coupling between ME and T')
 parser.add_argument('--lambda_tune_M_T_range', default=(-8, -2),         type=float, help='Tune the directionality of coupling between M and T')
 parser.add_argument('--lambda_tune_T_E_range', default=(3, 6),          type=float, help='Tune the directionality of coupling between T and E')
 parser.add_argument('--lambda_tune_T_M_range', default=(-1, 5),          type=float, help='Tune the directionality of coupling between T and M')
@@ -384,12 +384,12 @@ def main(exp_name="TEST",
     # dat.XM = np.expand_dims(np.expand_dims(dat.XM, axis=1), axis=3)
     dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
 
-    # soma depth is range (0,1) <-- check this
-    pad = 60
-    norm2pixel_factor = 100
-    padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
-    dat.XM = get_padded_im(im=dat.XM, pad=pad)
-    dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
+    # # soma depth is range (0,1) <-- check this
+    # pad = 60
+    # norm2pixel_factor = 100
+    # padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
+    # dat.XM = get_padded_im(im=dat.XM, pad=pad)
+    # dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
 
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
