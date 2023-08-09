@@ -57,7 +57,7 @@ def get_cell_ids_of_abnormal_images(specimen_ids, image_path, m_anno,  min_nonze
 
     ab_spec_id = []
     for i, spec_id in tqdm(enumerate(specimen_ids)):
-        if spec_id in m_anno['specimen_id'].to_list():
+        if spec_id in m_anno['specimen_id'].astype(str).to_list():
             exc_or_inh = m_anno[m_anno['specimen_id'] == spec_id]['class']
             app = get_file_apendix(exc_or_inh.values[0])
             if os.path.isfile(image_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv'):
@@ -78,9 +78,8 @@ def main(config_file='config_preproc.toml'):
 
     ################## Reading m_anno and finding cells with few nonzero pixels
     ids = pd.read_csv(dir_pth['specimen_ids'])
-    specimen_ids = ids['specimen_id'].tolist()
+    specimen_ids = ids['specimen_id'].astype(str).tolist()
     m_anno = pd.read_csv(m_anno_path) #This is used for soma depth and class type
-    t_anno = feather.read_dataframe(dir_pth['t_anno'])
     ab_spec_id = get_cell_ids_of_abnormal_images(specimen_ids, hist2d_120x4_path, m_anno,  min_nonzero_pixels=5)
     print(len(ab_spec_id), "cells will be dropped because of the few non zero pixels")
     drop_spec_id = ab_spec_id
@@ -89,15 +88,15 @@ def main(config_file='config_preproc.toml'):
     print("Generating image for all the locked dataset, for those that we dont have M, we put zeros")
     hist_shape = (1, 120, 4, 1)
     im_shape = (1, 120, 4, 4)
-    im = np.zeros((ids.shape[0], 120, 4, 4), dtype=float)
-    soma_depth = np.zeros((ids.shape[0],))
+    im = np.zeros((len(specimen_ids), 120, 4, 4), dtype=float)
+    soma_depth = np.zeros((len(specimen_ids),))
     c = 0
-    for i, spec_id in tqdm(enumerate(ids['specimen_id'])):
+    for i, spec_id in tqdm(enumerate(specimen_ids)):
         if spec_id in drop_spec_id:
             im[i, ...] = np.full(im_shape, np.nan)
             soma_depth[i] = np.nan
         else:
-            if spec_id in m_anno['specimen_id'].to_list():
+            if spec_id in m_anno['specimen_id'].astype(str).to_list():
                 exc_or_inh = m_anno[m_anno['specimen_id'] == spec_id]['class'].values[0]
                 app = get_file_apendix(exc_or_inh)
                 if os.path.isfile(hist2d_120x4_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv'):
@@ -146,7 +145,7 @@ def main(config_file='config_preproc.toml'):
 
     sio.savemat(dir_pth['arbor_density_file'], {'hist_ax_de_api_bas': im,
                                     'soma_depth': soma_depth,
-                                    'specimen_id': ids['specimen_id'].to_list()}, do_compression=True)
+                                    'specimen_id': ids['specimen_id'].astype(str).to_list()}, do_compression=True)
 
     return
 

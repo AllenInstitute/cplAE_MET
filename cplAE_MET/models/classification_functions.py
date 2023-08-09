@@ -4,6 +4,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis, LinearDiscriminantAnalysis
 
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import cross_val_score
+
+
 def get_small_types_mask(types, min_size):
     '''
     Remove all the cells within types with small size
@@ -107,3 +114,24 @@ def run_QDA(X, y, min_label_size=7, test_size=0.1, train_test_ids=None):
     n_class = len(Counter(y_test))
     # print(classification_acc, n_class, clf)
     return classification_acc, n_class, clf
+
+
+def get_cross_val_score(X, y, scoring='accuracy'):
+    cv = StratifiedKFold(n_splits=10)
+    model = RandomForestClassifier()
+    # evaluate model
+    scores = cross_val_score(model, X, y, scoring=scoring, cv=cv, n_jobs=-1)
+    return np.mean(scores)
+
+def get_kfold_stratified_acc_per_fold(X,y):
+    cv = StratifiedKFold(n_splits=10)
+    acc = []
+    for tr_ind, te_ind in cv.split(X,y):
+        X_train, y_train = X[tr_ind], y[tr_ind]
+        X_test, y_test = X[te_ind], y[te_ind]
+        model = RandomForestClassifier()
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        print('Mean acc: %.3f' % (accuracy_score(y_test, y_pred) * 100), "Number of types in test set", len(Counter(y[te_ind])))
+        acc.append((accuracy_score(y_test, y_pred) * 100))
+    return np.mean(acc), np.std(acc)

@@ -132,7 +132,7 @@ def plot_m(density_map,
         density_map_shape = (120, 1, 4)
     n_channels = len(channel)
     print(n_channels)
-    f, ax = plt.subplots(1, n_channels, figsize=(8, 4))
+    fig, ax = plt.subplots(1, n_channels, figsize=(8, 4))
     for i in range(len(ax)):
         # vmax = np.max(density_map[:, :, i])
         ax[i].imshow(density_map.reshape(density_map_shape)[:, :, i],
@@ -146,7 +146,7 @@ def plot_m(density_map,
         ax[i].grid(False)
     plt.tight_layout()
     plt.show()
-    return
+    return fig
 
 
 def plot_z(output, xlim=(-5, 5), ylim=(-5, 5), zme_paired=None):
@@ -339,7 +339,7 @@ def plot_z_3d(output, xlim=(-5, 5), ylim=(-5, 5), zlim=(-5,5), cell_mask=None):
 
     plt.tight_layout()
     plt.show()
-    return
+    return fig
 
 
 def plot3D_embedding(emb_array, color_list, **kwargs):

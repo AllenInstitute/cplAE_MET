@@ -41,7 +41,7 @@ parser.add_argument('--load_params',           default=False,          type=bool
 parser.add_argument('--use_defined_params',    default=False,          type=bool,  help='use hyperparams that are defined by user')
 parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
 parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=5000,           type=int,   help='Number of epochs to train')
+parser.add_argument('--n_epochs',              default=2500,           type=int,   help='Number of epochs to train')
 parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
 parser.add_argument('--latent_dim',            default=5,              type=int,   help='Number of latent dims')
 parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')

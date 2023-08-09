@@ -36,6 +36,7 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
 
     ids = pd.read_csv(dir_pth['specimen_ids'])
     specimen_ids = ids['specimen_id'].tolist()
+    specimen_ids = [str(i) for i in specimen_ids]
     print("...................................................")
     print("There are", len(specimen_ids), "sample_ids in the locked dataset")
 
@@ -86,16 +87,17 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     number_of_components = {}
     for k in hf.keys():
         if k not in ["ids"]:
-            print(k)
             n_comp_at_thr = proc_utils.get_PCA_explained_variance_ratio_at_thr(
                 nparray=time_series[k], threshold=pca_th)
             #If number of components are zero, then use 1
             if n_comp_at_thr == 0:
                 number_of_components[k] = 1
-            if n_comp_at_thr > 10:
-                number_of_components[k] = 10
             else:
-                number_of_components[k] = n_comp_at_thr
+                if n_comp_at_thr > 10:
+                    number_of_components[k] = 10
+                else:
+                    number_of_components[k] = n_comp_at_thr
+            print(k, number_of_components[k])
 
     PC = {}
     for k in hf.keys():
@@ -211,10 +213,10 @@ def main(config_file='config_preproc.toml', pca_th=0.97):
     df_merged = reduce(lambda left, right: pd.merge(left, right, on=['specimen_id'], how='outer'), data_frames)
     ##################### From here
     print("...................................................")
-    print("Removing some of the features than more than %5 of data dont have that feature")
+    print("Removing some of the features than more than %50 of data dont have that feature")
     drop_feature_thr = int(df_merged.shape[0]*0.05)
     temp = df_merged.isnull().sum(axis=0).reset_index()
-    feature_to_drop = temp[temp[0]>drop_feature_thr]['index'].to_list()
+    feature_to_drop = temp[temp[0]>drop_feature_thr]['index'].astype(str).to_list()
     df_merged = df_merged[[col for col in df_merged.columns.to_list() if col not in feature_to_drop]]
     df_merged = df_merged[~df_merged.isnull().any(axis=1)]
     ###################### keep until here if you want to remove bad features and bad cells

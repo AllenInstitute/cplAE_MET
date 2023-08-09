@@ -50,6 +50,7 @@ def main(config_file='config_preproc.toml', beta_threshold=0.4):
     T_ann['spec_id_label'] = T_ann['spec_id_label'].astype(str)
     t_cells = [i for i in ids['specimen_id'].to_list() if i in T_ann['spec_id_label'].to_list()]
     specimen_ids = ids['specimen_id'].tolist()
+    specimen_ids = [str(i) for i in specimen_ids]
     not_t_cells = [i for i in specimen_ids if i not in t_cells]
     print("...................................................")
     print("There are", len(specimen_ids), "sample_ids in the locked dataset")
