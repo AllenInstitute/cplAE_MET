@@ -1,0 +1,8 @@
+package_dir = '/home/fahimehb/Local/new_codes/cplAE_MET/'
+data_dir = '/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/'
+
+#For T
+specimen_ids_file = "exc_inh_patchseq_specimen_ids_6k_shuffled_8Aug23.txt"   
+E_timeseries_file = "fv_Ephys_timeseries_12Dec22.h5" 
+ipfx_features_file = "ipfx_features_12Dec22.csv" 
+e_output_file = "E_data_6k_8Aug23_yeganeh.csv" 
