@@ -1,10 +1,6 @@
 #########################################################
 ################ Preprocessing E data ###################
 #########################################################
-# This code reads a config file, a specimen id file, a 
-# electrophysiology time series file and an ipfx features
-# file to creat the E data file for outoecncoder
-
 import h5py
 import argparse
 import numpy as np

@@ -1,12 +1,10 @@
 # From python
 import os
-import time
 import sys
 import shutil
 import logging
 import argparse
 import numpy as np
-from collections import Counter
 
 # From torch
 import torch
@@ -20,67 +18,64 @@ from cplAE_MET.utils.dataset import MET_exc_inh
 from cplAE_MET.utils.utils import set_paths, save_ckp
 from cplAE_MET.models.torch_utils import MET_dataset
 from cplAE_MET.models.model_classes import Model_ME_T_conv
-
 from cplAE_MET.models.train_utils import init_losses, save_results, optimizer_to, Criterion
 from cplAE_MET.models.optuna_utils import run_classification, LastPlacePruner
-from cplAE_MET.models.augmentations import get_padded_im, get_soma_aligned_im
-
 
 from torch.utils.tensorboard import SummaryWriter
 
-
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',           default='config.toml',  type=str,   help='config file with data paths')
-parser.add_argument('--exp_name',              default='test',         type=str,   help='Experiment set')
-parser.add_argument('--opt_storage_db',        default='test.db',      type=str,   help='Optuna study storage database')
-parser.add_argument('--tblog_name',            default='TEST',         type=str,   help='tensor board log name')
-parser.add_argument('--variational',           default=False,          type=bool,  help='running a variational autoencoder?')
-parser.add_argument('--optimization',          default=True,           type=bool,  help='if False then the hyperparam are read from the input args')
-parser.add_argument('--load_model',            default=False,          type=bool,  help='Load weights from an old ML model')
-parser.add_argument('--load_params',           default=False,          type=bool,  help='Load hyperparams from an old model')
-parser.add_argument('--use_defined_params',    default=False,          type=bool,  help='use hyperparams that are defined by user')
-parser.add_argument('--db_load_if_exist',      default=True,           type=bool,  help='True(1) or False(0)')
-parser.add_argument('--opt_n_trials',          default=1,              type=int,   help='number trials for bayesian optimization')
-parser.add_argument('--n_epochs',              default=2500,           type=int,   help='Number of epochs to train')
-parser.add_argument('--fold_n',                default=0,              type=int,   help='kth fold in 10-fold CV splits')
-parser.add_argument('--latent_dim',            default=5,              type=int,   help='Number of latent dims')
-parser.add_argument('--batch_size',            default=1000,           type=int,   help='Batch size')
-parser.add_argument('--KLD_beta',              default=1.0,            type=float, help='coefficient for KLD term if model is VAE')
-parser.add_argument('--alpha_T',               default=1.0,            type=float, help='T reconstruction loss weight')
-parser.add_argument('--alpha_E',               default=(0, 6),         type=float, help='E reconstruction loss weight')
-parser.add_argument('--alpha_M',               default=(-3, 3),         type=float, help='M reconstruction loss weight')
-parser.add_argument('--alpha_ME',              default=(-4, 2),         type=float, help='ME reconstruction loss weight')
-parser.add_argument('--lambda_TE',             default=1.0,            type=float, help='coupling loss weight between T and E')
-parser.add_argument('--lambda_TM',             default=1.0,            type=float, help='coupling loss weight between T and M')
-parser.add_argument('--lambda_ME_T',           default=1.0,            type=float, help='coupling loss weight between ME and T')
-parser.add_argument('--lambda_ME_M',           default=1.0,            type=float, help='coupling loss weight between ME and M')
-parser.add_argument('--lambda_ME_E',           default=1.0,            type=float, help='coupling loss weight between ME and E')
-parser.add_argument('--lambda_tune_E_T_range', default=(-5, 0),        type=float, help='Tune the directionality of coupling between E and T')
-parser.add_argument('--lambda_tune_ME_E_range',default=(0, 8),          type=float, help='Tune the directionality of coupling between ME and E')
-parser.add_argument('--lambda_tune_ME_M_range',default=(2, 5),          type=float, help='Tune the directionality of coupling between ME and M')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-5, -1),        type=float, help='Tune the directionality of coupling between ME and T')
-parser.add_argument('--lambda_tune_M_T_range', default=(-8, -2),         type=float, help='Tune the directionality of coupling between M and T')
-parser.add_argument('--lambda_tune_T_E_range', default=(3, 6),          type=float, help='Tune the directionality of coupling between T and E')
-parser.add_argument('--lambda_tune_T_M_range', default=(-1, 5),          type=float, help='Tune the directionality of coupling between T and M')
-parser.add_argument('--lambda_tune_T_ME_range',default=(-1, 4),         type=float, help='Tune the directionality of coupling between T and ME')
-# If optimization is off
-# parser.add_argument('--alpha_E',               default=3.7444439709359303,            type=float, help='E reconstruction loss weight')
-# parser.add_argument('--alpha_M',               default=-1.2753832181434261,            type=float, help='M reconstruction loss weight')
-# parser.add_argument('--alpha_ME',              default=0.9915582474893159,            type=float, help='ME reconstruction loss weight')
-# parser.add_argument('--lambda_tune_E_T_range', default=-0.4739656029435031,            type=float, help='Tune the directionality of coupling between E and T')
-# parser.add_argument('--lambda_tune_ME_E_range',default=5.568178485396853,           type=float, help='Tune the directionality of coupling between ME and E')
-# parser.add_argument('--lambda_tune_ME_M_range',default=5.736830107242752,          type=float, help='Tune the directionality of coupling between ME and M')
-# parser.add_argument('--lambda_tune_ME_T_range',default=-4.7277641218387565,            type=float, help='Tune the directionality of coupling between ME and T')
-# parser.add_argument('--lambda_tune_M_T_range', default=-0.6372361643585175,            type=float, help='Tune the directionality of coupling between M and T')
-# parser.add_argument('--lambda_tune_T_E_range', default=3.094839719212722,           type=float, help='Tune the directionality of coupling between T and E')
-# parser.add_argument('--lambda_tune_T_M_range', default=3.172076573700521,            type=float, help='Tune the directionality of coupling between T and M')
-# parser.add_argument('--lambda_tune_T_ME_range',default=5.880858694042978,           type=float, help='Tune the directionality of coupling between T and ME')
+parser.add_argument('--config_file',           default='config.toml',type=str,   help='config file with data paths')
+parser.add_argument('--exp_name',              default='test',       type=str,   help='experiment name') # a folder with this name will be generated in the results folder
+parser.add_argument('--opt_storage_db',        default='test.db',    type=str,   help='name of the Optuna study storage database') # this history file will be generated in the exp folder
+parser.add_argument('--variational',           default=False,        type=bool,  help='running a variational autoencoder?') # variational AE is implemented but never tested
+parser.add_argument('--optimization',          default=True,         type=bool,  help='running an optimization study?')
+parser.add_argument('--load_model',            default=False,        type=bool,  help='load weights from an old ML model')
+parser.add_argument('--load_params',           default=False,        type=bool,  help='load hyperparams from an old model')
+parser.add_argument('--use_defined_params',    default=False,        type=bool,  help='use hyperparams that are defined by user')
+parser.add_argument('--db_load_if_exist',      default=True,         type=bool,  help='load an optimization database file if exist')
+parser.add_argument('--n_epochs',              default=2500,         type=int,   help='number of epochs to train')
+parser.add_argument('--warmup_steps',          default=500,          type=int,   help='during optimization, after this many epochs, prunning process starts')
+parser.add_argument('--warmup_trials',         default=10,           type=int,   help='during optimization, prunning starts only if this many trials already passed')
+parser.add_argument('--pruning_steps',         default=100,          type=int,   help='during optimization, after warmup_steps, every this amount of epochs a prunning will be tried')
+parser.add_argument('--prunning_stop',         default=2000,         type=int,   help='during optimization, no prunning will be attempted after this amount of epochs')
+parser.add_argument('--fold_n',                default=0,            type=int,   help='which kth fold is running now in 10-fold CV train and test split')
+parser.add_argument('--latent_dim',            default=5,            type=int,   help='number of latent dims')
+parser.add_argument('--batch_size',            default=1000,         type=int,   help='batch size')
+parser.add_argument('--KLD_beta',              default=1.0,          type=float, help='coefficient for KLD term if model is VAE') # variational AE is implemented but never tested
+parser.add_argument('--alpha_T',               default=1.0,          type=float, help='T reconstruction loss weight coefficient')
+parser.add_argument('--alpha_E',               default=(0, 6),       type=float, help='E reconstruction loss weight coefficient range') # range is used during the optimization
+parser.add_argument('--alpha_M',               default=(-3, 3),      type=float, help='M reconstruction loss weight coefficient range')
+parser.add_argument('--alpha_ME',              default=(-4, 2),      type=float, help='ME reconstruction loss weight coefficient range')
+parser.add_argument('--lambda_tune_E_T_range', default=(-5, 0),      type=float, help='E_T coupling loss weight coefficient range')
+parser.add_argument('--lambda_tune_ME_E_range',default=(0, 8),       type=float, help='ME_E coupling loss weight coefficient range')
+parser.add_argument('--lambda_tune_ME_M_range',default=(2, 5),       type=float, help='ME_M coupling loss weight coefficient range')
+parser.add_argument('--lambda_tune_ME_T_range',default=(-5, -1),     type=float, help='ME_T coupling loss weight coefficient range')
+parser.add_argument('--lambda_tune_M_T_range', default=(-8, -2),     type=float, help='M_T coupling loss weight coefficient range')
+parser.add_argument('--lambda_tune_T_E_range', default=(3, 6),       type=float, help='T_E coupling loss weight coefficient range')
+parser.add_argument('--lambda_tune_T_M_range', default=(-1, 5),      type=float, help='T_M coupling loss weight coefficient range')
+parser.add_argument('--lambda_tune_T_ME_range',default=(-1, 4),      type=float, help='T_ME coupling loss weight coefficient range')
+parser.add_argument('--lambda_TE',             default=1.0,          type=float, help='is there a coupling between T and E')
+parser.add_argument('--lambda_TM',             default=1.0,          type=float, help='is there a coupling between T and M')
+parser.add_argument('--lambda_ME_T',           default=1.0,          type=float, help='is there a coupling between T and ME')
+parser.add_argument('--lambda_ME_M',           default=1.0,          type=float, help='is there a coupling between ME and M')
+parser.add_argument('--lambda_ME_E',           default=1.0,          type=float, help='is there a coupling between ME and E')
 
+# If optimization is off, then lines 42 (alpha_E) to line 52(lambda_tune_T_ME_range) should be commented out and the following lines 
+# should be used instead. the exponential values of whatever you provide below will be used to run a non-optimization model
 
-
-
+# parser.add_argument('--alpha_E',               default=3.74,         type=float, help='E reconstruction loss weight coefficient')
+# parser.add_argument('--alpha_M',               default=-1.27,        type=float, help='M reconstruction loss weight coefficient')
+# parser.add_argument('--alpha_ME',              default=0.99,         type=float, help='ME reconstruction loss weight coefficient')
+# parser.add_argument('--lambda_tune_E_T_range', default=-0.47,        type=float, help='E_T coupling loss weight coefficient')
+# parser.add_argument('--lambda_tune_ME_E_range',default=5.56,         type=float, help='ME_E coupling loss weight coefficient')
+# parser.add_argument('--lambda_tune_ME_M_range',default=5.73,         type=float, help='ME_M coupling loss weight coefficient')
+# parser.add_argument('--lambda_tune_ME_T_range',default=-4.72,        type=float, help='ME_T coupling loss weight coefficient')
+# parser.add_argument('--lambda_tune_M_T_range', default=-0.63,        type=float, help='M_T coupling loss weight coefficient')
+# parser.add_argument('--lambda_tune_T_E_range', default=3.092,        type=float, help='T_E coupling loss weight coefficient')
+# parser.add_argument('--lambda_tune_T_M_range', default=3.17,         type=float, help='T_M coupling loss weight coefficient')
+# parser.add_argument('--lambda_tune_T_ME_range',default=5.88,         type=float, help='T_ME coupling loss weight coefficient')
+                    
 def main(exp_name="TEST",
-         tblog_name="TEST",
          variational=False,
          load_model=False,
          load_params=False,
@@ -89,7 +84,11 @@ def main(exp_name="TEST",
          optimization=True,
          opt_storage_db="test.db",
          config_file="config.toml", 
-         n_epochs=10, 
+         n_epochs=10,
+         warmup_steps=500, 
+         warmup_trials=10,
+         pruning_steps=100,
+         prunning_stop=2000,
          fold_n=0, 
          KLD_beta=1.0,
          alpha_T=1.0,
@@ -110,10 +109,9 @@ def main(exp_name="TEST",
          lambda_tune_ME_E_range=(0,2),
          lambda_tune_ME_M_range=(0,2),
          latent_dim=2,
-         batch_size=1000, 
-         opt_n_trials=1):
-
+         batch_size=1000):
     
+    # Read the model config and set the hyper-params in place
     def build_model(params):
         ''' Config and build the model'''
 
@@ -146,11 +144,10 @@ def main(exp_name="TEST",
                             ME_E=dict(lambda_ME_E=lambda_ME_E, 
                                       lambda_tune_ME_E=params['lambda_tune_ME_E']) 
                             )  
-
         model = Model_ME_T_conv(model_config)
         return model, model_config
 
-
+    # Objective function for the bayesian optimization process
     class Objective:
         '''Objective class for optimization'''
         def __init__(self,
@@ -189,8 +186,9 @@ def main(exp_name="TEST",
             self._current_value = None
 
         def __call__(self, trial):
+            # If it is running an optimization process
             if optimization:
-                print("hyperparams are chosen in a bayesian optimization form")
+                print("hyperparams are chosen in a bayesian optimization manner")
                 params = {'alpha_E': trial.suggest_float('alpha_E', self.alpha_E[0], self.alpha_E[1]),
                         'alpha_M': trial.suggest_float('alpha_M', self.alpha_M[0], self.alpha_M[1]),
                         'alpha_ME': trial.suggest_float('alpha_ME', self.alpha_ME[0], self.alpha_ME[1]),
@@ -202,7 +200,7 @@ def main(exp_name="TEST",
                         'lambda_tune_ME_T': trial.suggest_float('lambda_tune_ME_T', self.lambda_tune_ME_T_range[0], self.lambda_tune_ME_T_range[1]),
                         'lambda_tune_ME_M': trial.suggest_float('lambda_tune_ME_M', self.lambda_tune_ME_M_range[0], self.lambda_tune_ME_M_range[1]),
                         'lambda_tune_ME_E': trial.suggest_float('lambda_tune_ME_E', self.lambda_tune_ME_E_range[0], self.lambda_tune_ME_E_range[1])}
-
+            # If it is not an optimization and user defines the hyper-params instead of providing a range for optuna to pick the hyper-params
             elif use_defined_params:
                 print("User defined hyperparam set. This is not an optimization anymore!")
                 params = {'alpha_E': self.alpha_E,
@@ -216,24 +214,26 @@ def main(exp_name="TEST",
                           'lambda_tune_ME_T': self.lambda_tune_ME_T_range,
                           'lambda_tune_ME_M': self.lambda_tune_ME_M_range,
                           'lambda_tune_ME_E': self.lambda_tune_ME_E_range}
+            # If it is not an optimization and the machine is going to load the history file and take the best hyper-params that was
+            # found and saved by optuna. Just the hyper-params are read here not the model weights
             elif load_params:
                 print(f"the best model (Trial:{str(study.best_trial.number )}) hyperparams are used. This is not an optimization anymore!")
                 params = study.best_params
-                # params = study.trials[298].params
                 
             else:
                 raise ValueError("If it is not an optimization, then hyperparams must be provided")
             
-            
-            print(params) 
-
+            # The exponential values of the hyper-params are used. This was done for a faster exploration of the hyper-parameter space
             for k,v in params.items(): 
                 params[k] = np.exp(v)
-            
+
+            print("Hyper-params used in this model:", params) 
              
+            # Take the set of hyper-params and build the ML model configuration  
             model, model_config = build_model(params)
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
+            
+            # If loading a previous model weights, then it is done here
             if self.previous_ML_model_weights_to_load is not None:
                 loaded_model = torch.load(self.previous_ML_model_weights_to_load, map_location='cpu')
                 model.load_state_dict(loaded_model['state_dict'])
@@ -241,7 +241,7 @@ def main(exp_name="TEST",
                 print("loaded previous best model weights and optimizer")
                 print(self.previous_ML_model_weights_to_load)
 
-
+            # Train the model and run the evaluation and return the score for optuna 
             trained_model, score = train_and_evaluate(model_config, model, optimizer, trial)
             self._current_model = trained_model
             self._current_optimizer = optimizer
@@ -249,7 +249,12 @@ def main(exp_name="TEST",
 
             return score
 
-        def callback(self, study, trial):
+        # This function checks to see if based on the score the current model is the "best model" or not
+        # if it is the best model, we want to save its weights before finishing the run. If it is an
+        # average model, then we dont save it. However, to have more results, if the current model is
+        # close to the best model, then we call it acceptable model and we save that too. This is just 
+        # to check the convergence of the optimization! 
+        def callback(self, study):
             if self._current_value is not None:
                 if self._current_value >= study.best_value:
                     self.best_model = self._current_model
@@ -303,12 +308,14 @@ def main(exp_name="TEST",
                     model.eval()
                     val_loss, _, _, val_mse = model(val_batch)
             
+            # If it is not optimization run, we save the results every now and then
             if  not optimization:
                 if ((epoch % 1000) == 0):
                     fname = dir_pth['result'] + f"trial_{trial.number}_checkpoint_epoch_{epoch}.pkl"
                     save_results(model, dataloader, D, fname, train_ind, val_ind)
 
-                # TODO
+                # If it is an optimization run, we dont log all the losses and so on. We only save 
+                # everything if it is a specific non-optimization run that we want to monitor things closely.
                 # Logging -----------
                 tb_writer.add_scalar('Train/MSE_XT', train_loss['rec_t'], epoch)
                 tb_writer.add_scalar('Validation/MSE_XT', val_loss['rec_t'], epoch)
@@ -379,17 +386,8 @@ def main(exp_name="TEST",
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db, creat_tb_logs= not optimization)
 
     dat, D = MET_exc_inh.from_file(dir_pth['MET_data'])
-
     dat.XM = np.expand_dims(dat.XM, axis=1)
-    # dat.XM = np.expand_dims(np.expand_dims(dat.XM, axis=1), axis=3)
     dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
-
-    # # soma depth is range (0,1) <-- check this
-    # pad = 60
-    # norm2pixel_factor = 100
-    # padded_soma_coord = np.squeeze(dat.Xsd * norm2pixel_factor + pad)
-    # dat.XM = get_padded_im(im=dat.XM, pad=pad)
-    # dat.XM = get_soma_aligned_im(im=dat.XM, soma_H=padded_soma_coord)
 
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)
     train_dat = dat[train_ind,:]
@@ -397,11 +395,12 @@ def main(exp_name="TEST",
     train_dat = dat[train_ind,:]
     T_labels_for_classification = np.array(dat.merged_cluster_label_at50)
 
-
     # Copy the running code into the result dir -----------
     shutil.copy(__file__, dir_pth['result'])
     shutil.copy(dir_pth['config_file'], dir_pth['result']) 
  
+    # We define weights for each sample in a way that in each batch there are at least 54 met cells from exc and
+    # 54 met cells from inh data. 54 was decided based on the previous runs just by observation!
     # Weighted sampling strategy -----------
     weights = train_dat.make_weights_for_balanced_classes(n_met = 54, met_subclass_id = [2, 3], batch_size=1000)                                                                
     weights = torch.DoubleTensor(weights)                                       
@@ -411,7 +410,6 @@ def main(exp_name="TEST",
     train_dataset = MET_dataset(train_dat, device=device)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, drop_last=True, sampler=sampler)
 
-
     val_dataset = MET_dataset(val_dat, device=device)
     val_dataloader = DataLoader(val_dataset, batch_size=len(val_dataset), shuffle=False)
 
@@ -419,10 +417,6 @@ def main(exp_name="TEST",
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False)
 
     # Optimization -------------
-    warmup_steps = 500
-    warmup_trials = 10
-    pruning_steps = 100
-    prunning_stop = 2000
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
             
     study = optuna.create_study(study_name = exp_name,
@@ -465,12 +459,12 @@ def main(exp_name="TEST",
         tb_writer = SummaryWriter(log_dir=log_dir)
         
 
-    study.optimize(objective, n_trials=opt_n_trials, callbacks=[objective.callback])
+    study.optimize(objective, n_trials=1, callbacks=[objective.callback])
 
 
-    # save the best acceptable checkpoint and results at the end of the study -----------
-    # This is run only if the model is acceptable in this run ---------------------------
-    # WE accept the models that their score is closer than 5 percernt of the best value so far
+    # save the best acceptable checkpoint and results at the end of the study 
+    # This is run only if the model is acceptable in this run
+    # We accept the models that their score is closer than 5 percernt of the best value so far
     fname = dir_pth['result'] + f"acceptable_model_trial{trial_number}" 
 
     if objective.acceptable_model is not None:
@@ -479,16 +473,13 @@ def main(exp_name="TEST",
             'optimizer': objective.acceptable_optimizer.state_dict()
             }
         save_ckp(checkpoint, dir_pth['result'], fname)
-
         fname = dir_pth['result'] + f"Results_trial_{trial_number}.pkl"
-
         save_results(objective.acceptable_model, dataloader, D, fname, train_ind, val_ind)
+        
 
+    # save the best model checkpoint and the best results at the end of the study
+    # This is run only if the best model was happend in this run
     fname = dir_pth['result'] + f"Best_model_trial{study.best_trial.number}" 
-
-
-    # save the best model checkpoint and the best results at the end of the study -----------
-    # This is run only if the best model was happend in this run ----------------------------
 
     if objective.best_model is not None:
         checkpoint = {
@@ -496,9 +487,7 @@ def main(exp_name="TEST",
             'optimizer': objective.best_optimizer.state_dict()
             }
         save_ckp(checkpoint, dir_pth['result'], fname)
-
         fname = dir_pth['result'] + f"Results_trial_{study.best_trial.number}.pkl"
-
         save_results(objective.best_model, dataloader, D, fname, train_ind, val_ind)
 
     if not optimization:
