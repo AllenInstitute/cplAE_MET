@@ -236,19 +236,5 @@ def Criterion(model_config, loss_dict):
                 model_config['ME_T']['lambda_ME_T'] * model_config['ME_T']['lambda_tune_T_ME'] * loss_dict['cpl_t->me'] + \
                 model_config['ME_T']['lambda_ME_T'] * model_config['ME_T']['lambda_tune_ME_T'] * loss_dict['cpl_me->t'] + \
                 model_config['ME_M']['lambda_ME_M'] * model_config['ME_M']['lambda_tune_ME_M'] * loss_dict['cpl_me->m'] + \
-                model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_ME_E'] * loss_dict['cpl_me->e']
-     
-                # model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_E_ME'] * loss_dict['cpl_e->me']
-#                    model_config['ME_M']['lambda_ME_M'] * model_config['ME_M']['lambda_tune_M_ME'] * loss_dict['cpl_m->me'] + \
- 
-    #             # model_config['M']['alpha_M'] * loss_dict['BCELoss_m'] + \
-                    # model_config['ME']['alpha_ME'] * loss_dict['BCELoss_me_m']
-
-
-    # if model_config['variational']:
-    #     criterion = criterion + \
-    #                 model_config['KLD_beta'] * loss_dict['KLD_t'] + \
-    #                 model_config['KLD_beta'] * loss_dict['KLD_e'] + \
-    #                 model_config['KLD_beta'] * loss_dict['KLD_m'] + \
-    #                 model_config['KLD_beta'] * loss_dict['KLD_me_paired']      
+                model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_ME_E'] * loss_dict['cpl_me->e']   
     return criterion

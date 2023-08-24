@@ -4,6 +4,7 @@ import re
 import umap
 import numpy as np
 import pandas as pd
+from collections import Counter
 import matplotlib.pyplot as plt
 import scipy.io as sio
 from sklearn.metrics import r2_score
@@ -598,17 +599,16 @@ def summarize_data_output_pkl(exp_name, pkl_output_file):
         return summary1
     
 
-def summarize_data_input_mat(input_mat_file_name):
+def summarize_data_input_mat(exp_name, pkl_output_file):
     '''
     Takes the spec id locked dataset and returns the summary of the paltforms and modalities available
     Args:
     exp_name: name of the experiment folder in the results folder
     pkl_output_file: Name of the pkl file in the exp folder that should be loaded
-    '''
+    ''' 
+    output = loadpkl("/home/fahimehb/Local/new_codes/cplAE_MET/data/results/" + exp_name + "/" + pkl_output_file)
 
-    mat = sio.loadmat("/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/" + input_mat_file_name)
-
-    is_t_1d = np.isnan(mat['T_dat'])
+    is_t_1d = output['is_t_1d']
     is_e_1d = output['is_e_1d']
     is_m_1d = output['is_m_1d']
     is_te_1d = np.logical_and(is_t_1d, is_e_1d)
@@ -660,4 +660,132 @@ def summarize_data_input_mat(input_mat_file_name):
         return summary1
 
 
+def Get_available_modalities_in_each_platform(input_mat_file):
+    '''Takes the input mat file name and gets all the available modalities in each platform'''
+    
+    mat = sio.loadmat("/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/" + input_mat_file)
+
+    is_t_1d = np.any(~np.isnan(mat['T_dat']), axis=1)
+    is_e_1d = np.any(~np.isnan(mat['E_dat']), axis=1)
+    is_m_1d = np.any(~np.isnan(mat['M_dat']), axis=(1,2,3))
+    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+    is_me_1d = np.logical_and(is_m_1d, is_e_1d)
+    is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
+    is_tem_1d = np.logical_and(is_te_1d, is_m_1d)
+    mat['platform'] = np.array([i.rstrip() for i in mat['platform']])
+    is_patchseq_1d = mat['platform']=="patchseq"
+    is_ME_1d = mat['platform']=="ME"
+    is_fMOST_1d = mat['platform']=="fMOST"
+    is_EM_1d = mat['platform']=="EM"
+    is_patchseq_tem_1d = np.logical_and(is_patchseq_1d, is_tem_1d)
+    is_patchseq_teonly_1d = np.logical_and(~is_m_1d, np.logical_and(is_patchseq_1d, is_te_1d))
+    is_patchseq_tmonly_1d = np.logical_and(~is_e_1d, np.logical_and(is_patchseq_1d, is_tm_1d))
+    is_patchseq_meonly_1d = np.logical_and(~is_t_1d , np.logical_and(is_patchseq_1d, is_me_1d))
+    is_patchseq_tonly_1d = np.logical_and(~is_m_1d , np.logical_and(is_patchseq_1d, ~is_e_1d))
+    is_patchseq_eonly_1d = np.logical_and(~is_m_1d , np.logical_and(is_patchseq_1d, ~is_t_1d))
+    is_patchseq_monly_1d = np.logical_and(~is_t_1d , np.logical_and(is_patchseq_1d, ~is_e_1d))
+    is_ME_eonly_1d =  np.logical_and(is_ME_1d, ~is_m_1d)
+    is_ME_monly_1d =  np.logical_and(is_ME_1d, ~is_e_1d)
+    is_ME_me_1d = np.logical_and(is_ME_1d, is_me_1d) 
+
+    print("cells with t data available", is_t_1d.sum()) # These come from patchseq data
+    print("cells with e data available", is_e_1d.sum()) # these come from ME and patchseq data
+    print("cells with m data available", is_m_1d.sum()) # these come from patchseq, fmost, ME and EM data
+    print("cells with te data available", is_te_1d.sum()) # these come from patchseq
+    print("cells with me data available", is_me_1d.sum()) # these come from patchseq and ME
+    print("cells with tm data available", is_tm_1d.sum()) # these come from patchseq
+    print("cells with tem data available", is_tem_1d.sum()) # these come from patchseq
+    print("patchseq cells:", is_patchseq_1d.sum())
+    print("patchseq cells with all t,e,m:", is_patchseq_tem_1d.sum())
+    print("patchseq cells with only t,e:", is_patchseq_teonly_1d.sum()) 
+    print("patchseq cells with only t,m:", is_patchseq_tmonly_1d.sum()) 
+    print("patchseq cells with only m,e:", is_patchseq_meonly_1d.sum()) 
+    print("patchseq cells with only t:", is_patchseq_tonly_1d.sum()) 
+    print("patchseq cells with only e:", is_patchseq_eonly_1d.sum())
+    print("patchseq cells with only m:", is_patchseq_monly_1d.sum())
+    print("ME cells:", is_ME_1d.sum())
+    print("ME cells with only m:",is_ME_monly_1d.sum())
+    print("ME cells with only e:",is_ME_eonly_1d.sum())
+    print("ME cells with both e, m:",is_ME_me_1d.sum())
+    print("total number of cells:", is_patchseq_1d.sum() + is_EM_1d.sum() + is_ME_1d.sum() + is_fMOST_1d.sum())
+    print("check number of t cells:", is_t_1d.sum() ==
+        (is_patchseq_tem_1d.sum() + is_patchseq_teonly_1d.sum() + is_patchseq_tmonly_1d.sum() + is_patchseq_tonly_1d.sum()))
+    print("check number of e cells:", is_e_1d.sum() == 
+        (is_patchseq_tem_1d.sum() + is_patchseq_teonly_1d.sum()+ is_patchseq_meonly_1d.sum() + is_patchseq_eonly_1d.sum() + is_ME_eonly_1d.sum() + is_ME_me_1d.sum()))
+    print("check number of m cells:", is_m_1d.sum() ==
+        (is_patchseq_tem_1d.sum() + is_patchseq_tmonly_1d.sum() + is_patchseq_meonly_1d.sum() + is_patchseq_monly_1d.sum() + is_ME_monly_1d.sum() + is_ME_me_1d.sum() + 
+        is_fMOST_1d.sum() + is_EM_1d.sum()))
+    print("Note that all EM and fMOST cells are m only cells")
+    print("Number of EM cells:", is_EM_1d.sum())
+    print("Number of fMOST cells:", is_fMOST_1d.sum())
+
+
+    return is_patchseq_tem_1d.sum(), is_patchseq_teonly_1d.sum(), is_patchseq_tmonly_1d.sum(), \
+           is_patchseq_meonly_1d.sum(), is_patchseq_tonly_1d.sum(),  is_patchseq_eonly_1d.sum(), \
+           is_patchseq_monly_1d.sum(), is_ME_monly_1d.sum(), is_ME_eonly_1d.sum(), is_ME_me_1d.sum(), \
+           is_EM_1d.sum(), is_fMOST_1d.sum()
+
+
+def calculate_and_plot_umap(exp_name, pkl_file, ttype_resolution="merged_cluster_label_at60", autoencoder_arm_embedding_key="zm"):
+    '''Takes the experiment name and the optimal output pkl file, as well as the resolution
+    level for ttypes. Then removes the cells that blong to small clusters and for the remaining
+    cells computes the umap for the requested autoencoder arm
+    Arg:
+       exp_name: exp folder name, all the experiments are located in the results folder in the cplae package
+       pkl_file: name of the pkl file that was obtained during the optimization of cplae run
+       ttype_resolution: resolution of the ttypes taxonomy that should be used, for example merged_cluster_label_at60
+       autoencoder_arm_embedding_key: which embedding to be used, for example: zt, ze, zme_paired or zm
+    '''
+    output = load_exp_output(exp_name=exp_name, pkl_file=pkl_file)
+    is_m_1d = output['is_m_1d']
+    is_e_1d = output['is_e_1d']
+    is_t_1d = output['is_t_1d']
+    is_tm_1d = np.logical_and(is_t_1d, is_m_1d)
+    is_te_1d = np.logical_and(is_t_1d, is_e_1d)
+    is_tem_1d = np.logical_and(is_e_1d, is_tm_1d)
+    
+    if autoencoder_arm_embedding_key == "zm":
+        mask = is_tm_1d
+    if autoencoder_arm_embedding_key == "zme_paired":
+        mask = is_tem_1d
+    if autoencoder_arm_embedding_key == "ze":
+        mask = is_te_1d
+    if autoencoder_arm_embedding_key == "zt":
+        mask = is_t_1d
+
+    labels = np.array([i.rstrip() for i in output[ttype_resolution][mask]])
+    
+    # so we are going to drop all the cells from the clusters that have less than 7 membs
+    drop_lables = []
+    for k,v in Counter(labels).items():
+        if v < 7 :
+            drop_lables.append(k)
+
+    drop_small_clusters_mask = [True if i not in drop_lables else False for i in labels]
+
+    X = output[autoencoder_arm_embedding_key][mask][drop_small_clusters_mask]
+    y = output[ttype_resolution][mask][drop_small_clusters_mask]
+    colors = output['cluster_color'][mask][drop_small_clusters_mask]
+    Xid = np.arange(len(output['specimen_id']))[mask][drop_small_clusters_mask]
+
+    #Since we merged t-type, we need to consolidate the t-colors too
+    updated_colors = colors
+
+    for c in Counter(y):
+        cc = []
+        for i,j in zip(y, colors):
+            if i == c:
+                cc.append(j)
+        new_color = max(Counter(cc))
+        updated_colors = [new_color if k==c else l for (k,l) in zip(y, updated_colors)]
+
+    print(X.shape, y.shape)
+
+    umap_x = umap.UMAP().fit_transform(X)
+
+    fig = plt.figure(figsize=(4,4))
+    ax = fig.add_subplot(111)
+    ax.scatter(umap_x[:,0], umap_x[:,1], color=updated_colors,s=3)
+    plt.show()
+    return X, Xid, y, umap_x, updated_colors, fig
 

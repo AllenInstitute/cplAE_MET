@@ -28,13 +28,13 @@ parser.add_argument('--config_file',           default='config.toml',type=str,  
 parser.add_argument('--exp_name',              default='test',       type=str,   help='experiment name') # a folder with this name will be generated in the results folder
 parser.add_argument('--opt_storage_db',        default='test.db',    type=str,   help='name of the Optuna study storage database') # this history file will be generated in the exp folder
 parser.add_argument('--variational',           default=False,        type=bool,  help='running a variational autoencoder?') # variational AE is implemented but never tested
-parser.add_argument('--optimization',          default=True,         type=bool,  help='running an optimization study?')
+parser.add_argument('--optimization',          default=False,        type=bool,  help='running an optimization study?')
 parser.add_argument('--load_model',            default=False,        type=bool,  help='load weights from an old ML model')
-parser.add_argument('--load_params',           default=False,        type=bool,  help='load hyperparams from an old model')
+parser.add_argument('--load_best_params',      default=True,         type=bool,  help='load hyperparams of the best run from history file')
 parser.add_argument('--use_defined_params',    default=False,        type=bool,  help='use hyperparams that are defined by user')
 parser.add_argument('--db_load_if_exist',      default=True,         type=bool,  help='load an optimization database file if exist')
-parser.add_argument('--n_epochs',              default=2500,         type=int,   help='number of epochs to train')
-parser.add_argument('--warmup_steps',          default=500,          type=int,   help='during optimization, after this many epochs, prunning process starts')
+parser.add_argument('--n_epochs',              default=200,          type=int,   help='number of epochs to train')
+parser.add_argument('--warmup_steps',          default=50,           type=int,   help='during optimization, after this many epochs, prunning process starts')
 parser.add_argument('--warmup_trials',         default=10,           type=int,   help='during optimization, prunning starts only if this many trials already passed')
 parser.add_argument('--pruning_steps',         default=100,          type=int,   help='during optimization, after warmup_steps, every this amount of epochs a prunning will be tried')
 parser.add_argument('--prunning_stop',         default=2000,         type=int,   help='during optimization, no prunning will be attempted after this amount of epochs')
@@ -43,24 +43,24 @@ parser.add_argument('--latent_dim',            default=5,            type=int,  
 parser.add_argument('--batch_size',            default=1000,         type=int,   help='batch size')
 parser.add_argument('--KLD_beta',              default=1.0,          type=float, help='coefficient for KLD term if model is VAE') # variational AE is implemented but never tested
 parser.add_argument('--alpha_T',               default=1.0,          type=float, help='T reconstruction loss weight coefficient')
-parser.add_argument('--alpha_E',               default=(0, 6),       type=float, help='E reconstruction loss weight coefficient range') # range is used during the optimization
-parser.add_argument('--alpha_M',               default=(-3, 3),      type=float, help='M reconstruction loss weight coefficient range')
-parser.add_argument('--alpha_ME',              default=(-4, 2),      type=float, help='ME reconstruction loss weight coefficient range')
-parser.add_argument('--lambda_tune_E_T_range', default=(-5, 0),      type=float, help='E_T coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_ME_E_range',default=(0, 8),       type=float, help='ME_E coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_ME_M_range',default=(2, 5),       type=float, help='ME_M coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-5, -1),     type=float, help='ME_T coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_M_T_range', default=(-8, -2),     type=float, help='M_T coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_T_E_range', default=(3, 6),       type=float, help='T_E coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_T_M_range', default=(-1, 5),      type=float, help='T_M coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_T_ME_range',default=(-1, 4),      type=float, help='T_ME coupling loss weight coefficient range')
+# parser.add_argument('--alpha_E',               default=(0, 6),       type=float, help='E reconstruction loss weight coefficient range') # range is used during the optimization
+# parser.add_argument('--alpha_M',               default=(-3, 3),      type=float, help='M reconstruction loss weight coefficient range')
+# parser.add_argument('--alpha_ME',              default=(-4, 2),      type=float, help='ME reconstruction loss weight coefficient range')
+# parser.add_argument('--lambda_tune_E_T_range', default=(-5, 0),      type=float, help='E_T coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_ME_E_range',default=(0, 8),       type=float, help='ME_E coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_ME_M_range',default=(2, 5),       type=float, help='ME_M coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_ME_T_range',default=(-5, -1),     type=float, help='ME_T coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_M_T_range', default=(-8, -2),     type=float, help='M_T coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_T_E_range', default=(3, 6),       type=float, help='T_E coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_T_M_range', default=(-1, 5),      type=float, help='T_M coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_T_ME_range',default=(-1, 4),      type=float, help='T_ME coupling loss weight coefficient range')
 parser.add_argument('--lambda_TE',             default=1.0,          type=float, help='is there a coupling between T and E')
 parser.add_argument('--lambda_TM',             default=1.0,          type=float, help='is there a coupling between T and M')
 parser.add_argument('--lambda_ME_T',           default=1.0,          type=float, help='is there a coupling between T and ME')
 parser.add_argument('--lambda_ME_M',           default=1.0,          type=float, help='is there a coupling between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,          type=float, help='is there a coupling between ME and E')
 
-# If optimization is off, then lines 42 (alpha_E) to line 52(lambda_tune_T_ME_range) should be commented out and the following lines 
+# If optimization is off, then lines (alpha_E) to line (lambda_tune_T_ME_range) should be commented out and the following lines 
 # should be used instead. the exponential values of whatever you provide below will be used to run a non-optimization model
 
 # parser.add_argument('--alpha_E',               default=3.74,         type=float, help='E reconstruction loss weight coefficient')
@@ -78,7 +78,7 @@ parser.add_argument('--lambda_ME_E',           default=1.0,          type=float,
 def main(exp_name="TEST",
          variational=False,
          load_model=False,
-         load_params=False,
+         load_best_params=False,
          use_defined_params=False,
          db_load_if_exist=True,
          optimization=True,
@@ -216,7 +216,7 @@ def main(exp_name="TEST",
                           'lambda_tune_ME_E': self.lambda_tune_ME_E_range}
             # If it is not an optimization and the machine is going to load the history file and take the best hyper-params that was
             # found and saved by optuna. Just the hyper-params are read here not the model weights
-            elif load_params:
+            elif load_best_params:
                 print(f"the best model (Trial:{str(study.best_trial.number )}) hyperparams are used. This is not an optimization anymore!")
                 params = study.best_params
                 
@@ -254,7 +254,7 @@ def main(exp_name="TEST",
         # average model, then we dont save it. However, to have more results, if the current model is
         # close to the best model, then we call it acceptable model and we save that too. This is just 
         # to check the convergence of the optimization! 
-        def callback(self, study):
+        def callback(self, study, trial):
             if self._current_value is not None:
                 if self._current_value >= study.best_value:
                     self.best_model = self._current_model
@@ -333,12 +333,8 @@ def main(exp_name="TEST",
                 tb_writer.add_scalar('Validation/MSE_T_ME', val_mse['mse_t_me'], epoch)
                 tb_writer.add_scalar('Train/MSE_ME_M', train_mse['mse_me_m'], epoch)
                 tb_writer.add_scalar('Validation/MSE_ME_M', val_mse['mse_me_m'], epoch)
-                tb_writer.add_scalar('Train/MSE_M_ME', train_mse['mse_m_me'], epoch)
-                tb_writer.add_scalar('Validation/MSE_M_ME', val_mse['mse_m_me'], epoch)
                 tb_writer.add_scalar('Train/MSE_ME_E', train_mse['mse_me_e'], epoch)
                 tb_writer.add_scalar('Validation/MSE_ME_E', val_mse['mse_me_e'], epoch)
-                tb_writer.add_scalar('Train/MSE_E_ME', train_mse['mse_e_me'], epoch)
-                tb_writer.add_scalar('Validation/MSE_E_ME', val_mse['mse_e_me'], epoch)
                 tb_writer.add_scalar('Train/MSE_T_E', train_mse['mse_t_e'], epoch)
                 tb_writer.add_scalar('Validation/MSE_T_E', val_mse['mse_t_e'], epoch)
                 tb_writer.add_scalar('Train/MSE_E_T', train_mse['mse_e_t'], epoch)
@@ -347,10 +343,6 @@ def main(exp_name="TEST",
                 tb_writer.add_scalar('Validation/MSE_T_M', val_mse['mse_t_m'], epoch)
                 tb_writer.add_scalar('Train/MSE_M_T', train_mse['mse_m_t'], epoch)
                 tb_writer.add_scalar('Validation/MSE_M_T', val_mse['mse_m_t'], epoch)
-                tb_writer.add_scalar('Train/MSE_M_E', train_mse['mse_m_e'], epoch)
-                tb_writer.add_scalar('Validation/MSE_M_E', val_mse['mse_m_e'], epoch)
-                tb_writer.add_scalar('Train/MSE_E_M', train_mse['mse_e_m'], epoch)
-                tb_writer.add_scalar('Validation/MSE_E_M', val_mse['mse_e_m'], epoch)
                 tb_writer.add_scalar('Train/cpl_T->E', train_loss['cpl_t->e'], epoch)
                 tb_writer.add_scalar('Validation/cpl_T->E', val_loss['cpl_t->e'], epoch)
                 tb_writer.add_scalar('Train/cpl_E->T', train_loss['cpl_e->t'], epoch)
