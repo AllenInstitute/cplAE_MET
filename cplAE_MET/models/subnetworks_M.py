@@ -4,7 +4,7 @@ import torch
 class Enc_xm_to_zm_int(nn.Module):
     """Common encoding network for (only M) and (M and E paired) cases.
     - `xm` expected in [N, C=1, D=240, H=1, W=4] format, with C = 1, D=240, H=1, W=4
-     - Elements of xm expected in range (0, ~40). Missing data is encoded as nans.
+     - Missing data is encoded as nans.
      - Output is an intermediate representation, `zm_int`
     """
 

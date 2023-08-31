@@ -1,22 +1,22 @@
 #########################################################
 ################ Preprocessing M data ###################
 #########################################################
+# %%
 import os
-import feather
-import argparse
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import scipy.io as sio
-from cplAE_MET.models.augmentations import undo_radial_correction, do_radial_correction
 from cplAE_MET.utils.load_config import load_config
+from cplAE_MET.models.augmentations import undo_radial_correction
+from cplAE_MET.models.augmentations import do_radial_correction
 
+# %%
+# Set the config file name
+config_file = 'config_preproc.toml'
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',    default='config_preproc.toml', type=str,   help='config file with data paths')
-
-
-
+# %%
+# Function to set the input and output path
 def set_paths(config_file=None):
     paths, _ = load_config(config_file=config_file, verbose=False)
     paths['input'] = f'{str(paths["data_dir"])}'
@@ -28,10 +28,10 @@ def set_paths(config_file=None):
     paths['hist2d_120x4'] = f'{paths["m_data_folder"]}/{str(paths["hist2d_120x4_folder"])}'
 
     paths['t_anno'] = f'{paths["input"]}/{"anno.feather"}'
-
     return paths
 
-
+# %%
+# Function to define the arbor density channel names based on the class
 def get_file_apendix(exc_or_inh):
     appendix = []
     if exc_or_inh == "inh":
@@ -40,7 +40,8 @@ def get_file_apendix(exc_or_inh):
         appendix = ["apical", "basal"]
     return appendix
 
-
+# %%
+# Function to remove some cells that have only few non-zero pixels in their arbor density images
 def get_cell_ids_of_abnormal_images(specimen_ids, image_path, m_anno,  min_nonzero_pixels=5):
     '''
     Get all the specimen_ids that have few nonzero pixels
@@ -69,86 +70,82 @@ def get_cell_ids_of_abnormal_images(specimen_ids, image_path, m_anno,  min_nonze
                     ab_spec_id.append(spec_id)
     return ab_spec_id
 
-def main(config_file='config_preproc.toml'):
+# %%
+# Read the m_anno which is the metadata file for the m cells
+dir_pth = set_paths(config_file=config_file)
+m_anno_path = dir_pth['m_anno']
+hist2d_120x4_path = dir_pth["hist2d_120x4"]
 
-    dir_pth = set_paths(config_file=config_file)
-    m_anno_path = dir_pth['m_anno']
-    # t_anno_path = dir_pth['t_anno']
-    hist2d_120x4_path = dir_pth["hist2d_120x4"]
+# %%
+# Reading m_anno and finding cells with few nonzero pixels
+ids = pd.read_csv(dir_pth['specimen_ids'])
+specimen_ids = ids['specimen_id'].astype(str).tolist()
+m_anno = pd.read_csv(m_anno_path) #This is used for soma depth and class type
+ab_spec_id = get_cell_ids_of_abnormal_images(specimen_ids, hist2d_120x4_path, m_anno,  min_nonzero_pixels=5)
+print(len(ab_spec_id), "cells will be dropped because of the few non zero pixels")
+drop_spec_id = ab_spec_id
 
-    ################## Reading m_anno and finding cells with few nonzero pixels
-    ids = pd.read_csv(dir_pth['specimen_ids'])
-    specimen_ids = ids['specimen_id'].astype(str).tolist()
-    m_anno = pd.read_csv(m_anno_path) #This is used for soma depth and class type
-    ab_spec_id = get_cell_ids_of_abnormal_images(specimen_ids, hist2d_120x4_path, m_anno,  min_nonzero_pixels=5)
-    print(len(ab_spec_id), "cells will be dropped because of the few non zero pixels")
-    drop_spec_id = ab_spec_id
+# %%
+print("...................................................")
+print("Generating image for all the locked dataset, for those that we dont have M, we put zeros")
+hist_shape = (1, 120, 4, 1)
+im_shape = (1, 120, 4, 4)
+im = np.zeros((len(specimen_ids), 120, 4, 4), dtype=float)
+soma_depth = np.zeros((len(specimen_ids),))
+c = 0
+for i, spec_id in tqdm(enumerate(specimen_ids)):
+    if spec_id in drop_spec_id:
+        im[i, ...] = np.full(im_shape, np.nan)
+        soma_depth[i] = np.nan
+    else:
+        if spec_id in m_anno['specimen_id'].astype(str).to_list():
+            exc_or_inh = m_anno[m_anno['specimen_id'] == spec_id]['class'].values[0]
+            app = get_file_apendix(exc_or_inh)
+            if os.path.isfile(hist2d_120x4_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv'):
+                c += 1
+                im0 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv', header=None).values
+                im1 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[1]}_{spec_id}.csv', header=None).values
 
-    print("...................................................")
-    print("Generating image for all the locked dataset, for those that we dont have M, we put zeros")
-    hist_shape = (1, 120, 4, 1)
-    im_shape = (1, 120, 4, 4)
-    im = np.zeros((len(specimen_ids), 120, 4, 4), dtype=float)
-    soma_depth = np.zeros((len(specimen_ids),))
-    c = 0
-    for i, spec_id in tqdm(enumerate(specimen_ids)):
-        if spec_id in drop_spec_id:
-            im[i, ...] = np.full(im_shape, np.nan)
-            soma_depth[i] = np.nan
-        else:
-            if spec_id in m_anno['specimen_id'].astype(str).to_list():
-                exc_or_inh = m_anno[m_anno['specimen_id'] == spec_id]['class'].values[0]
-                app = get_file_apendix(exc_or_inh)
-                if os.path.isfile(hist2d_120x4_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv'):
-                    c += 1
-                    im0 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[0]}_{spec_id}.csv', header=None).values
-                    im1 = pd.read_csv(hist2d_120x4_path + f'/hist2d_120x4_{app[1]}_{spec_id}.csv', header=None).values
+                #convert arbor density to arbor mass
+                mass0 = undo_radial_correction(im0)
+                mass1 = undo_radial_correction(im1)
 
-                    #convert arbor density to arbor mass
-                    mass0 = undo_radial_correction(im0)
-                    mass1 = undo_radial_correction(im1)
+                # Normalize so that the mass sum is 350
+                mass0 = mass0 * 350 / np.sum(mass0)
+                mass1 = mass1 * 350 / np.sum(mass1)
 
-                    # Normalize so that the mass sum is 350
-                    # mass0 = mass0 * 350 / np.sum(mass0)
-                    # mass1 = mass1 * 350 / np.sum(mass1)
+                # compute the arbor density from the arbor mass again
+                im0 = do_radial_correction(mass0)
+                im1 = do_radial_correction(mass1)
 
-                    # compute the arbor density from the arbor mass again
-                    # im0 = do_radial_correction(mass0)
-                    # im1 = do_radial_correction(mass1)
+                # convert images from 120x4 to 120x1 shape 
+                # mass0 = mass0.sum(axis=1)
+                # mass1 = mass1.sum(axis=1)
 
-                    # convert images from 120x4 to 120x1 shape 
-                    # mass0 = mass0.sum(axis=1)
-                    # mass1 = mass1.sum(axis=1)
+                # mass0 = mass0 * 100 / np.sum(mass0)
+                # mass1 = mass1 * 100 / np.sum(mass1)
 
-                    mass0 = mass0 * 100 / np.sum(mass0)
-                    mass1 = mass1 * 100 / np.sum(mass1)
-
-                    im0 = mass0
-                    im1 = mass1
-                    
-                    if exc_or_inh == "inh":
-                        im[i, :, :, 0:2] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))
-                        im[i, :, :, 2:] = 0.
-                    else:
-                        im[i, :, :, 2:] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))
-                        im[i, :, :, 0:2] = 0.
-
-                    soma_depth[i] = np.squeeze(m_anno.loc[m_anno['specimen_id'] == spec_id]['soma_depth'].values)
+                im0 = mass0
+                im1 = mass1
+                
+                if exc_or_inh == "inh":
+                    im[i, :, :, 0:2] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))
+                    im[i, :, :, 2:] = 0.
                 else:
-                    im[i, ...] = np.full(im_shape, np.nan)
-                    soma_depth[i] = np.nan
+                    im[i, :, :, 2:] = (np.concatenate([im0.reshape(hist_shape), im1.reshape(hist_shape)], axis=3))
+                    im[i, :, :, 0:2] = 0.
+
+                soma_depth[i] = np.squeeze(m_anno.loc[m_anno['specimen_id'] == spec_id]['soma_depth'].values)
             else:
                 im[i, ...] = np.full(im_shape, np.nan)
                 soma_depth[i] = np.nan
+        else:
+            im[i, ...] = np.full(im_shape, np.nan)
+            soma_depth[i] = np.nan
 
-    print("so far in total", c, "cells have m data available")
+print("so far in total", c, "cells have m data available")
 
-    sio.savemat(dir_pth['arbor_density_file'], {'hist_ax_de_api_bas': im,
-                                    'soma_depth': soma_depth,
-                                    'specimen_id': ids['specimen_id'].astype(str).to_list()}, do_compression=True)
-
-    return
-
-if __name__ == '__main__':
-    args = parser.parse_args()
-    main(**vars(args))
+# %%
+sio.savemat(dir_pth['arbor_density_file'], {'hist_ax_de_api_bas': im,
+                                'soma_depth': soma_depth,
+                                'specimen_id': ids['specimen_id'].astype(str).to_list()}, do_compression=True)

@@ -63,10 +63,10 @@ class Model_ME_T_conv(nn.Module):
         is_t_1d = input['is_t_1d']
         is_e_1d = input['is_e_1d']
         is_m_1d = input['is_m_1d']
-        is_te_1d=torch.logical_and(input['is_t_1d'], input['is_e_1d'])
-        is_tm_1d=torch.logical_and(input['is_t_1d'], input['is_m_1d'])
-        is_me_1d=torch.logical_and(input['is_m_1d'], input['is_e_1d'])
-        is_met_1d=torch.logical_and(is_me_1d, input['is_t_1d'])
+        is_te_1d=torch.logical_and(is_t_1d, is_e_1d)
+        is_tm_1d=torch.logical_and(is_t_1d, is_m_1d)
+        is_me_1d=torch.logical_and(is_m_1d, is_e_1d)
+        is_met_1d=torch.logical_and(is_me_1d, is_t_1d)
         
         # t arm
         zt, xrt, _, _ = self.ae_t(xt)
@@ -97,14 +97,15 @@ class Model_ME_T_conv(nn.Module):
         loss_dict['rec_m'] = self.compute_rec_loss(xm, xrm, valid_xm, is_m_1d)
         loss_dict['rec_m_me'] = self.compute_rec_loss(xm[is_me_1d, ...], xrm_me_paired[is_me_1d, ...], valid_xm[is_me_1d, ...], is_me_1d)
         loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...], is_me_1d)
-
+        
+        
         loss_dict['cpl_me->t'], mse_me_t = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
         loss_dict['cpl_t->me'], mse_t_me = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
-        
+    
         loss_dict['cpl_me->m'], mse_me_m = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), zm[is_me_1d, ...])
-
+    
         loss_dict['cpl_me->e'], mse_me_e = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), ze[is_me_1d, ...])
-
+    
         loss_dict['cpl_t->e'], mse_t_e = self.compute_cpl_loss(zt[is_te_1d, ...].detach(), ze[is_te_1d, ...])
         loss_dict['cpl_e->t'], mse_e_t = self.compute_cpl_loss(zt[is_te_1d, ...], ze[is_te_1d, ...].detach())
 

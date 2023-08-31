@@ -1,24 +1,13 @@
 import numpy as np
 import torch
 
-def get_padding_up_and_down(soma_depth, im):
-    soma_shift = np.round(60 - soma_depth).astype(int).squeeze()
-    upper_edge = np.zeros(soma_shift.shape)
-    lower_edge = np.zeros(soma_shift.shape)
-    n_cells = im.shape[0]
-    for c in range(n_cells):
-        select = np.nonzero(im[c, 0, :, :, :])
-        upper_edge[c] = np.min(select[0]).item()
-        lower_edge[c] = np.max(select[0]).item()
-    mask_to_move_up = soma_shift < 0
-    mask_to_move_down = soma_shift > 0
-    upper_pad = np.max(abs(soma_shift[mask_to_move_up]) - upper_edge[mask_to_move_up])
-    lower_pad = np.min(120 - lower_edge[mask_to_move_down] - soma_shift[mask_to_move_down])
-    pad_lower_and_upper = max(abs(upper_pad), abs(lower_pad))
-    return (np.ceil(pad_lower_and_upper/10) * 10).astype(int)
-
 def get_padded_im(im, pad):
-    """Returns image padded in the H dimension. 
+    """ 
+    pad arbor density images along the z axis(H dimension below), this is required if you 
+    are augmenting the image by shifting it up and down along the z axis.
+    by default we add 60 pixels on the top and 60 pixels on the bottom of
+    the image and for example if it is with the shape of 120x4, we will 
+     convert it to 240x4
 
     Args:
         im (np.array): dimensions are (N,1,H,W,C)
@@ -111,3 +100,21 @@ def undo_radial_correction(image):
         r2 = c + 1
         raw_image[:, c] = image[:, c] * (np.pi * (r2 ** 2 - r1 ** 2))
     return raw_image
+
+
+# Looks like the following function is not used any more
+def get_padding_up_and_down(soma_depth, im):
+    soma_shift = np.round(60 - soma_depth).astype(int).squeeze()
+    upper_edge = np.zeros(soma_shift.shape)
+    lower_edge = np.zeros(soma_shift.shape)
+    n_cells = im.shape[0]
+    for c in range(n_cells):
+        select = np.nonzero(im[c, 0, :, :, :])
+        upper_edge[c] = np.min(select[0]).item()
+        lower_edge[c] = np.max(select[0]).item()
+    mask_to_move_up = soma_shift < 0
+    mask_to_move_down = soma_shift > 0
+    upper_pad = np.max(abs(soma_shift[mask_to_move_up]) - upper_edge[mask_to_move_up])
+    lower_pad = np.min(120 - lower_edge[mask_to_move_down] - soma_shift[mask_to_move_down])
+    pad_lower_and_upper = max(abs(upper_pad), abs(lower_pad))
+    return (np.ceil(pad_lower_and_upper/10) * 10).astype(int)

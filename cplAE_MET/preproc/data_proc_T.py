@@ -1,20 +1,20 @@
-#########################################################
+######################################################
 ################ Preprocessing T data ###################
 #########################################################
+# %%
 import feather
-import argparse
 import numpy as np
 import pandas as pd
 from collections import Counter
 from cplAE_MET.utils.load_config import load_config
 
+# %%
+# set the config file name and beta_threshold for gene selection
+config_file = 'config_preproc.toml'
+beta_threshold = 0.4
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--config_file',    default='config_preproc.toml', type=str,   help='config file with data paths')
-parser.add_argument('--beta_threshold', default=0.4,                   type=float, help='beta threshold for removing genes')
-
-
-
+# %%
+# function to set the input and output path
 def set_paths(config_file=None):
     paths, _ = load_config(config_file=config_file, verbose=False)
 
@@ -30,102 +30,109 @@ def set_paths(config_file=None):
 
     return paths
 
+# %%
+# set the path based on the config_file
+dir_pth = set_paths(config_file=config_file)
+gene_file_path = dir_pth['gene_file']
 
+# %%
+# Load the t anno and data file. Anno file has all the metadata for each patchseq cell
+# and data file has all the cpm values for each patchseq cell
+print("...................................................")
+print("Loading input files")
+T_dat = feather.read_dataframe(dir_pth['t_data'])
+T_ann = feather.read_dataframe(dir_pth['t_anno'])
 
-def main(config_file='config_preproc.toml', beta_threshold=0.4):
+# %%
+# Read all the specimen ids of all the cells from patchseq, ME, EM and fmost platforms
+ids = pd.read_csv(dir_pth['specimen_ids'])
+ids['specimen_id'] = ids['specimen_id'].astype(str)
+T_ann['spec_id_label'] = T_ann['spec_id_label'].astype(str)
+t_cells = [i for i in ids['specimen_id'].to_list() if i in T_ann['spec_id_label'].to_list()]
+specimen_ids = ids['specimen_id'].tolist()
+specimen_ids = [str(i) for i in specimen_ids]
+not_t_cells = [i for i in specimen_ids if i not in t_cells]
+print("...................................................")
+print("There are", len(specimen_ids), "sample_ids in the locked dataset")
 
+# %%
+# Read some important matadata from the anno file
+# Tree_first_cl_id/label/color are the assigned ttype id, label and color for each patchseq cell
+# Tree_call_label is the mapping quality of the cell, we are going to remove the Poor quality
+# patchseq cells based on this. 
+T_ann['spec_id_label'] = T_ann['spec_id_label'].astype(np.int64)
+T_ann = T_ann.rename(columns={"spec_id_label": "specimen_id"})
+df_spec_id = pd.DataFrame(specimen_ids, columns=["specimen_id"])
+df_spec_id['specimen_id'] = df_spec_id['specimen_id'].astype(str)
+T_ann['specimen_id'] = T_ann['specimen_id'].astype(str)
+T_ann = T_ann.merge(df_spec_id, on="specimen_id", how='right')
+T_ann = T_ann[['specimen_id',
+                'sample_id',
+                'Tree_first_cl_id',
+                'Tree_first_cl_label',
+                'Tree_first_cl_color',
+                'Tree_call_label']].reset_index(drop=True)
 
-    dir_pth = set_paths(config_file=config_file)
-    gene_file_path = dir_pth['gene_file']
-    beta_threshold = beta_threshold
+# %%
+# Removing all the poor quality cells. Highly consistent, Moderately consistent 
+# cells will be kept.
+counts = Counter(T_ann['Tree_call_label'])
+print("There are", counts['Core'] + counts['I1'], "highly consistent cells")
+print("There are", counts['I2'] + counts['I3'], "Moderately consistent cells")
+print("There are", counts['PoorQ'], "Inconsistent cells")
+poorQ = T_ann[T_ann['Tree_call_label']=="PoorQ"]['specimen_id'].to_list()
+t_cells = [i for i in t_cells if i not in poorQ]
+not_t_cells = not_t_cells + poorQ
 
+# %%
+# We will keep only genes that their beta score is more than some threshold
+keep_gene_id = pd.read_csv(gene_file_path)
+keep_gene_id = keep_gene_id[keep_gene_id.BetaScore>beta_threshold]['Gene'].to_list()
 
-    print("...................................................")
-    print("Loading input files")
-    T_dat = feather.read_dataframe(dir_pth['t_data'])
-    T_ann = feather.read_dataframe(dir_pth['t_anno'])
+# %%
+#Restrict T data based on genes:
+keepcols = ['sample_id'] + keep_gene_id
+T_dat = T_dat[keepcols]
 
-    ids = pd.read_csv(dir_pth['specimen_ids'])
-    ids['specimen_id'] = ids['specimen_id'].astype(str)
-    T_ann['spec_id_label'] = T_ann['spec_id_label'].astype(str)
-    t_cells = [i for i in ids['specimen_id'].to_list() if i in T_ann['spec_id_label'].to_list()]
-    specimen_ids = ids['specimen_id'].tolist()
-    specimen_ids = [str(i) for i in specimen_ids]
-    not_t_cells = [i for i in specimen_ids if i not in t_cells]
-    print("...................................................")
-    print("There are", len(specimen_ids), "sample_ids in the locked dataset")
+# %%
+print("...................................................")
+print("Keep data and annotation for given sample_ids")
+#Restrict to samples in the annotation dataframe
+T_dat = T_dat.merge(T_ann[['sample_id', 'specimen_id']], on="sample_id", how='right')
+T_dat = T_dat.drop(labels=["sample_id"], axis=1)
+T_dat = T_dat.set_index("specimen_id")
+T_dat = T_dat.reset_index()
+print("...................................................")
+print("set the cpm values for non tcells to nan")
+T_dat = T_dat.set_index("specimen_id")
+T_ann = T_ann.set_index("specimen_id")
+T_dat.loc[not_t_cells] = np.nan
+T_ann.loc[not_t_cells] = np.nan
 
-    T_ann['spec_id_label'] = T_ann['spec_id_label'].astype(np.int64)
-    T_ann = T_ann.rename(columns={"spec_id_label": "specimen_id"})
-    df_spec_id = pd.DataFrame(specimen_ids, columns=["specimen_id"])
-    df_spec_id['specimen_id'] = df_spec_id['specimen_id'].astype(str)
-    T_ann['specimen_id'] = T_ann['specimen_id'].astype(str)
-    T_ann = T_ann.merge(df_spec_id, on="specimen_id", how='right')
-    T_ann = T_ann[['specimen_id',
-                   'sample_id',
-                   'Tree_first_cl_id',
-                   'Tree_first_cl_label',
-                   'Tree_first_cl_color',
-                   'Tree_call_label']].reset_index(drop=True)
+# %%
+print("...................................................")
+print("Apply log2 to cpm values for t_cells only")
+T_dat[keep_gene_id] = np.log(T_dat[keep_gene_id]+1)
 
+# %%
+assert (T_dat.index.to_list() == specimen_ids), \
+    'Order of data samples and id list is different!'
 
-    counts = Counter(T_ann['Tree_call_label'])
-    print("There are", counts['Core'] + counts['I1'], "highly consistent cells")
-    print("There are", counts['I2'] + counts['I3'], "Moderately consistent cells")
-    print("There are", counts['PoorQ'], "Inconsistent cells")
-    poorQ = T_ann[T_ann['Tree_call_label']=="PoorQ"]['specimen_id'].to_list()
-    t_cells = [i for i in t_cells if i not in poorQ]
-    not_t_cells = not_t_cells + poorQ
-    
-    keep_gene_id = pd.read_csv(gene_file_path)
-    keep_gene_id = keep_gene_id[keep_gene_id.BetaScore>beta_threshold]['Gene'].to_list()
+assert (T_ann.index.to_list() == specimen_ids), \
+    'Order of annotation id list is different!'
 
-    #Restrict T data based on genes:
-    keepcols = ['sample_id'] + keep_gene_id
-    T_dat = T_dat[keepcols]
+# %%
+T_dat = T_dat.reset_index()
+T_ann = T_ann.reset_index()
+print("annotation file size:", T_ann.shape)
+print("logcpm file size:", T_dat.shape)
 
-    print("...................................................")
-    print("Keep data and annotation for given sample_ids")
-    #Restrict to samples in the annotation dataframe
-    T_dat = T_dat.merge(T_ann[['sample_id', 'specimen_id']], on="sample_id", how='right')
-    T_dat = T_dat.drop(labels=["sample_id"], axis=1)
-    T_dat = T_dat.set_index("specimen_id")
-    T_dat = T_dat.reset_index()
+# %%
+print("...................................................")
+print("writing output data and annotations")
+T_dat.to_csv(dir_pth['t_data_output'], index=False)
+T_ann.to_csv(dir_pth['t_anno_output'], index=False)
 
-    print("...................................................")
-    print("set the cpm values for non tcells to nan")
-    T_dat = T_dat.set_index("specimen_id")
-    T_ann = T_ann.set_index("specimen_id")
-    T_dat.loc[not_t_cells] = np.nan
-    T_ann.loc[not_t_cells] = np.nan
-
-    print("...................................................")
-    print("Apply log2 to cpm values for t_cells only")
-    T_dat[keep_gene_id] = np.log(T_dat[keep_gene_id]+1)
-
-
-    assert (T_dat.index.to_list() == specimen_ids), \
-        'Order of data samples and id list is different!'
-
-    assert (T_ann.index.to_list() == specimen_ids), \
-        'Order of annotation id list is different!'
-
-    T_dat = T_dat.reset_index()
-    T_ann = T_ann.reset_index()
-    print("annotation file size:", T_ann.shape)
-    print("logcpm file size:", T_dat.shape)
-
-    print("...................................................")
-    print("writing output data and annotations")
-    T_dat.to_csv(dir_pth['t_data_output'], index=False)
-    T_ann.to_csv(dir_pth['t_anno_output'], index=False)
-
-    keep_gene_id = pd.DataFrame(keep_gene_id, columns=["gene_id"])
-    keep_gene_id.to_csv(dir_pth['gene_id_output'], index=False)
-
-if __name__ == '__main__':
-    args = parser.parse_args()
-    main(**vars(args))
-
-
-
+# %%
+keep_gene_id = pd.DataFrame(keep_gene_id, columns=["gene_id"])
+keep_gene_id.to_csv(dir_pth['gene_id_output'], index=False)

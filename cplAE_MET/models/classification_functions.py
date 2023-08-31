@@ -1,14 +1,14 @@
 import numpy as np
 from collections import Counter
+
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis, LinearDiscriminantAnalysis
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
 from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import cross_val_score
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 
 def get_small_types_mask(types, min_size):
@@ -52,7 +52,6 @@ def run_LogisticRegression(X, y, test_size, min_label_size=7):
 
 def run_LDA(X, y, min_label_size=7, test_size=0.1, train_test_ids=None):
     '''
-
     Args:
         X: input array with the size of (n_cells, n_features)
         y: labels for each X entry with the size of (n_cells, )
@@ -83,7 +82,6 @@ def run_LDA(X, y, min_label_size=7, test_size=0.1, train_test_ids=None):
 
 def run_QDA(X, y, min_label_size=7, test_size=0.1, train_test_ids=None):
     '''
-
     Args:
         X: input array with the size of (n_cells, n_features)
         y: labels for each X entry with the size of (n_cells, )
@@ -117,13 +115,26 @@ def run_QDA(X, y, min_label_size=7, test_size=0.1, train_test_ids=None):
 
 
 def get_cross_val_score(X, y, scoring='accuracy'):
+    '''runs 10folds cross validation classification and return the average score(for example accuracy)
+       Args:
+           X: input to the classifier 
+           y: the label of each sample
+           scoring: the classification evaluation metric
+    '''
     cv = StratifiedKFold(n_splits=10)
     model = RandomForestClassifier()
     # evaluate model
     scores = cross_val_score(model, X, y, scoring=scoring, cv=cv, n_jobs=-1)
     return np.mean(scores)
 
-def get_kfold_stratified_acc_per_fold(X,y):
+
+def get_kfold_stratified_acc_per_fold(X, y):
+    '''The same as get_cross_val_score function. However here we will print the 
+    accuracy of each fold. This is a check for the above function
+    Args: 
+        X: input to the classifier 
+        y: the label of each sample
+    '''
     cv = StratifiedKFold(n_splits=10)
     acc = []
     for tr_ind, te_ind in cv.split(X,y):
