@@ -59,7 +59,7 @@ parser.add_argument('--lambda_TM',             default=1.0,          type=float,
 parser.add_argument('--lambda_ME_T',           default=1.0,          type=float, help='is there a coupling between T and ME')
 parser.add_argument('--lambda_ME_M',           default=1.0,          type=float, help='is there a coupling between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,          type=float, help='is there a coupling between ME and E')
-
+parser.add_argument('--arb_dens_shape',        default='120x4x4',    type=str,   help='if using arbor densities directly, please specify the shape here')
 # If optimization is off, then lines (alpha_E) to line (lambda_tune_T_ME_range) should be commented out and the following lines 
 # should be used instead. the exponential values of whatever you provide below will be used to run a non-optimization model
 
@@ -109,7 +109,8 @@ def main(exp_name="TEST",
          lambda_tune_ME_E_range=(0,2),
          lambda_tune_ME_M_range=(0,2),
          latent_dim=2,
-         batch_size=1000):
+         batch_size=1000,
+         arb_dens_shape='120x4x4'):
     
     # Read the model config and set the hyper-params in place
     def build_model(params):
@@ -378,7 +379,16 @@ def main(exp_name="TEST",
     dir_pth = set_paths(config_file, exp_name=exp_name, fold_n=fold_n, opt_storage_db=opt_storage_db, creat_tb_logs= not optimization)
 
     dat, D = MET_exc_inh.from_file(dir_pth['MET_data'])
-    dat.XM = np.expand_dims(dat.XM, axis=1)
+    
+    # We add one dimension here because later in subnetwork_M, we will be using 3d convolutions
+    # This is just to make the image shapes appropriate for conv_3d. Otherwise we could use conv2d
+    if arb_dens_shape == '120x4x4':
+        dat.XM = np.expand_dims(dat.XM, axis=1)
+    elif arb_dens_shape == '120x1x4':
+        dat.XM = np.expand_dims(dat.XM, axis=(1,3))
+   
+    assert len(dat.XM.shape) == 5, "Check the arbor densities shape and the argument input for arb_dens_shape"
+    
     dat.Xsd = np.expand_dims(dat.Xsd, axis=1)
 
     train_ind, val_ind = dat.train_val_split(fold=fold_n, n_folds=10, seed=0)

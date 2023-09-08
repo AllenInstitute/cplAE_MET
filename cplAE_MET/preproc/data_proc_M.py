@@ -88,9 +88,14 @@ drop_spec_id = ab_spec_id
 # %%
 print("...................................................")
 print("Generating image for all the locked dataset, for those that we dont have M, we put zeros")
-hist_shape = (1, 120, 4, 1)
-im_shape = (1, 120, 4, 4)
-im = np.zeros((len(specimen_ids), 120, 4, 4), dtype=float)
+hist_shape = (1, 120, 1, 1)
+im_shape = (1, 120, 1, 4)
+im = np.zeros((len(specimen_ids), 120, 1, 4), dtype=float)
+# if the image shapes going to be 120 x 4 then un-comment the following lines and 
+# remove the above lines
+# hist_shape = (1, 120, 4, 1)
+# im_shape = (1, 120, 4, 4)
+# im = np.zeros((len(specimen_ids), 120, 4, 4), dtype=float)
 soma_depth = np.zeros((len(specimen_ids),))
 c = 0
 for i, spec_id in tqdm(enumerate(specimen_ids)):
@@ -115,12 +120,12 @@ for i, spec_id in tqdm(enumerate(specimen_ids)):
                 mass1 = mass1 * 350 / np.sum(mass1)
 
                 # compute the arbor density from the arbor mass again
-                im0 = do_radial_correction(mass0)
-                im1 = do_radial_correction(mass1)
+                # im0 = do_radial_correction(mass0)
+                # im1 = do_radial_correction(mass1)
 
                 # convert images from 120x4 to 120x1 shape 
-                # mass0 = mass0.sum(axis=1)
-                # mass1 = mass1.sum(axis=1)
+                mass0 = mass0.sum(axis=1)
+                mass1 = mass1.sum(axis=1)
 
                 # mass0 = mass0 * 100 / np.sum(mass0)
                 # mass1 = mass1 * 100 / np.sum(mass1)
