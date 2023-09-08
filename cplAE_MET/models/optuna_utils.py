@@ -27,7 +27,7 @@ def run_classification(model, dataloader, train_ind, val_ind, T_labels):
 
                 is_t_1d.append(batch['is_t_1d'])
 
-                _, z_di, _, _ = model(batch) 
+                _, z_di, _ = model(batch) 
 
                 z_dict["zt"].append(z_di["zt"])
                 z_dict["ze"].append(z_di["ze"])

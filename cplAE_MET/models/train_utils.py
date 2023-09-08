@@ -97,7 +97,7 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
             x_dict['xe'].append(batch['xe'])
             x_dict['xm'].append(batch['xm'])
 
-            _, z_di, xr_di, _ = model(batch)
+            _, z_di, xr_di = model(batch)
             
             z_dict["zt"].append(z_di["zt"])
             z_dict["ze"].append(z_di["ze"])

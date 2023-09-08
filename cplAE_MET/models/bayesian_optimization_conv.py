@@ -279,7 +279,7 @@ def main(exp_name="TEST",
             for step, batch in enumerate(iter(train_dataloader)):
                 optimizer.zero_grad()
                 # forward pass -----------
-                loss_dict, _, _, mse_dict = model(batch)
+                loss_dict, _, _ = model(batch)
                 loss = Criterion(model_config, loss_dict)
 
                 loss.backward()
@@ -287,27 +287,20 @@ def main(exp_name="TEST",
 
                 if step == 0:
                     train_loss = init_losses(loss_dict)
-                    train_mse = init_losses(mse_dict)
 
                 # track loss over batches -----------
                 for k, v in loss_dict.items():
                     train_loss[k] += v
 
-                for k, v in mse_dict.items():
-                    train_mse[k] += v
-
             # Average losses over batches -----------
             for k, v in train_loss.items():
                 train_loss[k] = train_loss[k] / len(train_dataloader)
-
-            for k, v in train_mse.items():
-                train_mse[k] = train_mse[k] / len(train_dataloader)
 
             # Validation -----------
             with torch.no_grad():
                 for val_batch in iter(val_dataloader):
                     model.eval()
-                    val_loss, _, _, val_mse = model(val_batch)
+                    val_loss, _, _ = model(val_batch)
             
             # If it is not optimization run, we save the results every now and then
             if  not optimization:
@@ -328,22 +321,6 @@ def main(exp_name="TEST",
                 tb_writer.add_scalar('Validation/MSE_M_XME', val_loss['rec_m_me'], epoch)
                 tb_writer.add_scalar('Train/MSE_E_XME', train_loss['rec_e_me'], epoch)
                 tb_writer.add_scalar('Validation/MSE_E_XME', val_loss['rec_e_me'], epoch)
-                tb_writer.add_scalar('Train/MSE_ME_T', train_mse['mse_me_t'], epoch)
-                tb_writer.add_scalar('Validation/MSE_ME_T', val_mse['mse_me_t'], epoch)
-                tb_writer.add_scalar('Train/MSE_T_ME', train_mse['mse_t_me'], epoch)
-                tb_writer.add_scalar('Validation/MSE_T_ME', val_mse['mse_t_me'], epoch)
-                tb_writer.add_scalar('Train/MSE_ME_M', train_mse['mse_me_m'], epoch)
-                tb_writer.add_scalar('Validation/MSE_ME_M', val_mse['mse_me_m'], epoch)
-                tb_writer.add_scalar('Train/MSE_ME_E', train_mse['mse_me_e'], epoch)
-                tb_writer.add_scalar('Validation/MSE_ME_E', val_mse['mse_me_e'], epoch)
-                tb_writer.add_scalar('Train/MSE_T_E', train_mse['mse_t_e'], epoch)
-                tb_writer.add_scalar('Validation/MSE_T_E', val_mse['mse_t_e'], epoch)
-                tb_writer.add_scalar('Train/MSE_E_T', train_mse['mse_e_t'], epoch)
-                tb_writer.add_scalar('Validation/MSE_E_T', val_mse['mse_e_t'], epoch)
-                tb_writer.add_scalar('Train/MSE_T_M', train_mse['mse_t_m'], epoch)
-                tb_writer.add_scalar('Validation/MSE_T_M', val_mse['mse_t_m'], epoch)
-                tb_writer.add_scalar('Train/MSE_M_T', train_mse['mse_m_t'], epoch)
-                tb_writer.add_scalar('Validation/MSE_M_T', val_mse['mse_m_t'], epoch)
                 tb_writer.add_scalar('Train/cpl_T->E', train_loss['cpl_t->e'], epoch)
                 tb_writer.add_scalar('Validation/cpl_T->E', val_loss['cpl_t->e'], epoch)
                 tb_writer.add_scalar('Train/cpl_E->T', train_loss['cpl_e->t'], epoch)

@@ -99,18 +99,18 @@ class Model_ME_T_conv(nn.Module):
         loss_dict['rec_e_me'] = self.compute_rec_loss(xe[is_me_1d, ...], xre_me_paired[is_me_1d, ...], valid_xe[is_me_1d, ...], is_me_1d)
         
         
-        loss_dict['cpl_me->t'], mse_me_t = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
-        loss_dict['cpl_t->me'], mse_t_me = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
+        loss_dict['cpl_me->t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
+        loss_dict['cpl_t->me'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
     
-        loss_dict['cpl_me->m'], mse_me_m = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), zm[is_me_1d, ...])
+        loss_dict['cpl_me->m'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), zm[is_me_1d, ...])
     
-        loss_dict['cpl_me->e'], mse_me_e = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), ze[is_me_1d, ...])
+        loss_dict['cpl_me->e'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), ze[is_me_1d, ...])
     
-        loss_dict['cpl_t->e'], mse_t_e = self.compute_cpl_loss(zt[is_te_1d, ...].detach(), ze[is_te_1d, ...])
-        loss_dict['cpl_e->t'], mse_e_t = self.compute_cpl_loss(zt[is_te_1d, ...], ze[is_te_1d, ...].detach())
+        loss_dict['cpl_t->e'] = self.compute_cpl_loss(zt[is_te_1d, ...].detach(), ze[is_te_1d, ...])
+        loss_dict['cpl_e->t'] = self.compute_cpl_loss(zt[is_te_1d, ...], ze[is_te_1d, ...].detach())
 
-        loss_dict['cpl_t->m'], mse_t_m = self.compute_cpl_loss(zt[is_tm_1d, ...].detach(), zm[is_tm_1d, ...])
-        loss_dict['cpl_m->t'], mse_m_t = self.compute_cpl_loss(zt[is_tm_1d, ...], zm[is_tm_1d, ...].detach())
+        loss_dict['cpl_t->m'] = self.compute_cpl_loss(zt[is_tm_1d, ...].detach(), zm[is_tm_1d, ...])
+        loss_dict['cpl_m->t'] = self.compute_cpl_loss(zt[is_tm_1d, ...], zm[is_tm_1d, ...].detach())
 
         ############################## get output dicts
         z_dict = get_output_dict([zm, ze, zt, zme_paired], 
@@ -118,8 +118,5 @@ class Model_ME_T_conv(nn.Module):
 
         xr_dict = get_output_dict([xrm, xre, xrt, xrm_me_paired, xre_me_paired],
                                   ['xrm', 'xre', 'xrt', 'xrm_me_paired', 'xre_me_paired'])
-        
-        mse_dict = get_output_dict([mse_me_t, mse_t_me, mse_me_m, mse_me_e, mse_t_e, mse_e_t, mse_t_m, mse_m_t],
-                                   ['mse_me_t', 'mse_t_me', 'mse_me_m', 'mse_me_e', 'mse_t_e', 'mse_e_t', 'mse_t_m', 'mse_m_t'])
 
-        return loss_dict, z_dict, xr_dict, mse_dict
+        return loss_dict, z_dict, xr_dict
