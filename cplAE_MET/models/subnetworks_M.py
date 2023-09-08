@@ -20,6 +20,9 @@ class Enc_xm_to_zm_int(nn.Module):
         self.pool_0 = nn.MaxPool3d((2, 1, 1), return_indices=True)
         self.conv_1 = nn.Conv3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_1 = nn.MaxPool3d((2, 1, 1), return_indices=True)
+        # self.fc_0 = nn.Linear(6000, out_dim)
+        # If you are using arbors with 120x1 shapes use above line with shape of 6000
+        # instead of the following line with 9600
         self.fc_0 = nn.Linear(9600, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.relu = nn.ReLU()
@@ -96,6 +99,7 @@ class Dec_zm_int_to_xm(nn.Module):
 
     def __init__(self, in_dim=10):
         super(Dec_zm_int_to_xm, self).__init__()
+        # self.fc_0 = nn.Linear(in_dim, 6000)
         self.fc_0 = nn.Linear(in_dim, 9600)
         self.convT_0 = nn.ConvTranspose3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.convT_1 = nn.ConvTranspose3d(10, 1, kernel_size=(5, 1, 1), padding=(2, 1, 0))
@@ -109,7 +113,9 @@ class Dec_zm_int_to_xm(nn.Module):
         x = zm_int[:, 0:10]
         x = self.elu(self.fc_0(x))
         x = x.view(-1, 10, 30, 8, 4)
-        # x = x.view(-1, 10, 15, 4, 4)
+        # if you are running a 120x1 arbor convolution, use the above line instead of
+        # the following shape. Also change 9600 to 6000
+        # x = x.view(-1, 10, 30, 5, 4)
         x = self.elu(self.unpool_0(x, enc_pool_1_ind))
         x = self.convT_0(x)
         x = self.elu(self.unpool_1(x, enc_pool_0_ind))
