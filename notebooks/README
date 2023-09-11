@@ -1,0 +1,37 @@
+00_data_proc_T.ipynb  #How we preprocess T data. This is just the illustration, 
+                      #to preprocess the data, you need to run the data_proc_T.py 
+                      #file in the preproc folder
+
+01_data_proc_E.ipynb  #How we preprocess E data. This is just the illustration,
+                      #to preprocess the data, you need to run the data_proc_E.py
+                      #file in the preproc folder
+
+02_data_proc_M.ipynb  #How we preprocess M data. This is just the illustration,
+                      #to preprocess the data, you need to run the data_proc_M.py
+                      #file in the preproc folder
+
+03_data_proc_MET.ipynb  #This is how we combine T, E and M preprocessed data. This is just
+                        #the illustration. In order to run the code, you need to run 
+                        #data_proc_MET.py in the preproc folder
+ 
+16k_and_13k_TEM_cpl_analysis_in_3d_and_5d.ipynb   #In this notebook, you can find all the analysis 
+                                                  #that went into the overleaf summary too for the
+                                                  # dataset of 16k and dataset of 13k cells.
+
+Analyzing_optuna_study_output.ipynb    #how we normally analyze the output of optuna study.
+
+Plot_3d_rotating_representation.ipynb: #this is for plotting 3d rotational embeddings to 
+                                       #see where cells of different platforms endup.
+
+NIH_presentation_7Apr23.ipynb          #The analysis, I did for NIH presentation for Uygar
+
+Showcase_poster.ipynb                  #Analysis of the showcase poster of 2022
+
+t_type_classification_vs_cplAE_.ipynb  #Why cplae is better than classification. This was 
+                                       #explained also in the overleaf doc  
+
+Merging_Tree_6Mar23.ipynb              #How to merge the taxonomy tree to go to the lower resolution
+
+
+
+
