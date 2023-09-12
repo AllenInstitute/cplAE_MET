@@ -1,4 +1,4 @@
-![cplae](https://github.com/AllenInstitute/cplAE_MET/blob/Fahimeh_dev/T_ME_coupled_AE_modules.png?raw=true) 
+![cplae](T_ME_coupled_AE_modules.png) 
 
 #### bayesian_optimization_conv.py:
 Training code with the option to run bayesian optimization.
