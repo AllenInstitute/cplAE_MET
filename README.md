@@ -1,4 +1,4 @@
-![cplae](CplAE_architecture.pdf)
+![cplae](CplAE_architecture.png)
 
 ### Coupled autoencoders for M, E, and T analysis
 
