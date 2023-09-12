@@ -1,0 +1,23 @@
+package_dir = '/home/fahimehb/Local/new_codes/cplAE_MET/'
+data_dir = '/home/fahimehb/Remote-AI-root/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/'
+
+#For T
+specimen_ids_file = "exc_inh_ME_fMOST_qc_passed_EM_specimen_ids_16k_shuffled_28June23.txt"   
+gene_file = "good_genes_beta_score.csv"
+t_data_output_file = "test_T_data_50k_4Apr23.csv"  
+t_anno_output_file = "test_T_anno_50k_4Apr23.csv"   
+gene_id_output_file = "test_gene_ids_28Sep22.csv"  
+
+#For M
+m_data_folder = 'm_data'
+m_anno = 'm_anno_30Mar23.csv'
+hist2d_120x4_folder = 'hist2d_120x4'
+arbor_density_file = 'test_M_arbor_data_50k_4Apr23.mat' 
+
+#For E
+E_timeseries_file = "fv_Ephys_timeseries_12Dec22.h5" 
+ipfx_features_file = "ipfx_features_12Dec22.csv" 
+e_output_file = "test_E_data_50k_4Apr23.csv" 
+
+#For MET
+met_output_file = "test_MET_M120x4_50k_4Apr23.mat"

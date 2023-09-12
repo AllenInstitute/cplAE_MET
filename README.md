@@ -70,7 +70,7 @@ m_anno = 'm_anno_30Mar23.csv'
 # This is the folder which contains all the arbor densities for all the cells and inside the m_data folder in data_dir
 hist2d_120x4_folder = 'hist2d_120x4'
 # This is the output of data_proc_M.py and will be saved in data_dir
-arbor_density_file = 'test_M_arbor_data_50k_4Apr23.mat'
+arbor_density_file = 'M_arbor_data_50k_4Apr23.mat'
 
 #For E
 #This file contains the E time series and should be provided and located in the data_dir
@@ -78,12 +78,12 @@ E_timeseries_file = "fv_Ephys_timeseries_12Dec22.h5"
 #This file is contains ipfx data for all the E cells and should be provided and located in data_dir
 ipfx_features_file = "ipfx_features_12Dec22.csv"
 #This is the output of data_proc_E.py and will be saved in data_dir
-e_output_file = "test_E_data_50k_4Apr23.csv"
+e_output_file = "E_data_50k_4Apr23.csv"
 
 #For MET
 # data_proc_MET.py will use all the output of data_proc_T.py, data_proc_E.py and data_proc_M.py to 
 # generate the following output which is saved in data_dir and is the input for the machine learning model
-met_output_file = "test_MET_M120x4_50k_4Apr23.mat"
+met_output_file = "MET_M120x4_50k_4Apr23.mat"
 ```
 
 ### Contributors
