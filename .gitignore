@@ -4,3 +4,5 @@ requirements.txt
 *.mat
 data/*
 *.out
+*.sh
+!*template.sh
