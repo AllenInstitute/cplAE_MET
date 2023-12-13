@@ -5,6 +5,7 @@ import shutil
 import logging
 import argparse
 import numpy as np
+import ast
 
 # From torch
 import torch
@@ -27,12 +28,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--config_file',           default='config.toml',type=str,   help='config file with data paths')
 parser.add_argument('--exp_name',              default='test',       type=str,   help='experiment name') # a folder with this name will be generated in the results folder
 parser.add_argument('--opt_storage_db',        default='test.db',    type=str,   help='name of the Optuna study storage database') # this history file will be generated in the exp folder
-parser.add_argument('--variational',           default=False,        type=bool,  help='running a variational autoencoder?') # variational AE is implemented but never tested
-parser.add_argument('--optimization',          default=True,         type=bool,  help='running an optimization study?')
-parser.add_argument('--load_model',            default=False,        type=bool,  help='load weights from an old ML model')
-parser.add_argument('--load_best_params',      default=False,        type=bool,  help='load hyperparams of the best run from history file')
-parser.add_argument('--use_defined_params',    default=False,        type=bool,  help='use hyperparams that are defined by user')
-parser.add_argument('--db_load_if_exist',      default=True,         type=bool,  help='load an optimization database file if exist')
+parser.add_argument('--variational',           default=False,        type=ast.literal_eval,  help='running a variational autoencoder?') # variational AE is implemented but never tested
+parser.add_argument('--optimization',          default=True,         type=ast.literal_eval,  help='running an optimization study?')
+parser.add_argument('--load_model',            default=False,        type=ast.literal_eval,  help='load weights from an old ML model')
+parser.add_argument('--load_best_params',      default=False,        type=ast.literal_eval,  help='load hyperparams of the best run from history file')
+parser.add_argument('--use_defined_params',    default=False,        type=ast.literal_eval,  help='use hyperparams that are defined by user')
+parser.add_argument('--db_load_if_exist',      default=True,         type=ast.literal_eval,  help='load an optimization database file if exist')
 parser.add_argument('--n_epochs',              default=2500,         type=int,   help='number of epochs to train')
 parser.add_argument('--warmup_steps',          default=500,          type=int,   help='during optimization, after this many epochs, prunning process starts')
 parser.add_argument('--warmup_trials',         default=10,           type=int,   help='during optimization, prunning starts only if this many trials already passed')
@@ -43,37 +44,41 @@ parser.add_argument('--latent_dim',            default=5,            type=int,  
 parser.add_argument('--batch_size',            default=1000,         type=int,   help='batch size')
 parser.add_argument('--KLD_beta',              default=1.0,          type=float, help='coefficient for KLD term if model is VAE') # variational AE is implemented but never tested
 parser.add_argument('--alpha_T',               default=1.0,          type=float, help='T reconstruction loss weight coefficient')
-parser.add_argument('--alpha_E',               default=(0, 6),       type=float, help='E reconstruction loss weight coefficient range') # range is used during the optimization
-parser.add_argument('--alpha_M',               default=(-3, 3),      type=float, help='M reconstruction loss weight coefficient range')
-parser.add_argument('--alpha_ME',              default=(-4, 2),      type=float, help='ME reconstruction loss weight coefficient range')
-parser.add_argument('--lambda_tune_E_T_range', default=(-5, 0),      type=float, help='E_T coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_ME_E_range',default=(0, 5),       type=float, help='ME_E coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_ME_M_range',default=(2, 5),       type=float, help='ME_M coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_ME_T_range',default=(-5, -1),     type=float, help='ME_T coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_M_T_range', default=(-5, -2),     type=float, help='M_T coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_T_E_range', default=(3, 6),       type=float, help='T_E coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_T_M_range', default=(-1, 5),      type=float, help='T_M coupling loss weight coefficient range')
-parser.add_argument('--lambda_tune_T_ME_range',default=(-1, 4),      type=float, help='T_ME coupling loss weight coefficient range')
+
+## If optimization is off, these lines should be commented out.
+# parser.add_argument('--alpha_E',               default=(0, 6),       type=float, help='E reconstruction loss weight coefficient range') # range is used during the optimization
+# parser.add_argument('--alpha_M',               default=(-3, 3),      type=float, help='M reconstruction loss weight coefficient range')
+# parser.add_argument('--alpha_ME',              default=(-4, 2),      type=float, help='ME reconstruction loss weight coefficient range')
+# parser.add_argument('--lambda_tune_E_T_range', default=(-5, 0),      type=float, help='E_T coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_ME_E_range',default=(0, 5),       type=float, help='ME_E coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_ME_M_range',default=(2, 5),       type=float, help='ME_M coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_ME_T_range',default=(-5, -1),     type=float, help='ME_T coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_M_T_range', default=(-5, -2),     type=float, help='M_T coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_T_E_range', default=(3, 6),       type=float, help='T_E coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_T_M_range', default=(-1, 5),      type=float, help='T_M coupling loss weight coefficient range')
+# parser.add_argument('--lambda_tune_T_ME_range',default=(-1, 4),      type=float, help='T_ME coupling loss weight coefficient range')
+
+# If optimization is off, then lines (alpha_E) to line (lambda_tune_T_ME_range) should be commented out and the following lines 
+# should be used instead. the exponential values of whatever you provide below will be used to run a non-optimization model
+
+parser.add_argument('--alpha_E',               default=3.74,         type=float, help='E reconstruction loss weight coefficient')
+parser.add_argument('--alpha_M',               default=-1.27,        type=float, help='M reconstruction loss weight coefficient')
+parser.add_argument('--alpha_ME',              default=0.99,         type=float, help='ME reconstruction loss weight coefficient')
+parser.add_argument('--lambda_tune_E_T_range', default=-0.47,        type=float, help='E_T coupling loss weight coefficient')
+parser.add_argument('--lambda_tune_ME_E_range',default=5.56,         type=float, help='ME_E coupling loss weight coefficient')
+parser.add_argument('--lambda_tune_ME_M_range',default=5.73,         type=float, help='ME_M coupling loss weight coefficient')
+parser.add_argument('--lambda_tune_ME_T_range',default=-4.72,        type=float, help='ME_T coupling loss weight coefficient')
+parser.add_argument('--lambda_tune_M_T_range', default=-0.63,        type=float, help='M_T coupling loss weight coefficient')
+parser.add_argument('--lambda_tune_T_E_range', default=3.092,        type=float, help='T_E coupling loss weight coefficient')
+parser.add_argument('--lambda_tune_T_M_range', default=3.17,         type=float, help='T_M coupling loss weight coefficient')
+parser.add_argument('--lambda_tune_T_ME_range',default=5.88,         type=float, help='T_ME coupling loss weight coefficient')
+
 parser.add_argument('--lambda_TE',             default=1.0,          type=float, help='is there a coupling between T and E')
 parser.add_argument('--lambda_TM',             default=1.0,          type=float, help='is there a coupling between T and M')
 parser.add_argument('--lambda_ME_T',           default=1.0,          type=float, help='is there a coupling between T and ME')
 parser.add_argument('--lambda_ME_M',           default=1.0,          type=float, help='is there a coupling between ME and M')
 parser.add_argument('--lambda_ME_E',           default=1.0,          type=float, help='is there a coupling between ME and E')
 parser.add_argument('--arb_dens_shape',        default='120x4x4',    type=str,   help='if using arbor densities directly, please specify the shape here')
-# If optimization is off, then lines (alpha_E) to line (lambda_tune_T_ME_range) should be commented out and the following lines 
-# should be used instead. the exponential values of whatever you provide below will be used to run a non-optimization model
-
-# parser.add_argument('--alpha_E',               default=3.74,         type=float, help='E reconstruction loss weight coefficient')
-# parser.add_argument('--alpha_M',               default=-1.27,        type=float, help='M reconstruction loss weight coefficient')
-# parser.add_argument('--alpha_ME',              default=0.99,         type=float, help='ME reconstruction loss weight coefficient')
-# parser.add_argument('--lambda_tune_E_T_range', default=-0.47,        type=float, help='E_T coupling loss weight coefficient')
-# parser.add_argument('--lambda_tune_ME_E_range',default=5.56,         type=float, help='ME_E coupling loss weight coefficient')
-# parser.add_argument('--lambda_tune_ME_M_range',default=5.73,         type=float, help='ME_M coupling loss weight coefficient')
-# parser.add_argument('--lambda_tune_ME_T_range',default=-4.72,        type=float, help='ME_T coupling loss weight coefficient')
-# parser.add_argument('--lambda_tune_M_T_range', default=-0.63,        type=float, help='M_T coupling loss weight coefficient')
-# parser.add_argument('--lambda_tune_T_E_range', default=3.092,        type=float, help='T_E coupling loss weight coefficient')
-# parser.add_argument('--lambda_tune_T_M_range', default=3.17,         type=float, help='T_M coupling loss weight coefficient')
-# parser.add_argument('--lambda_tune_T_ME_range',default=5.88,         type=float, help='T_ME coupling loss weight coefficient')
                     
 def main(exp_name="TEST",
          variational=False,
