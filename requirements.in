@@ -1,0 +1,15 @@
+torch
+torchvision
+torchaudio
+scikit-learn
+jupyterlab
+seaborn
+pandas
+rich
+tqdm
+timebudget
+statsmodels
+umap-learn
+optuna
+cdlib
+toml
