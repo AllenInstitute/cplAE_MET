@@ -13,3 +13,4 @@ umap-learn
 optuna
 cdlib
 toml
+pyarrow
