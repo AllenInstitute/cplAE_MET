@@ -6,3 +6,5 @@ data/*
 *.out
 *.sh
 !*template.sh
+*.yaml
+!*template.yaml

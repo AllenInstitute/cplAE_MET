@@ -1,3 +1,0 @@
-package_dir = "/allen/programs/celltypes/workgroups/rnaseqanalysis/mousecelltypes/MachineLearning/Ian/code/cplAE_MET"
-remote_dir = "/allen/programs/celltypes/workgroups/rnaseqanalysis/mousecelltypes/MachineLearning/Ian/code/cplAE_MET"
-MET_data = "/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/MET_M120x4_13k_25Jul23.mat"
