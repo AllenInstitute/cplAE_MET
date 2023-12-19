@@ -20,10 +20,10 @@ class MorphoDatasetAE(torch.utils.data.Dataset):
         super().__init__()
         data_dict = sio.loadmat(arbor_mat_path)
         all_arbors = data_dict["hist_ax_de_api_bas"]
-        not_nan = ~np.any(np.isnan(all_arbors), 0)
-        self.arbors = torch.as_tensor(all_arbors[not_nan])
+        not_nan = ~np.any(np.isnan(all_arbors), (1, 2, 3))
+        self.arbors = torch.as_tensor(all_arbors[not_nan])[:, None].float()
         self.specimen_ids = np.asarray(data_dict["specimen_id"])[not_nan]
-        self.gnoise_m_std = torch.var(self.arbors, dim = 0, keepdim = True).sqrt()
+        self.gnoise_m_std = torch.var(self.arbors, dim = 0, keepdim = True).sqrt().float()
 
     def __len__(self):
         return self.arbors.shape[0]
@@ -81,25 +81,27 @@ def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device):
     tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
     # Training -----------
     for epoch in range(num_epochs):
-        print(epoch)
         model.train()
         culm_loss = 0
-        for (arbors, specimen_ids) in iter(train_dataloader):
+        for (step, (arbors, specimen_ids)) in enumerate(iter(train_dataloader)):
+            print(f"Epoch {epoch + 1}: {step + 1} / {len(train_dataloader)}", end = "\r")
             optimizer.zero_grad()
             # forward pass -----------
-            (zm_int_enc, zm, zm_int_dec, xrm, mu, log_sigma) = model(arbors.cuda())
-            loss = torch.square(arbors - zm).sum() / arbors.shape[0]
+            (zm_int_enc, zm, zm_int_dec, xrm, mu, log_sigma) = model(arbors.to(device))
+            loss = torch.square(arbors - xrm).sum() / arbors.shape[0]
             culm_loss += loss.item()
             loss.backward()
             optimizer.step()            
         # Average losses over batches -----------
         avg_loss = culm_loss / len(train_dataloader)
+        print(f"\nEpoch {epoch + 1}: Avg Loss {avg_loss:.4f}")
         # Logging -----------
         tb_writer.add_scalar('Train/MSE_XM', avg_loss, epoch)
     tb_writer.close()
     # Save outputs -----------
     model.eval()
-    outputs = [(model(arbors)[1], specimen_ids) for (arbors, specimen_ids) in iter(train_dataloader)]
+    with torch.no_grad():
+        outputs = [(model(arbors)[1], specimen_ids) for (arbors, specimen_ids) in iter(train_dataloader)]
     latent_space = torch.cat([arbors for (arbors, ids) in outputs], 0).numpy()
     specimen_ids = np.concatenate([ids for (arbors, ids) in outputs], 0)
     np.savez_compressed(exp_dir / "outputs.npz", specimen_ids = specimen_ids, latent_space = latent_space)
