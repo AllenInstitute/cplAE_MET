@@ -1,0 +1,15 @@
+---
+# Config file for training morphological autoencoder (single modality)
+
+# Set paths
+arbor_mat_file: /allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Patchseq-Exc/dat/M_arbor_data_50k_4Apr23.mat # Location of MATLAB file containing processed arbor data
+output_dir: data/morpho   # Location to save training results (new folder will be created within output_dir)
+
+# Set experiment properties:
+experiment_name: test  # Name of experiment (used to create output folder)
+num_epochs: 2500   # Number of epochs to train
+latent_dim: 5   # Dimension of latent space for each modality
+batch_size: 1000   # Batch size used during training
+dropout: 0.2   # Dropout probability
+gauss_var_frac: 0.05   # Fraction of data variance to insert as data augmentation
+learning_rate: 0.001   # Learning rate for the ADAM optimizer
