@@ -31,37 +31,6 @@ class MorphoDatasetAE(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return (self.arbors[idx], self.specimen_ids[idx])
 
-def get_git_hash():
-    try:
-        git_hash = subprocess.run(
-            (["powershell"] if os.name == "nt" else []) + ["git", "rev-parse", "--short", "HEAD"],
-            capture_output = True 
-        ).stdout.decode().strip()
-    except Exception:
-        git_hash = ""
-    return git_hash
-
-def record_settings(exp_dir, config_path):
-    git_hash = get_git_hash()
-    if git_hash:
-        with open(exp_dir / "git_hash.txt", "w") as target:
-            target.write(git_hash)
-    else:
-        print("Git hash not saved.")
-    shutil.copy(config_path, exp_dir / "config.yaml")
-
-def clear_experiment(exp_dir):
-    model_path = exp_dir / "model.pt"
-    if model_path.exists():
-        model_path.unlink()
-    output_path = exp_dir / "output.pkl"
-    if output_path.exists():
-        output_path.unlink()
-    tensorboard_path = exp_dir / "tn_board"
-    if tensorboard_path.exists():
-        for path in tensorboard_path.iterdir():
-            path.unlink()
-
 def build_model(config, train_dataset):
     model_config = dict(
         variational = False,
@@ -75,7 +44,7 @@ def build_model(config, train_dataset):
     model = AE_M(model_config)
     return model
 
-def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device):
+def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device, print_step = False):
     model.to(device)
     optimizer_to(optimizer, device)
     tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
@@ -84,10 +53,12 @@ def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device):
         model.train()
         culm_loss = 0
         for (step, (arbors, specimen_ids)) in enumerate(iter(train_dataloader)):
-            print(f"Epoch {epoch + 1}: {step + 1} / {len(train_dataloader)}", end = "\r")
+            if print_step:
+                print(f"Epoch {epoch + 1}: {step + 1} / {len(train_dataloader)}", end = "\r")
             optimizer.zero_grad()
+            arbors = arbors.to(device)
             # forward pass -----------
-            (zm_int_enc, zm, zm_int_dec, xrm, mu, log_sigma) = model(arbors.to(device))
+            (zm_int_enc, zm, zm_int_dec, xrm, mu, log_sigma) = model(arbors)
             loss = torch.square(arbors - xrm).sum() / arbors.shape[0]
             culm_loss += loss.item()
             loss.backward()
@@ -101,13 +72,13 @@ def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device):
     # Save outputs -----------
     model.eval()
     with torch.no_grad():
-        outputs = [(model(arbors)[1], specimen_ids) for (arbors, specimen_ids) in iter(train_dataloader)]
-    latent_space = torch.cat([arbors for (arbors, ids) in outputs], 0).numpy()
+        outputs = [(model(arbors.to(device))[1], specimen_ids) for (arbors, specimen_ids) in iter(train_dataloader)]
+    latent_space = torch.cat([arbors.cpu() for (arbors, ids) in outputs], 0).numpy()
     specimen_ids = np.concatenate([ids for (arbors, ids) in outputs], 0)
     np.savez_compressed(exp_dir / "outputs.npz", specimen_ids = specimen_ids, latent_space = latent_space)
     return model
 
-def train_model(config):
+def train_model(config, exp_dir):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     train_dataset = MorphoDatasetAE(config["arbor_mat_file"])
     train_dataloader = DataLoader(train_dataset, batch_size = config["batch_size"], shuffle = True)
@@ -119,14 +90,11 @@ def train_model(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("config_path", help = "path to config yaml file")
+    parser.add_argument("exp_name", help = "Name of experiment.")
+    parser.add_argument("config_path", help = "Path to config YAML file.")
     args = parser.parse_args()
     with open(args.config_path, "r") as target:
         config = yaml.safe_load(target)
-    exp_dir = pathlib.Path(config["output_dir"]) / config["experiment_name"]
-    if exp_dir.exists():
-        clear_experiment(exp_dir)
-    else:
-        exp_dir.mkdir()
-    record_settings(exp_dir, args.config_path)
-    train_model(config)
+    exp_path = pathlib.Path(config["output_dir"]) / args.exp_name
+    exp_path.mkdir(exist_ok = True)
+    train_model(config, exp_path)
