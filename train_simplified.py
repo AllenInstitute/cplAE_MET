@@ -20,7 +20,7 @@ from cplAE_MET.utils.utils import save_ckp
 def get_git_hash():
     try:
         git_hash = subprocess.run(
-            ["powershell" if os.name == "nt" else "", "git rev-parse --short HEAD"],
+            (["powershell"] if os.name == "nt" else []) + ["git", "rev-parse", "--short", "HEAD"],
             capture_output = True 
         ).stdout.decode().strip()
     except Exception:
