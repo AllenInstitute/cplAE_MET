@@ -8,3 +8,5 @@ data/*
 !*template.sh
 *.yaml
 !*template.yaml
+/**/.ipynb_checkpoints
+.DS_Store
