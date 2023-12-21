@@ -7,6 +7,7 @@ output_dir: 'data/morpho'   # Location to save training results (new folder will
 
 # Set experiment properties:
 experiment: 'morphology' # Type of experiment
+combine_types: False   # Whether to keep distinct excitatory and inhibitory density slices 
 num_epochs: 2500   # Number of epochs to train
 latent_dim: 5   # Dimension of latent space for each modality
 batch_size: 1000   # Batch size used during training

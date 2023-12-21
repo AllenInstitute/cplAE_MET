@@ -8,22 +8,21 @@ class Enc_xm_to_zm_int(nn.Module):
      - Output is an intermediate representation, `zm_int`
     """
 
-    def __init__(self, 
+    def __init__(self,
+                 combine, 
                  out_dim=10, 
                  gnoise_std=None,
                  gnoise_std_frac=0.05):
         
         super(Enc_xm_to_zm_int, self).__init__()
+        conv_out_size = 9600 if not combine else 4800
         if gnoise_std is not None:
             self.gnoise_std = gnoise_std * gnoise_std_frac
         self.conv_0 = nn.Conv3d(1, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_0 = nn.MaxPool3d((2, 1, 1), return_indices=True)
         self.conv_1 = nn.Conv3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.pool_1 = nn.MaxPool3d((2, 1, 1), return_indices=True)
-        # self.fc_0 = nn.Linear(6000, out_dim)
-        # If you are using arbors with 120x1 shapes use above line with shape of 6000
-        # instead of the following line with 9600
-        self.fc_0 = nn.Linear(9600, out_dim)
+        self.fc_0 = nn.Linear(conv_out_size, out_dim)
         self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
@@ -97,22 +96,23 @@ class Dec_zm_int_to_xm(nn.Module):
     """Decodes `zm_int` into the reconstruction `xrm` and `xrsd`
     """
 
-    def __init__(self, in_dim=10):
+    def __init__(self, combine, in_dim=10):
         super(Dec_zm_int_to_xm, self).__init__()
-        # self.fc_0 = nn.Linear(in_dim, 6000)
-        self.fc_0 = nn.Linear(in_dim, 9600)
+        conv_input_size = 9600 if not combine else 4800
+        self.fc_0 = nn.Linear(in_dim, conv_input_size)
         self.convT_0 = nn.ConvTranspose3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.convT_1 = nn.ConvTranspose3d(10, 1, kernel_size=(5, 1, 1), padding=(2, 1, 0))
         self.unpool_0 = nn.MaxUnpool3d((2, 1, 1))
         self.unpool_1 = nn.MaxUnpool3d((2, 1, 1))
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
+        self.view_tuple = (-1, 10, 30, 8, 4) if not combine else (-1, 10, 30, 8, 2)
         return
 
     def forward(self, zm_int, enc_pool_0_ind, enc_pool_1_ind):
         x = zm_int[:, 0:10]
         x = self.elu(self.fc_0(x))
-        x = x.view(-1, 10, 30, 8, 4)
+        x = x.view(*self.view_tuple)
         # if you are running a 120x1 arbor convolution, use the above line instead of
         # the following shape. Also change 9600 to 6000
         # x = x.view(-1, 10, 30, 5, 4)
@@ -126,10 +126,10 @@ class Dec_zm_int_to_xm(nn.Module):
 class AE_M(nn.Module):
     def __init__(self, config):
         super(AE_M, self).__init__()
-        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(gnoise_std=config['M']['gnoise_std'], gnoise_std_frac=config['M']['gnoise_std_frac'])
+        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(config["combine"], gnoise_std=config['M']['gnoise_std'], gnoise_std_frac=config['M']['gnoise_std_frac'])
         self.enc_zm_int_to_zm = Enc_zm_int_to_zm(out_dim=config['latent_dim'], variational=config['variational'])
         self.dec_zm_to_zm_int = Dec_zm_to_zm_int(in_dim=config['latent_dim'])
-        self.dec_zm_int_to_xm = Dec_zm_int_to_xm()
+        self.dec_zm_int_to_xm = Dec_zm_int_to_xm(config["combine"])
         self.variational = config['variational']
         return
 

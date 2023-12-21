@@ -16,12 +16,14 @@ from cplAE_MET.models.train_utils import optimizer_to
 from cplAE_MET.utils.utils import save_ckp
 
 class MorphoDatasetAE(torch.utils.data.Dataset):
-    def __init__(self, arbor_mat_path):
+    def __init__(self, arbor_mat_path, combine):
         super().__init__()
         data_dict = sio.loadmat(arbor_mat_path)
         all_arbors = data_dict["hist_ax_de_api_bas"]
         not_nan = ~np.any(np.isnan(all_arbors), (1, 2, 3))
         self.arbors = torch.as_tensor(all_arbors[not_nan])[:, None].float()
+        if combine:
+            self.arbors = self.arbors[..., :2] + self.arbors[..., 2:]
         self.specimen_ids = np.asarray(data_dict["specimen_id"])[not_nan]
         self.gnoise_m_std = torch.var(self.arbors, dim = 0, keepdim = True).sqrt().float()
 
@@ -34,6 +36,7 @@ class MorphoDatasetAE(torch.utils.data.Dataset):
 def build_model(config, train_dataset):
     model_config = dict(
         variational = False,
+        combine = config["combine_types"],
         latent_dim = config["latent_dim"], 
         batch_size = config["batch_size"],
         KLD_beta = 1.0,
@@ -80,7 +83,7 @@ def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device, print
 
 def train_model(config, exp_dir):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    train_dataset = MorphoDatasetAE(config["arbor_mat_file"])
+    train_dataset = MorphoDatasetAE(config["arbor_mat_file"], combine = config["combine_types"])
     train_dataloader = DataLoader(train_dataset, batch_size = config["batch_size"], shuffle = True)
     model = build_model(config, train_dataset)
     optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
