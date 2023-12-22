@@ -84,7 +84,7 @@ if __name__ == "__main__":
             print("Exiting...")
             sys.exit()
     else:
-        exp_dir.mkdir()
+        exp_dir.mkdir(parents = True)
 
     # The parameters are recorded in the experiment directory, and the Python file is run on SLURM (if not local).
     record_settings(exp_dir, args.config_file)
