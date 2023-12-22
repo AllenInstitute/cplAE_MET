@@ -49,6 +49,7 @@ def clear_experiment(exp_dir):
     safe_unlink(exp_dir / "terminal.out")
     safe_unlink(exp_dir / "script.sh")
     safe_unlink(exp_dir / "model.pt")
+    safe_unlink(exp_dir / "best_params.pt")
     safe_unlink(exp_dir / "outputs.npz")
     tensorboard_path = exp_dir / "tn_board"
     if tensorboard_path.exists():

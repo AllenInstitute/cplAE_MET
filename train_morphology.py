@@ -33,6 +33,30 @@ class MorphoDatasetAE(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return (self.arbors[idx], self.specimen_ids[idx])
 
+class EarlyStopping():
+    def __init__(self, exp_dir, patience, min_improvement_fraction):
+        self.exp_dir = exp_dir
+        self.patience = patience
+        self.frac = min_improvement_fraction
+        self.counter = 0
+        self.best_epoch = 0
+        self.min_loss = np.inf
+
+    def stop_check(self, loss, model, epoch):
+        if loss < (1 - self.frac) * self.min_loss:
+            self.counter = 0
+            self.min_loss = loss
+            torch.save(model.state_dict(), self.exp_dir / f"best_params.pt")
+            self.best_epoch = epoch
+        else:
+            self.counter += 1
+        stop = self.counter > self.patience
+        return stop
+    
+    def load_best_parameters(self, model):
+        best_state = torch.load(self.exp_dir / "best_params.pt")
+        model.load_state_dict(best_state)
+
 def build_model(config, train_dataset):
     model_config = dict(
         variational = False,
@@ -47,11 +71,13 @@ def build_model(config, train_dataset):
     model = AE_M(model_config)
     return model
 
-def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device, print_step = False):
+def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device, patience, stop_frac, print_step = False):
     model.to(device)
     optimizer_to(optimizer, device)
     tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
+    stopper = EarlyStopping(exp_dir, patience, stop_frac)
     # Training -----------
+    avg_losses = []
     for epoch in range(num_epochs):
         model.train()
         culm_loss = 0
@@ -65,13 +91,20 @@ def train(num_epochs, exp_dir, model, optimizer, train_dataloader, device, print
             loss = torch.square(arbors - xrm).sum() / arbors.shape[0]
             culm_loss += loss.item()
             loss.backward()
-            optimizer.step()            
+            optimizer.step()
+        if print_step: print("")            
         # Average losses over batches -----------
         avg_loss = culm_loss / len(train_dataloader)
-        print(f"\nEpoch {epoch + 1}: Avg Loss {avg_loss:.4f}")
+        print(f"Epoch {epoch + 1}: Avg Loss {avg_loss:.4f}")
+        avg_losses.append(avg_loss)
         # Logging -----------
         tb_writer.add_scalar('Train/MSE_XM', avg_loss, epoch)
+        # Check stoppage ----------
+        if stopper.stop_check(avg_loss, model, epoch) or (epoch + 1 == num_epochs):
+            stopper.load_best_parameters(model)
+            break
     tb_writer.close()
+    print(f"Minimum loss: {avg_losses[stopper.best_epoch]:.4g} at Epoch {stopper.best_epoch}")
     # Save outputs -----------
     model.eval()
     with torch.no_grad():
@@ -87,7 +120,7 @@ def train_model(config, exp_dir):
     train_dataloader = DataLoader(train_dataset, batch_size = config["batch_size"], shuffle = True)
     model = build_model(config, train_dataset)
     optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
-    trained_model = train(config["num_epochs"], exp_dir, model, optimizer, train_dataloader, device)
+    trained_model = train(config["num_epochs"], exp_dir, model, optimizer, train_dataloader, device, config["patience"], config["improvement_frac"])
     checkpoint = {'state_dict': trained_model.state_dict(), 'optimizer': optimizer.state_dict()}
     save_ckp(checkpoint, exp_dir, "model")
 
@@ -100,4 +133,5 @@ if __name__ == "__main__":
         config = yaml.safe_load(target)
     exp_path = pathlib.Path(config["output_dir"]) / args.exp_name
     exp_path.mkdir(exist_ok = True)
+    print(f'\nRunning experiment "{args.exp_name}":\n')
     train_model(config, exp_path)
