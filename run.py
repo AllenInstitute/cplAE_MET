@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("exp_name", help = "Name of experiment.")
     parser.add_argument("config_file", help = "Path to configuration YAML file.")
+    parser.add_argument("--local", action = "store_true")
     args = parser.parse_args()
 
     # Config YAML file contains the specific parameters for the experiment.
@@ -84,7 +85,10 @@ if __name__ == "__main__":
     else:
         exp_dir.mkdir()
 
-    # The parameters are recorded in the experiment directory, and the Python file is run on SLURM.
+    # The parameters are recorded in the experiment directory, and the Python file is run on SLURM (if not local).
     record_settings(exp_dir, args.config_file)
-    create_sbatch_script(python_file, exp_dir, args.config_file, config)
-    subprocess.run(["sbatch", exp_dir / "script.sh"])
+    if not args.local:
+        create_sbatch_script(python_file, exp_dir, args.config_file, config)
+        subprocess.run(["sbatch", exp_dir / "script.sh"])
+    else:
+        subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file])
