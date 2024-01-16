@@ -54,6 +54,7 @@ def build_model(config, train_dataset):
         latent_dim = config["latent_dim"], 
         batch_size = config["batch_size"],
         KLD_beta = 1.0,
+        combine = config["combine_types"],
         T = dict(dropout_p = config["dropout"], 
                 alpha_T = config["alpha_T"]),
         E = dict(gnoise_std = train_dataset.gnoise_e_std, 
@@ -198,11 +199,12 @@ def train_model(config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("exp_name", help = "Name of experiment.")
     parser.add_argument("config_path", help = "path to config yaml file")
     args = parser.parse_args()
     with open(args.config_path, "r") as target:
         config = yaml.safe_load(target)
-    exp_dir = pathlib.Path(config["output_dir"]) / config["experiment_name"]
+    exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name
     if exp_dir.exists():
         clear_experiment(exp_dir)
     else:
