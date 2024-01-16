@@ -1,5 +1,6 @@
 import contextlib
 
+from torch.utils.tensorboard import SummaryWriter
 import torch
 import numpy as np
 import pandas as pd
@@ -47,7 +48,10 @@ def load_raw_data():
     anno = anno_full.query("M_cell")
     (exp1, exp2) = ("EM", "patchseq")
     (anno_unnorm, anno_samp) = normalize_sample_count(exp1, exp2, anno)
-    return (arbors, anno_unnorm, anno_samp)
+    anno_exc = anno_unnorm.query("`class` == 'exc'")
+    em_arbors = select(arbors, anno_exc.query("platform == 'EM'"))[..., 2:].reshape((-1, 960))
+    patch_arbors = select(arbors, anno_exc.query("platform == 'patchseq'"))[..., 2:].reshape((-1, 960))
+    return (em_arbors, patch_arbors)
 
 def ridge_regression(X_em, X_patch, alpha, fitting_gradient = False):
     fitting_context = torch.no_grad() if not fitting_gradient else contextlib.nullcontext()
@@ -62,7 +66,7 @@ def ridge_regression(X_em, X_patch, alpha, fitting_gradient = False):
     return (X_offset, intercept, coeff)
 
 class Aligner(torch.nn.Module):
-    def __init__(self, hidden_dims):
+    def __init__(self, hidden_dims, activation):
         super().__init__()
         self.hidden_dims = hidden_dims
         self.layer_names = []
@@ -71,19 +75,28 @@ class Aligner(torch.nn.Module):
             setattr(self, f"l{i}", torch.nn.Linear(in_dim, out_dim))
             self.layer_names.append(f"l{i}")
         self.relu = torch.nn.ReLU()
+        if activation == "linear":
+            self.activation = torch.nn.Identity()
+        elif activation == "relu":
+            self.activation = torch.nn.functional.relu
+        elif activation == "softplus":
+            self.activation = torch.nn.functional.softplus
+        else:
+            raise ValueError(f'Activation "{activation}" not recognized.')
 
     def forward(self, X):
         for layer_name in self.layer_names[:-1]:
             layer = getattr(self, layer_name)
             X = self.relu(layer(X))
         final_layer = getattr(self, self.layer_names[-1])
-        output = torch.nn.functional.softplus(final_layer(X))
+        output = self.activation(final_layer(X))
         return output
     
 class Classifier(torch.nn.Module):
-    def __init__(self, hidden_dims):
+    def __init__(self, hidden_dims, gauss_noise):
         super().__init__()
         self.hidden_dims = hidden_dims
+        self.gauss_noise = gauss_noise
         self.layer_names = []
         all_dims = [960] + list(hidden_dims) + [1]
         for (i, (in_dim, out_dim)) in enumerate(zip(all_dims[:-1], all_dims[1:]), 1):
@@ -98,6 +111,7 @@ class Classifier(torch.nn.Module):
         return loss
 
     def forward(self, X):
+        X = X + self.gauss_noise*torch.randn_like(X)
         for layer_name in self.layer_names[:-1]:
             layer = getattr(self, layer_name)
             X = self.relu(layer(X))
@@ -116,23 +130,67 @@ class ExcDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, idx):
         return (self.X[idx], self.y[idx])
+
+
+class ArborDataset(torch.utils.data.IterableDataset):
+    def __init__(self, em_arbors, patch_arbors, device):
+        super().__init__()
+        self.em_arbors = torch.from_numpy(em_arbors).float().to(device)
+        self.patch_arbors = torch.from_numpy(patch_arbors).float().to(device)
+
+    def __iter__(self):
+        patch_indices = torch.randperm(len(self.patch_arbors))
+        em_indices = torch.randperm(len(self.em_arbors))
+        patch_step = 0
+        for em_index in em_indices:
+            if patch_step == len(self.patch_arbors):
+                patch_indices = torch.randperm(len(self.patch_arbors))
+                patch_step = 0
+            patch_index = patch_indices[patch_step]
+            arbors = torch.stack([self.em_arbors[em_index], self.patch_arbors[patch_index]], 0)
+            yield arbors 
+            patch_step +=1         
+
+class EarlyStopping():
+    def __init__(self, exp_dir, patience, min_improvement_fraction):
+        self.exp_dir = exp_dir
+        self.patience = patience
+        self.frac = min_improvement_fraction
+        self.counter = 0
+        self.best_epoch = 0
+        self.min_loss = np.inf
+
+    def stop_check(self, loss, model, epoch):
+        if loss < (1 - self.frac) * self.min_loss:
+            self.counter = 0
+            self.min_loss = loss
+            torch.save(model.state_dict(), self.exp_dir / f"best_params.pt")
+            self.best_epoch = epoch
+        else:
+            self.counter += 1
+        stop = self.counter > self.patience
+        return stop
     
-def optim_aligner(aligner, classifier, optimizer, patch_arbors, norm_scale, norm_loss_frac):
+    def load_best_parameters(self, model):
+        best_state = torch.load(self.exp_dir / "best_params.pt")
+        model.load_state_dict(best_state)
+
+def optim_aligner(aligner, classifier, optimizer, patch_arbors, norm_scale, norm_loss_frac, perturb):
     optimizer.zero_grad()
-    perturbation = aligner(patch_arbors)
-    aligned_arbors = perturbation #patch_arbors + perturbation
-    norm_loss = torch.linalg.norm(perturbation - patch_arbors, dim = 1).mean() #torch.linalg.norm(perturbation, dim = 1).mean()
+    aligner_output = aligner(patch_arbors)
+    aligned_arbors = (patch_arbors + aligner_output if perturb else aligner_output)
+    norm_loss = torch.linalg.norm(aligned_arbors - patch_arbors, dim = 1).mean()
     classifier_loss = classifier.get_loss(aligned_arbors)
     loss = norm_loss_frac*norm_scale*norm_loss + (1 - norm_loss_frac)*classifier_loss
     loss.backward()
     optimizer.step()
     return (norm_loss, classifier_loss)
 
-def optim_classifier(aligner, classifier, optimizer, patch_arbors, em_arbors):
+def optim_classifier(aligner, classifier, optimizer, patch_arbors, em_arbors, perturb):
     (num_em, num_patch) = (em_arbors.shape[0], patch_arbors.shape[0])
     optimizer.zero_grad()
-    perturbation = aligner(patch_arbors)
-    aligned_arbors = perturbation #patch_arbors + perturbation
+    aligner_output = aligner(patch_arbors)
+    aligned_arbors = (patch_arbors + aligner_output if perturb else aligner_output)
     labels = torch.cat([torch.zeros(num_em), torch.ones(num_patch)]).long().to(patch_arbors.device)
     log_odds = classifier(torch.cat([em_arbors, aligned_arbors]))[:, 0]
     loss = torch.nn.functional.cross_entropy(torch.stack([-log_odds, log_odds], 1), labels)
@@ -141,22 +199,29 @@ def optim_classifier(aligner, classifier, optimizer, patch_arbors, em_arbors):
     correct = (log_odds[:num_em] < 0).int().sum() + (log_odds[num_em:] > 0).int().sum()
     return (aligned_arbors, correct)
 
-def run_validation(aligner, classifier, patch_val, em_val):
-    perturbation = aligner(patch_val)
-    aligned = patch_val + perturbation
-    correct = (classifier(patch_val) > 0).int().sum() + (classifier(em_val) > 0).int().sum()
-    norm_loss = torch.linalg.norm(perturbation, dim = 1).mean()
-    class_loss = classifier.get_loss(patch_val)
+def run_validation(aligner, classifier, patch_val, em_val, perturb):
+    aligner_output = aligner(patch_val)
+    aligned_arbors = (patch_val + aligner_output if perturb else aligner_output)
+    correct = (classifier(aligned_arbors) > 0).int().sum() + (classifier(em_val) < 0).int().sum()
+    norm_loss = torch.linalg.norm(aligned_arbors - patch_val, dim = 1).mean()
+    class_loss = classifier.get_loss(aligned_arbors)
     return (norm_loss, class_loss, correct)
 
-def fit_validators(aligned_arbors, em_arbors, val_count = 100):
-    X_train = torch.cat([em_arbors[val_count:], aligned_arbors[val_count:]]).detach().cpu().numpy()
-    X_test = torch.cat([em_arbors[:val_count], aligned_arbors[:val_count]]).detach().cpu().numpy()
-    y_train = np.concatenate([-np.ones([em_arbors.shape[0] - 100]), np.ones([aligned_arbors.shape[0] - 100])])
-    y_test = np.concatenate([-np.ones([100]), np.ones([100])])
+def fit_validators(loader, gauss_noise, aligner = None, perturb = False, val_count = 100):
+    patch_arbors = loader.dataset.patch_arbors
+    em_arbors = loader.dataset.em_arbors[:len(patch_arbors)]
+    if aligner is not None:
+        aligner_output = aligner(patch_arbors)
+        patch_arbors = (patch_arbors + aligner_output if perturb else aligner_output)
+    X_train = torch.cat([em_arbors[val_count:], patch_arbors[val_count:]]).detach().cpu().numpy()
+    X_test = torch.cat([em_arbors[:val_count], patch_arbors[:val_count]]).detach().cpu().numpy()
+    X_train = X_train + gauss_noise*np.random.normal(0, 1, X_train.shape)
+    X_test = X_test + gauss_noise*np.random.normal(0, 1, X_test.shape)
+    y_train = np.concatenate([-np.ones([em_arbors.shape[0] - val_count]), np.ones([patch_arbors.shape[0] - val_count])])
+    y_test = np.concatenate([-np.ones([val_count]), np.ones([val_count])])
     ridge_acc = RidgeClassifier(alpha = 5).fit(X_train, y_train).score(X_test, y_test)
-    forest_acc = RandomForestClassifier().fit(X_train, y_train).score(X_test, y_test)
-    mlp_acc = MLPClassifier(((300, 200, 100))).fit(X_train, y_train).score(X_test, y_test)
+    forest_acc = 1 #RandomForestClassifier().fit(X_train, y_train).score(X_test, y_test)
+    mlp_acc = MLPClassifier((300, 200, 100)).fit(X_train, y_train).score(X_test, y_test)
     return (ridge_acc, forest_acc, mlp_acc)
 
 def print_results(results, epoch):
@@ -171,69 +236,85 @@ def print_results(results, epoch):
         (ridge_acc, forest_acc, mlp_acc) = results["validators"]
         print(f"Ridge: {100*ridge_acc:.2f}% | Random Forest: {100*forest_acc:.2f}% | Neural Network: {100*mlp_acc:.2f}%")
 
-def train(aligner, classifier, train_loader, val_loader, em_arbors, em_val_arbors, epochs, aligner_lr, classifier_lr, norm_loss_frac):
+def log_tensorboard(writer, results, epoch):
+    (norm, entropy) = results["metrics"][:2] / results["count"][0]
+    acc = results["metrics"][2] / results["count"].sum()
+    (val_norm, val_entropy) = results["val_metrics"][:2] / results["val_count"][0]
+    val_acc = results["val_metrics"][2] / results["val_count"].sum()
+    writer.add_scalars("norm", {"train": norm, "val": val_norm}, epoch)
+    writer.add_scalars("class loss", {"train": entropy, "val": val_entropy}, epoch)
+    writer.add_scalars("acc", {"train": acc, "val": val_acc}, epoch)
+    if "validators" in results:
+        (ridge_acc, forest_acc, mlp_acc) = results["validators"]
+        writer.add_scalars("validators", {"ridge": ridge_acc, "forest": forest_acc, "mlp": mlp_acc}, epoch)
+
+def write_baseline(writer, loader, gauss_noise, aligner = None, perturb = False, val_count = 100):
+    (ridge_acc, forest_acc, mlp_acc) = fit_validators(loader, gauss_noise, aligner, perturb, val_count)
+    writer.add_scalars("validator baseline", {"ridge": ridge_acc, "forest": forest_acc, "mlp": mlp_acc})
+
+def train(aligner, classifier, train_loader, val_loader, params):
+    writer = SummaryWriter(params["dir"], flush_secs = 1)
+    # stopper = EarlyStopping(params["dir"], params["patience"], params["delta"])
     norm_scale = 1
-    aligner_optimizer = torch.optim.Adam(aligner.parameters(), lr = aligner_lr)
-    classifier_optimizer = torch.optim.Adam(classifier.parameters(), lr = classifier_lr)
-    all_results = []
-    for epoch in range(epochs):
+    aligner_optimizer = torch.optim.Adam(aligner.parameters(), lr = params["aligner_lr"])
+    classifier_optimizer = torch.optim.Adam(classifier.parameters(), lr = params["classifier_lr"])
+    write_baseline(writer, train_loader, params["gauss_noise"])
+    for epoch in range(params["epochs"]):
+        print(f"Epoch: {epoch + 1}", end = "\r")
         epoch_results = {"count": np.zeros([2]), "metrics": np.zeros([3]), "val_count": np.zeros([2]), "val_metrics": np.zeros([3])}
-        for (step, (patch_arbors, specimen_ids)) in enumerate(iter(train_loader), 1):
-            (norm_loss, classifier_loss) = optim_aligner(aligner, classifier, aligner_optimizer, 
-                                                                       patch_arbors, norm_scale, norm_loss_frac)
-            (aligned_arbors, correct) = optim_classifier(aligner, classifier, classifier_optimizer, patch_arbors, em_arbors)
+        for arbors in iter(train_loader):
+            (em_arbors, patch_arbors) = (arbors[:, 0], arbors[:, 1])
+            (norm_loss, classifier_loss) = optim_aligner(aligner, classifier, aligner_optimizer, patch_arbors, norm_scale, params["norm_loss_frac"], params["perturb"])
+            (aligned_arbors, correct) = optim_classifier(aligner, classifier, classifier_optimizer, patch_arbors, em_arbors, params["perturb"])
             with torch.no_grad():
                 norm_scale = (classifier_loss / norm_loss if (type(norm_scale) == int) else norm_scale)
             epoch_results["metrics"] += np.asarray([norm_loss.item()*patch_arbors.shape[0], classifier_loss.item()*patch_arbors.shape[0], correct.item()])
             epoch_results["count"] += np.asarray([patch_arbors.shape[0], em_arbors.shape[0]])
         with torch.no_grad():
-            for (val_arbors, _) in iter(val_loader):
-                (val_norm_loss, val_classifier_loss, val_correct) = run_validation(aligner, classifier, val_arbors, em_val_arbors)
-                epoch_results["val_metrics"] += np.asarray([val_norm_loss.item()*val_arbors.shape[0], val_classifier_loss.item()*val_arbors.shape[0], val_correct.item()])
-                epoch_results["val_count"] += np.asarray([val_arbors.shape[0], em_val_arbors.shape[0]])
-            if epoch % 1000 == 0 or epoch + 1 == epochs:
-                epoch_results["validators"] = fit_validators(aligned_arbors, em_arbors)
-        all_results.append(epoch_results)
-        print_results(epoch_results, epoch + 1)
-    return all_results
+            for val_arbors in iter(val_loader):
+                (em_val_arbors, patch_val_arbors) = (val_arbors[:, 0], val_arbors[:, 1])
+                (val_norm_loss, val_classifier_loss, val_correct) = run_validation(aligner, classifier, patch_val_arbors, em_val_arbors, params["perturb"])
+                epoch_results["val_metrics"] += np.asarray([val_norm_loss.item()*patch_val_arbors.shape[0], val_classifier_loss.item()*patch_val_arbors.shape[0], val_correct.item()])
+                epoch_results["val_count"] += np.asarray([patch_val_arbors.shape[0], em_val_arbors.shape[0]])
+            if epoch % params["validator_step"] == 0 or epoch + 1 == params["epochs"]:
+                epoch_results["validators"] = fit_validators(train_loader, params["gauss_noise"], aligner, params["perturb"])
+        # if stopper.stop_check(epoch_results, aligner, classifier, epoch) or (epoch + 1 == params["epochs"]):
+        #     stopper.load_best_parameters(aligner, classifier)
+        log_tensorboard(writer, epoch_results, epoch + 1)
+    writer.flush()
+    writer.close()
+    print("")
 
-device = "mps"
-num_epochs = 30000
-batch_size = 2048
-aligner_hidden_dims = (960, 960, 960, 960, 960) #(100, 10, 100)
+device = "cuda"
+activation = "softplus"
+aligner_hidden_dims = (100, 10, 100)
 classifier_hidden_dims = (100,)
-aligner_lr = 1e-4
-classifier_lr = 1e-5
-norm_loss_frac = 1
+batch_size = 1024
+oversample = True
 
-(arbors, anno_unnorm, anno_samp) = load_raw_data()
-anno_exc = anno_samp.query("`class` == 'exc'")
-X_exc = select(arbors, anno_exc)[..., 2:].reshape((-1, 960))
-y_exc = np.where(anno_exc["platform"] == "EM", 0, 1)
+params = dict(
+    dir = "data/alignment/logs/oversample",
+    perturb = False,
+    gauss_noise = 0.0,
+    epochs = 5000,
+    aligner_lr = 1e-4,
+    classifier_lr = 1e-5,
+    norm_loss_frac = 0.9,
+    validator_step = 10)
 
-(X_train, X_test, y_train, y_test) = train_test_split(X_exc, y_exc)
-(X_patch_test, y_patch_test) = (X_test[y_test == 1], y_test[y_test == 1])
-(X_em_train, X_em_test) = (X_train[y_train == 0], X_test[y_test == 0])
+(em_arbors, patch_arbors) = load_raw_data()
+(X_em_train, X_em_test) = train_test_split(em_arbors, test_size = 0.25)
+(X_patch_train, X_patch_test) = train_test_split(patch_arbors, test_size = 0.25)
+if not oversample:
+    X_em_train = X_em_train[:len(X_patch_train)]
+    X_em_test = X_em_test[:len(X_patch_test)]
 
-train_dataset = ExcDataset(X_train[y_train == 1], y_train[y_train == 1], device)
-train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size, shuffle = True)
-val_dataset = ExcDataset(X_test[y_test == 1], y_test[y_test == 1], device)
-val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size = 1024)
+train_dataset = ArborDataset(X_em_train, X_patch_train, device)
+train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)
+val_dataset = ArborDataset(X_em_test, X_patch_test, device)
+val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size = batch_size)
 
-aligner = Aligner(classifier_hidden_dims)
-classifier = Classifier(classifier_hidden_dims)
+aligner = Aligner(classifier_hidden_dims, activation)
+classifier = Classifier(classifier_hidden_dims, params["gauss_noise"])
 
-results = train(aligner.float().to(device), classifier.float().to(device), train_dataloader, val_dataloader, 
-                torch.from_numpy(X_em_train).float().to(device), torch.from_numpy(X_em_test).float().to(device), 
-                num_epochs, aligner_lr, classifier_lr, norm_loss_frac)
-
-accs = [(epoch, result_dict["validators"]) for (epoch, result_dict) in enumerate(results, 1) if "validators" in result_dict]
-epochs = [epoch for (epoch, _) in accs]
-(ridge_accs, forest_accs, mlp_accs) = ([tupl[1][0] for tupl in accs], [tupl[1][1] for tupl in accs], [tupl[1][2] for tupl in accs])
-plt.plot(epochs, ridge_accs, label = "Ridge")
-plt.plot(epochs, forest_accs, label = "Random Forest")
-plt.plot(epochs, mlp_accs, label = "Neural Network")
-plt.legend()
-plt.xlabel("Epoch")
-plt.ylabel("EM + Patch-seq Accuracy")
-plt.show()
+train(aligner.float().to(device), classifier.float().to(device), train_dataloader, val_dataloader, params)
