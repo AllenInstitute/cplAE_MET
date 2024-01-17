@@ -120,38 +120,17 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
     x_dict["xt"] = torch.cat(x_dict["xt"])
     x_dict["xe"] = torch.cat(x_dict["xe"])
     x_dict["xm"] = torch.cat(x_dict["xm"])
-            
-    z_dict["zt"] = torch.cat(z_dict["zt"])
-    z_dict["ze"] = torch.cat(z_dict["ze"])
-    z_dict["zm"] = torch.cat(z_dict["zm"])
-    z_dict["zme_paired"] = torch.cat(z_dict["zme_paired"])
-
-    xr_dict["xrt"] = torch.cat(xr_dict["xrt"])
-    xr_dict["xre"] = torch.cat(xr_dict["xre"])
-    xr_dict["xrm"] = torch.cat(xr_dict["xrm"])
-    xr_dict["xrm_me_paired"] = torch.cat(xr_dict["xrm_me_paired"])
-    xr_dict["xre_me_paired"] = torch.cat(xr_dict["xre_me_paired"])
-
-
-      
-    # zm_int_from_zt = model.ae_m.dec_zm_to_zm_int(z_dict['zt'])
-    # xrm_from_zt = model.ae_m.dec_zm_int_to_xm(zm_int_from_zt, model.me_m_encoder.pool_0_ind,
-    #                                       self.me_m_encoder.pool_1_ind)
     
-    # zm_int_from_ze = model.ae_m.dec_zm_to_zm_int(z_dict['ze'])
-    # xrm_from_ze = model.ae_m.dec_zm_int_to_xm(zm_int_from_ze)
+    z_dict["zt"] = torch.cat(z_dict["zt"]) if z_dict["zt"] else torch.zeros([1])
+    z_dict["ze"] = torch.cat(z_dict["ze"])if z_dict["ze"] else torch.zeros([1])
+    z_dict["zm"] = torch.cat(z_dict["zm"])if z_dict["zm"] else torch.zeros([1])
+    z_dict["zme_paired"] = torch.cat(z_dict["zme_paired"]) if z_dict["zme_paired"] else torch.zeros([1])
 
-    # rec_arbor_density =  tonumpy(xr_dict['xrm'])
-    # rec_arbor_density_from_zt = tonumpy(xr_dict['xrm'])
-    # rec_arbor_density_from_ze = tonumpy(xr_dict['xrm'])
-    # rec_arbor_density = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xr_dict['xrm']), input_datamat=input_datamat)
-    # rec_arbor_density_from_zt = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_zt), input_datamat=input_datamat)
-    # rec_arbor_density_from_ze = calculate_arbor_densities_from_nmfs(rec_nmf = tonumpy(xrm_from_ze), input_datamat=input_datamat)
-
-    # rec_arbor_density = calculate_arbor_densities(tonumpy(xr_dict['xrm']))
-    # rec_arbor_density_from_zt = calculate_arbor_densities(tonumpy(xrm_from_zt))
-    # rec_arbor_density_from_ze = calculate_arbor_densities(tonumpy(xrm_from_ze))
-
+    xr_dict["xrt"] = torch.cat(xr_dict["xrt"]) if xr_dict["xrt"] else torch.zeros([1])
+    xr_dict["xre"] = torch.cat(xr_dict["xre"]) if xr_dict["xre"] else torch.zeros([1])
+    xr_dict["xrm"] = torch.cat(xr_dict["xrm"]) if xr_dict["xrm"] else torch.zeros([1])
+    xr_dict["xrm_me_paired"] = torch.cat(xr_dict["xrm_me_paired"]) if xr_dict["xrm_me_paired"] else torch.zeros([1])
+    xr_dict["xre_me_paired"] = torch.cat(xr_dict["xre_me_paired"]) if xr_dict["xre_me_paired"] else torch.zeros([1])
         
     savedict = {'XT': tonumpy(x_dict['xt']),
                 'XM': tonumpy(x_dict['xm']),
@@ -161,9 +140,6 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
                 'XrM': tonumpy(xr_dict['xrm']),
                 'XrM_me_paired': tonumpy(xr_dict['xrm_me_paired']),
                 'XrE_me_paired': tonumpy(xr_dict['xre_me_paired']),
-                # 'rec_arbor_density': rec_arbor_density,
-                # 'rec_arbor_density_from_zt': rec_arbor_density_from_zt,
-                # 'rec_arbor_density_from_ze': rec_arbor_density_from_ze,
                 'zm': tonumpy(z_dict['zm']),
                 'ze': tonumpy(z_dict['ze']),
                 'zt': tonumpy(z_dict['zt']),
@@ -189,21 +165,8 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
                 'group': input_datamat['group'],
                 'subgroup': input_datamat['subgroup'],
                 'hist_ax_de_api_bas' : input_datamat['hist_ax_de_api_bas'],
-                # 'M_nmf_total_vars_ax': input_datamat['M_nmf_total_vars_ax'],
-                # 'M_nmf_total_vars_de': input_datamat['M_nmf_total_vars_de'],
-                # 'M_nmf_total_vars_api': input_datamat['M_nmf_total_vars_api'],
-                # 'M_nmf_total_vars_bas': input_datamat['M_nmf_total_vars_bas'],
-                # 'M_nmf_components_ax': input_datamat['M_nmf_components_ax'],
-                # 'M_nmf_components_de': input_datamat['M_nmf_components_de'],
-                # 'M_nmf_components_api': input_datamat['M_nmf_components_api'],
-                # 'M_nmf_components_bas': input_datamat['M_nmf_components_bas'],
-                # 'M_nmf_total_vars_inh': input_datamat['M_nmf_total_vars_inh'],
-                # 'M_nmf_total_vars_exc': input_datamat['M_nmf_total_vars_exc'],
-                # 'M_nmf_components_inh': input_datamat['M_nmf_components_inh'],
-                # 'M_nmf_components_exc': input_datamat['M_nmf_components_exc'],
                 'train_ind': train_ind,
                 'val_ind': val_ind}
-
     savepkl(savedict, fname)
     model.train()
     return

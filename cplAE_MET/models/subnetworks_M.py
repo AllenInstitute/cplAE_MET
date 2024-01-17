@@ -119,17 +119,17 @@ class Dec_zm_int_to_xm(nn.Module):
         x = self.elu(self.unpool_0(x, enc_pool_1_ind))
         x = self.convT_0(x)
         x = self.elu(self.unpool_1(x, enc_pool_0_ind))
-        xrm = self.relu(self.convT_1(x))
+        xrm = torch.nn.functional.softplus(self.convT_1(x))
         return xrm
 
 
 class AE_M(nn.Module):
     def __init__(self, config):
         super(AE_M, self).__init__()
-        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(config["combine"], 10, config["gauss_m_baseline"], config["gauss_var_frac"])
+        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(config["combine_types"], 10, config["gauss_m_baseline"], config["gauss_var_frac"])
         self.enc_zm_int_to_zm = Enc_zm_int_to_zm(10, config['latent_dim'], variational = False)
         self.dec_zm_to_zm_int = Dec_zm_to_zm_int(config['latent_dim'], 10)
-        self.dec_zm_int_to_xm = Dec_zm_int_to_xm(config["combine"], 10)
+        self.dec_zm_int_to_xm = Dec_zm_int_to_xm(config["combine_types"], 10)
         self.variational = False
         return
 

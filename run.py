@@ -54,7 +54,11 @@ def clear_experiment(exp_dir):
     tensorboard_path = exp_dir / "tn_board"
     if tensorboard_path.exists():
         for path in tensorboard_path.iterdir():
-            path.unlink()
+            if path.is_file():
+                path.unlink()
+            else:
+                for path2 in path.iterdir():
+                    path2.unlink()
 
 if __name__ == "__main__":
     # Experiment name and path to the config YAML file must be provided.
@@ -71,10 +75,10 @@ if __name__ == "__main__":
     # The specific Python file to be run depends on the experiment type.
     if config["experiment"] == "morphology":
         python_file = "train_morphology.py"
-    elif config["experiment"] == "met":
-        python_file = "train_simplified.py"
-    else:
+    elif set(config["experiment"]) - set("met"):
         raise ValueError(f'''Experiment "{config['experiment']}" not recognized.''')
+    else:
+        python_file = "train.py"
     
     # Define directory for experiment outputs and check if it already exists.
     exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name

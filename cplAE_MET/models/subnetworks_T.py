@@ -70,7 +70,7 @@ class AE_T(nn.Module):
     def __init__(self, config):
         super(AE_T, self).__init__()
         self.enc_xt_to_zt = Enc_xt_to_zt(
-            config['dropout'], 10, config['latent_dim'], variational = False)
+            config['dropout'], 1252, config['latent_dim'], variational = False)
         self.dec_zt_to_xt = Dec_zt_to_xt(config['latent_dim'], 1252)
         self.variational = False
         return

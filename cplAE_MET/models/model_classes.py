@@ -26,8 +26,8 @@ class Model_ME_T_conv(nn.Module):
             model_config["gauss_e_baseline"], model_config["gauss_var_frac"], model_config["dropout"])
         self.me_e_decoder = Dec_ze_int_to_xe()
         self.me_m_encoder = Enc_xm_to_zm_int(
-            model_config["combine"], 10, model_config["gauss_m_baseline"], model_config["gauss_var_frac"])
-        self.me_m_decoder = Dec_zm_int_to_xm(model_config["combine"])
+            model_config["combine_types"], 10, model_config["gauss_m_baseline"], model_config["gauss_var_frac"])
+        self.me_m_decoder = Dec_zm_int_to_xm(model_config["combine_types"])
         self.variational = False
 
     def compute_rec_loss(self, x, xr, valid_x, is_x_1d):
@@ -121,7 +121,7 @@ class Model_ME_T_conv(nn.Module):
     
 class MultiModal(nn.Module):
     def __init__(self, model_config):
-        super(Model_ME_T_conv, self).__init__()
+        super().__init__()
         modal_string = model_config["experiment"]
         self.ae_t = AE_T(config=model_config) if "t" in modal_string else None
         self.ae_e = AE_E(config=model_config) if "e" in modal_string else None
