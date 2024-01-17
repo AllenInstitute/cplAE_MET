@@ -50,7 +50,6 @@ class EarlyStopping():
         return stop
     
     def load_best_parameters(self, model):
-        print("Run")
         best_state = torch.load(self.exp_dir / "best_params.pt")
         model.load_state_dict(best_state)
 

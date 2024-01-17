@@ -196,7 +196,9 @@ class MultiModal(nn.Module):
                 loss_dict['rec_e_me'] = self.compute_rec_loss(X["xe"][is_me_1d, ...], xre_me_paired[is_me_1d, ...], X["valid_xe"][is_me_1d, ...], is_me_1d)
                 loss_dict['rec_m_me'] = self.compute_rec_loss(X["xm"][is_me_1d, ...], xrm_me_paired[is_me_1d, ...], X["valid_xm"][is_me_1d, ...], is_me_1d)
                 loss_dict['rec_e_me'] = self.compute_rec_loss(X["xe"][is_me_1d, ...], xre_me_paired[is_me_1d, ...], X["valid_xe"][is_me_1d, ...], is_me_1d)
-                if self.ae_t is None:
+                loss_dict['cpl_me->m'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), zm[is_me_1d, ...])
+                loss_dict['cpl_me->e'] = self.compute_cpl_loss(zme_paired[is_me_1d, ...].detach(), ze[is_me_1d, ...])
+                if self.ae_t is not None:
                     loss_dict['cpl_me->t'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...].detach(), zt[is_met_1d, ...])
                     loss_dict['cpl_t->me'] = self.compute_cpl_loss(zme_paired[is_met_1d, ...], zt[is_met_1d, ...].detach())
         if self.ae_m is not None:
