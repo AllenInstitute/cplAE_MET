@@ -1,4 +1,7 @@
 import contextlib
+import argparse
+import yaml
+import pathlib
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -40,10 +43,10 @@ def normalize_sample_count(exp1, exp2, anno):
     anno_samp = pd.concat([exp1_exc, exp1_inh, exp2_exc, exp2_inh])
     return (unnormalized, anno_samp)
 
-def load_raw_data():
-    anno_full = pd.read_csv("data/raw/exc_inh_ME_fMOST_EM_specimen_ids_shuffled_4Apr23.txt").rename(columns = {"Unnamed: 0": "row_index"})
+def load_raw_data(config):
+    anno_full = pd.read_csv(config["annotation_file"]).rename(columns = {"Unnamed: 0": "row_index"})
     anno_full["specimen_id"] = anno_full["specimen_id"].str.strip()
-    arbor_dict = sio.loadmat("data/raw/M_arbor_data_50k_4Apr23.mat")
+    arbor_dict = sio.loadmat(config["arbor_file"])
     arbors = align(arbor_dict["hist_ax_de_api_bas"], arbor_dict["specimen_id"], anno_full)
     anno = anno_full.query("M_cell")
     (exp1, exp2) = ("EM", "patchseq")
@@ -131,7 +134,6 @@ class ExcDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return (self.X[idx], self.y[idx])
 
-
 class ArborDataset(torch.utils.data.IterableDataset):
     def __init__(self, em_arbors, patch_arbors, device):
         super().__init__()
@@ -158,22 +160,26 @@ class EarlyStopping():
         self.frac = min_improvement_fraction
         self.counter = 0
         self.best_epoch = 0
-        self.min_loss = np.inf
+        self.min_acc = 100
 
-    def stop_check(self, loss, model, epoch):
-        if loss < (1 - self.frac) * self.min_loss:
+    def stop_check(self, results, aligner, classifier, epoch):
+        ridge_acc = results.get("validators", (0,))[0]
+        if ridge_acc < (1 - self.frac) * self.min_acc:
             self.counter = 0
-            self.min_loss = loss
-            torch.save(model.state_dict(), self.exp_dir / f"best_params.pt")
+            self.max_acc = ridge_acc
+            torch.save(aligner.state_dict(), self.exp_dir / "aligner_best_params.pt")
+            torch.save(classifier.state_dict(), self.exp_dir / "classifier_best_params.pt")
             self.best_epoch = epoch
         else:
             self.counter += 1
         stop = self.counter > self.patience
         return stop
     
-    def load_best_parameters(self, model):
-        best_state = torch.load(self.exp_dir / "best_params.pt")
-        model.load_state_dict(best_state)
+    def load_best_parameters(self, aligner, classifier):
+        aligner_best_state = torch.load(self.exp_dir / "aligner_best_params.pt")
+        aligner.load_state_dict(aligner_best_state)
+        classifier_best_state = torch.load(self.exp_dir / "classifier_best_params.pt")
+        classifier.load_state_dict(classifier_best_state)
 
 def optim_aligner(aligner, classifier, optimizer, patch_arbors, norm_scale, norm_loss_frac, perturb):
     optimizer.zero_grad()
@@ -252,20 +258,20 @@ def write_baseline(writer, loader, gauss_noise, aligner = None, perturb = False,
     (ridge_acc, forest_acc, mlp_acc) = fit_validators(loader, gauss_noise, aligner, perturb, val_count)
     writer.add_scalars("validator baseline", {"ridge": ridge_acc, "forest": forest_acc, "mlp": mlp_acc})
 
-def train(aligner, classifier, train_loader, val_loader, params):
-    writer = SummaryWriter(params["dir"], flush_secs = 1)
-    # stopper = EarlyStopping(params["dir"], params["patience"], params["delta"])
+def train_loop(aligner, classifier, train_loader, val_loader, config, exp_dir):
+    writer = SummaryWriter(exp_dir / "tn_board", flush_secs = 1)
+    stopper = EarlyStopping(exp_dir, config["patience"], config["improvement_frac"])
+    aligner_optimizer = torch.optim.Adam(aligner.parameters(), config["aligner_lr"])
+    classifier_optimizer = torch.optim.Adam(classifier.parameters(), config["classifier_lr"])
+    write_baseline(writer, train_loader, config["gauss_noise"])
     norm_scale = 1
-    aligner_optimizer = torch.optim.Adam(aligner.parameters(), lr = params["aligner_lr"])
-    classifier_optimizer = torch.optim.Adam(classifier.parameters(), lr = params["classifier_lr"])
-    write_baseline(writer, train_loader, params["gauss_noise"])
-    for epoch in range(params["epochs"]):
+    for epoch in range(config["num_epochs"]):
         print(f"Epoch: {epoch + 1}", end = "\r")
         epoch_results = {"count": np.zeros([2]), "metrics": np.zeros([3]), "val_count": np.zeros([2]), "val_metrics": np.zeros([3])}
         for arbors in iter(train_loader):
             (em_arbors, patch_arbors) = (arbors[:, 0], arbors[:, 1])
-            (norm_loss, classifier_loss) = optim_aligner(aligner, classifier, aligner_optimizer, patch_arbors, norm_scale, params["norm_loss_frac"], params["perturb"])
-            (aligned_arbors, correct) = optim_classifier(aligner, classifier, classifier_optimizer, patch_arbors, em_arbors, params["perturb"])
+            (norm_loss, classifier_loss) = optim_aligner(aligner, classifier, aligner_optimizer, patch_arbors, norm_scale, config["norm_loss_frac"], config["perturb"])
+            (aligned_arbors, correct) = optim_classifier(aligner, classifier, classifier_optimizer, patch_arbors, em_arbors, config["perturb"])
             with torch.no_grad():
                 norm_scale = (classifier_loss / norm_loss if (type(norm_scale) == int) else norm_scale)
             epoch_results["metrics"] += np.asarray([norm_loss.item()*patch_arbors.shape[0], classifier_loss.item()*patch_arbors.shape[0], correct.item()])
@@ -273,48 +279,44 @@ def train(aligner, classifier, train_loader, val_loader, params):
         with torch.no_grad():
             for val_arbors in iter(val_loader):
                 (em_val_arbors, patch_val_arbors) = (val_arbors[:, 0], val_arbors[:, 1])
-                (val_norm_loss, val_classifier_loss, val_correct) = run_validation(aligner, classifier, patch_val_arbors, em_val_arbors, params["perturb"])
+                (val_norm_loss, val_classifier_loss, val_correct) = run_validation(aligner, classifier, patch_val_arbors, em_val_arbors, config["perturb"])
                 epoch_results["val_metrics"] += np.asarray([val_norm_loss.item()*patch_val_arbors.shape[0], val_classifier_loss.item()*patch_val_arbors.shape[0], val_correct.item()])
                 epoch_results["val_count"] += np.asarray([patch_val_arbors.shape[0], em_val_arbors.shape[0]])
-            if epoch % params["validator_step"] == 0 or epoch + 1 == params["epochs"]:
-                epoch_results["validators"] = fit_validators(train_loader, params["gauss_noise"], aligner, params["perturb"])
-        # if stopper.stop_check(epoch_results, aligner, classifier, epoch) or (epoch + 1 == params["epochs"]):
-        #     stopper.load_best_parameters(aligner, classifier)
+            if epoch % config["validator_step"] == 0 or epoch + 1 == config["num_epochs"]:
+                epoch_results["validators"] = fit_validators(train_loader, config["gauss_noise"], aligner, config["perturb"])
+        if stopper.stop_check(epoch_results, aligner, classifier, epoch) or (epoch + 1 == config["num_epochs"]):
+            stopper.load_best_parameters(aligner, classifier)
         log_tensorboard(writer, epoch_results, epoch + 1)
     writer.flush()
     writer.close()
     print("")
 
-device = "cuda"
-activation = "softplus"
-aligner_hidden_dims = (100, 10, 100)
-classifier_hidden_dims = (100,)
-batch_size = 1024
-oversample = True
+def train(config, exp_dir):
+    (em_arbors, patch_arbors) = load_raw_data(config)
+    (X_em_train, X_em_test) = train_test_split(em_arbors, test_size = 0.25)
+    (X_patch_train, X_patch_test) = train_test_split(patch_arbors, test_size = 0.25)
+    if not config["oversample"]:
+        X_em_train = X_em_train[:len(X_patch_train)]
+        X_em_test = X_em_test[:len(X_patch_test)]
+    device = config["device"]
+    batch_size = config["batch_size"]
+    train_dataset = ArborDataset(X_em_train, X_patch_train, device)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)
+    val_dataset = ArborDataset(X_em_test, X_patch_test, device)
+    val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size = batch_size)
 
-params = dict(
-    dir = "data/alignment/logs/oversample",
-    perturb = False,
-    gauss_noise = 0.0,
-    epochs = 5000,
-    aligner_lr = 1e-4,
-    classifier_lr = 1e-5,
-    norm_loss_frac = 0.9,
-    validator_step = 10)
+    aligner = Aligner(config["aligner_hidden_dims"], config["activation"]).float().to(device)
+    classifier = Classifier(config["classifier_hidden_dims"], config["gauss_noise"]).float().to(device)
 
-(em_arbors, patch_arbors) = load_raw_data()
-(X_em_train, X_em_test) = train_test_split(em_arbors, test_size = 0.25)
-(X_patch_train, X_patch_test) = train_test_split(patch_arbors, test_size = 0.25)
-if not oversample:
-    X_em_train = X_em_train[:len(X_patch_train)]
-    X_em_test = X_em_test[:len(X_patch_test)]
+    train_loop(aligner, classifier, train_dataloader, val_dataloader, config, exp_dir)
 
-train_dataset = ArborDataset(X_em_train, X_patch_train, device)
-train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)
-val_dataset = ArborDataset(X_em_test, X_patch_test, device)
-val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size = batch_size)
-
-aligner = Aligner(classifier_hidden_dims, activation)
-classifier = Classifier(classifier_hidden_dims, params["gauss_noise"])
-
-train(aligner.float().to(device), classifier.float().to(device), train_dataloader, val_dataloader, params)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("exp_name", help = "Name of experiment.")
+    parser.add_argument("config_path", help = "Path to config YAML file.")
+    args = parser.parse_args()
+    with open(args.config_path, "r") as target:
+        config = yaml.safe_load(target)
+    exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name
+    exp_dir.mkdir(exist_ok = True)
+    train(config, exp_dir)

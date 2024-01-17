@@ -171,7 +171,7 @@ def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, trai
 
 def train_model(config, exp_dir):
     (dat, D) = MET_exc_inh.from_file(config["data_file"])
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = config["device"]
     (train_ind, val_ind, train_dataloader, val_dataloader, full_dataloader) = get_dataloaders(dat, device)
     model = build_model(config, train_dataloader.dataset)
     optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])

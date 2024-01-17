@@ -75,6 +75,8 @@ if __name__ == "__main__":
     # The specific Python file to be run depends on the experiment type.
     if config["experiment"] == "morphology":
         python_file = "train_morphology.py"
+    elif config["experiment"] == "align":
+        python_file = "alignment.py"
     elif set(config["experiment"]) - set("met"):
         raise ValueError(f'''Experiment "{config['experiment']}" not recognized.''')
     else:

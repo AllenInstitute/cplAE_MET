@@ -1,0 +1,37 @@
+---
+# Config file for Patch-seq -> EM alignment model
+
+# Set paths
+annotation_file: data/raw/exc_inh_ME_fMOST_EM_specimen_ids_shuffled_4Apr23.txt
+arbor_file: data/raw/M_arbor_data_50k_4Apr23.mat
+output_dir: data/align   # Location to save training results (new folder will be created within output_dir)
+
+# Set experiment properties:
+experiment: align
+activation: softplus
+aligner_hidden_dims: [100]
+classifier_hidden_dims: [100]
+oversample: False
+perturb: False
+num_epochs: 25000 
+batch_size: 1024 
+gauss_noise: 0.0
+aligner_lr: 0.0001
+classifier_lr: 0.00001
+norm_loss_frac: 0.9
+patience: 25000
+improvement_frac: 0.1
+validator_step: 10
+
+# Set SLURM parameters:
+partition: 'celltypes'
+cpus: 8
+gpus: 1
+nodes: 1
+memory: '20g'
+time: '100:00:00'
+directory: '/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Ian/code/cplAE_MET'
+conda: 'cplae'
+
+# Set local parameters:
+device: "mps"

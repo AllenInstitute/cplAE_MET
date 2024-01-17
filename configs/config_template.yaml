@@ -41,3 +41,6 @@ memory: '20g'
 time: '100:00:00'
 directory: '/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Ian/code/cplAE_MET'
 conda: 'cplae'
+
+# Set local parameters:
+device: "mps"
