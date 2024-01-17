@@ -133,5 +133,4 @@ if __name__ == "__main__":
         config = yaml.safe_load(target)
     exp_path = pathlib.Path(config["output_dir"]) / args.exp_name
     exp_path.mkdir(exist_ok = True)
-    print(f'\nRunning experiment "{args.exp_name}":\n')
     train_model(config, exp_path)

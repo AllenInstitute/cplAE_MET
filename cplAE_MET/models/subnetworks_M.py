@@ -126,11 +126,11 @@ class Dec_zm_int_to_xm(nn.Module):
 class AE_M(nn.Module):
     def __init__(self, config):
         super(AE_M, self).__init__()
-        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(config["combine"], gnoise_std=config['M']['gnoise_std'], gnoise_std_frac=config['M']['gnoise_std_frac'])
-        self.enc_zm_int_to_zm = Enc_zm_int_to_zm(out_dim=config['latent_dim'], variational=config['variational'])
-        self.dec_zm_to_zm_int = Dec_zm_to_zm_int(in_dim=config['latent_dim'])
-        self.dec_zm_int_to_xm = Dec_zm_int_to_xm(config["combine"])
-        self.variational = config['variational']
+        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(config["combine"], 10, config["gauss_m_baseline"], config["gauss_var_frac"])
+        self.enc_zm_int_to_zm = Enc_zm_int_to_zm(10, config['latent_dim'], variational = False)
+        self.dec_zm_to_zm_int = Dec_zm_to_zm_int(config['latent_dim'], 10)
+        self.dec_zm_int_to_xm = Dec_zm_int_to_xm(config["combine"], 10)
+        self.variational = False
         return
 
     def forward(self, xm):

@@ -99,16 +99,19 @@ def save_results(model, dataloader, input_datamat, fname, train_ind, val_ind):
 
             _, z_di, xr_di = model(batch)
             
-            z_dict["zt"].append(z_di["zt"])
-            z_dict["ze"].append(z_di["ze"])
-            z_dict["zm"].append(z_di["zm"])
-            z_dict["zme_paired"].append(z_di["zme_paired"])
-
-            xr_dict["xrt"].append(xr_di["xrt"])
-            xr_dict["xre"].append(xr_di["xre"])
-            xr_dict["xrm"].append(xr_di["xrm"])
-            xr_dict["xrm_me_paired"].append(xr_di["xrm_me_paired"])
-            xr_dict["xre_me_paired"].append(xr_di["xre_me_paired"])
+            if model.ae_t is not None:
+                z_dict["zt"].append(z_di["zt"])
+                xr_dict["xrt"].append(xr_di["xrt"])
+            if model.ae_e is not None:
+                z_dict["ze"].append(z_di["ze"])
+                xr_dict["xre"].append(xr_di["xre"])
+            if model.ae_m is not None:
+                z_dict["zm"].append(z_di["zm"])
+                xr_dict["xrm"].append(xr_di["xrm"])
+                if model.ae_e is not None:
+                    z_dict["zme_paired"].append(z_di["zme_paired"])
+                    xr_dict["xrm_me_paired"].append(xr_di["xrm_me_paired"])
+                    xr_dict["xre_me_paired"].append(xr_di["xre_me_paired"])
             
     is_1d['is_t_1d'] = torch.cat(is_1d['is_t_1d'])
     is_1d['is_e_1d'] = torch.cat(is_1d['is_e_1d'])
@@ -225,16 +228,16 @@ def optimizer_to(optim, device):
 def Criterion(model_config, loss_dict):
     ''' Loss function for the autoencoder'''
 
-    criterion = model_config['M']['alpha_M'] * loss_dict['rec_m']  + \
-                model_config['E']['alpha_E'] * loss_dict['rec_e'] + \
-                model_config['T']['alpha_T'] * loss_dict['rec_t'] + \
-                model_config['ME']['alpha_ME'] * (loss_dict['rec_m_me'] + loss_dict['rec_e_me']) + \
-                model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_T_E'] * loss_dict['cpl_t->e'] + \
-                model_config['TE']['lambda_TE'] * model_config['TE']['lambda_tune_E_T'] * loss_dict['cpl_e->t'] + \
-                model_config['TM']['lambda_TM'] * model_config['TM']['lambda_tune_T_M'] * loss_dict['cpl_t->m'] + \
-                model_config['TM']['lambda_TM'] * model_config['TM']['lambda_tune_M_T'] * loss_dict['cpl_m->t'] + \
-                model_config['ME_T']['lambda_ME_T'] * model_config['ME_T']['lambda_tune_T_ME'] * loss_dict['cpl_t->me'] + \
-                model_config['ME_T']['lambda_ME_T'] * model_config['ME_T']['lambda_tune_ME_T'] * loss_dict['cpl_me->t'] + \
-                model_config['ME_M']['lambda_ME_M'] * model_config['ME_M']['lambda_tune_ME_M'] * loss_dict['cpl_me->m'] + \
-                model_config['ME_E']['lambda_ME_E'] * model_config['ME_E']['lambda_tune_ME_E'] * loss_dict['cpl_me->e']   
+    criterion = model_config['alpha_M'] * loss_dict.get('rec_m', 0)  + \
+                model_config['alpha_E'] * loss_dict.get('rec_e', 0) + \
+                model_config['alpha_T'] * loss_dict.get('rec_t', 0) + \
+                model_config['alpha_ME'] * (loss_dict.get('rec_m_me', 0) + loss_dict.get('rec_e_me', 0)) + \
+                model_config['lambda_T_E'] * loss_dict.get('cpl_t->e', 0) + \
+                model_config['lambda_E_T'] * loss_dict.get('cpl_e->t', 0) + \
+                model_config['lambda_T_M'] * loss_dict.get('cpl_t->m', 0) + \
+                model_config['lambda_M_T'] * loss_dict.get('cpl_m->t', 0) + \
+                model_config['lambda_T_ME'] * loss_dict.get('cpl_t->me', 0) + \
+                model_config['lambda_ME_T'] * loss_dict.get('cpl_me->t', 0) + \
+                model_config['lambda_ME_M'] * loss_dict.get('cpl_me->m', 0) + \
+                model_config['lambda_ME_E'] * loss_dict.get('cpl_me->e', 0)   
     return criterion

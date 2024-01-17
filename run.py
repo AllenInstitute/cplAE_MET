@@ -89,6 +89,7 @@ if __name__ == "__main__":
         exp_dir.mkdir(parents = True)
 
     # The parameters are recorded in the experiment directory, and the Python file is run on SLURM (if not local).
+    print(f'\nRunning experiment "{args.exp_name}":\n')
     record_settings(exp_dir, args.config_file)
     if not args.local:
         create_sbatch_script(python_file, exp_dir, args.config_file, config)

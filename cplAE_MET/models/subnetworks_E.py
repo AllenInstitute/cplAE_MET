@@ -119,14 +119,13 @@ class Dec_ze_int_to_xe(nn.Module):
 class AE_E(nn.Module):
     def __init__(self, config):
         super(AE_E, self).__init__()
-        self.enc_xe_to_ze_int = Enc_xe_to_ze_int(gnoise_std=config['E']['gnoise_std'],
-                                                 gnoise_std_frac=config['E']['gnoise_std_frac'],
-                                                 dropout_p=config['E']['dropout_p'])
-        self.enc_ze_int_to_ze = Enc_ze_int_to_ze(out_dim=config['latent_dim'],
-                                                 variational=config['variational'])
-        self.dec_ze_to_ze_int = Dec_ze_to_ze_int(in_dim=config['latent_dim'])
+        self.enc_xe_to_ze_int = Enc_xe_to_ze_int(
+            config["gauss_e_baseline"], config["gauss_var_frac"], config['dropout'], 10)
+        self.enc_ze_int_to_ze = Enc_ze_int_to_ze(
+            10, config['latent_dim'], variational = False)
+        self.dec_ze_to_ze_int = Dec_ze_to_ze_int(config['latent_dim'], 10)
         self.dec_ze_int_to_xe = Dec_ze_int_to_xe()
-        self.variational = config['variational']
+        self.variational = False
         return
 
     def forward(self, xe):
