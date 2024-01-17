@@ -29,6 +29,31 @@ from cplAE_MET.models.train_utils import init_losses, save_results, optimizer_to
 from cplAE_MET.models.optuna_utils import run_classification
 from cplAE_MET.utils.utils import save_ckp
 
+class EarlyStopping():
+    def __init__(self, exp_dir, patience, min_improvement_fraction):
+        self.exp_dir = exp_dir
+        self.patience = patience
+        self.frac = min_improvement_fraction
+        self.counter = 0
+        self.best_epoch = 0
+        self.min_loss = np.inf
+
+    def stop_check(self, loss, model, epoch):
+        if loss < (1 - self.frac) * self.min_loss:
+            self.counter = 0
+            self.min_loss = loss
+            torch.save(model.state_dict(), self.exp_dir / f"best_params.pt")
+            self.best_epoch = epoch
+        else:
+            self.counter += 1
+        stop = self.counter > self.patience
+        return stop
+    
+    def load_best_parameters(self, model):
+        print("Run")
+        best_state = torch.load(self.exp_dir / "best_params.pt")
+        model.load_state_dict(best_state)
+
 def get_dataloaders(dat, device):
     dat.XM = np.expand_dims(dat.XM, axis = 1) # TODO check if 1D Conv could be used here
     (train_ind, val_ind) = dat.train_val_split(fold = config["fold"], n_folds = 10, seed = 0)
@@ -111,6 +136,7 @@ def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, trai
     '''Train and evaluation function, this will be called at each trial and epochs will start from zero'''
     model.to(device)
     tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
+    stopper = EarlyStopping(exp_dir, model_config["patience"], model_config["improvement_frac"])
     # Training -----------
     for epoch in range(num_epochs):
         print(epoch + 1)
@@ -135,7 +161,11 @@ def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, trai
             for val_batch in iter(val_dataloader):
                 model.eval()
                 val_loss, _, _ = model(val_batch)
+            val_loss_comb = Criterion(model_config, val_loss)
         log_tensorboard(tb_writer, train_loss, val_loss, epoch)
+        if stopper.stop_check(val_loss_comb, model, epoch) or (epoch + 1 == num_epochs):
+            stopper.load_best_parameters(model)
+            break
     tb_writer.close()
     return model
 
@@ -147,11 +177,6 @@ def train_model(config, exp_dir):
     optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
     trained_model = train_and_evaluate(config["num_epochs"], exp_dir, config, model, optimizer, train_dataloader, val_dataloader, device)
     save_results(trained_model, full_dataloader, D, exp_dir / "output.pkl", train_ind, val_ind)
-    checkpoint = {
-            'state_dict': trained_model.state_dict(),
-            'optimizer': optimizer.state_dict()
-            }
-    save_ckp(checkpoint, exp_dir, "model")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -126,6 +126,14 @@ class MultiModal(nn.Module):
         self.ae_t = AE_T(config=model_config) if "t" in modal_string else None
         self.ae_e = AE_E(config=model_config) if "e" in modal_string else None
         self.ae_m = AE_M(config=model_config) if "m" in modal_string else None
+        if "m" in modal_string and "e" in modal_string:
+            self.ae_me = AE_ME_int(config=model_config)
+            self.me_e_encoder = Enc_xe_to_ze_int(
+                model_config["gauss_e_baseline"], model_config["gauss_var_frac"], model_config["dropout"])
+            self.me_e_decoder = Dec_ze_int_to_xe()
+            self.me_m_encoder = Enc_xm_to_zm_int(
+                model_config["combine_types"], 10, model_config["gauss_m_baseline"], model_config["gauss_var_frac"])
+            self.me_m_decoder = Dec_zm_int_to_xm(model_config["combine_types"])
         self.variational = False
 
     def compute_rec_loss(self, x, xr, valid_x, is_x_1d):

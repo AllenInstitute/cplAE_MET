@@ -15,6 +15,8 @@ dropout: 0.2   # Dropout probability
 gauss_var_frac: 0.05   # Fraction of data variance to insert as data augmentation
 fold: 0   # Which of the tenfold cross validations to use
 learning_rate: 0.001   # Learning rate for the ADAM optimizer
+patience: 2500   # How long to wait for improvement of loss
+improvement_frac: 0.1   # How much improvement needs to occur for stoppage to be delayed
 
 # Set model hyperparameters (taken from trial 1213 of Baftizadeh, Gala, Gliko, Marghi & Sumbul 2023)
 alpha_T: 1.0   # T reconstruction loss weight coefficient
