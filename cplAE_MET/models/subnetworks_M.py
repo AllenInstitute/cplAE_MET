@@ -119,7 +119,7 @@ class Dec_zm_int_to_xm(nn.Module):
         x = self.elu(self.unpool_0(x, enc_pool_1_ind))
         x = self.convT_0(x)
         x = self.elu(self.unpool_1(x, enc_pool_0_ind))
-        xrm = torch.nn.functional.softplus(self.convT_1(x))
+        xrm = self.relu(self.convT_1(x))
         return xrm
 
 
