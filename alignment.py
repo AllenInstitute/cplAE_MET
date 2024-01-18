@@ -163,8 +163,8 @@ class EarlyStopping():
         self.min_acc = 100
 
     def stop_check(self, results, aligner, classifier, epoch):
-        ridge_acc = results.get("validators", (0,))[0]
-        if ridge_acc < (1 - self.frac) * self.min_acc:
+        ridge_acc = results.get("validators", (None,))[0]
+        if ridge_acc is not None and ridge_acc < (1 - self.frac) * self.min_acc:
             self.counter = 0
             self.min_acc = ridge_acc
             torch.save(aligner.state_dict(), self.exp_dir / "aligner_best_params.pt")
@@ -288,7 +288,7 @@ def train_loop(aligner, classifier, train_loader, val_loader, config, exp_dir):
         log_tensorboard(writer, epoch_results, epoch + 1)
         if stopper.stop_check(epoch_results, aligner, classifier, epoch) or (epoch + 1 == config["num_epochs"]):
             stopper.load_best_parameters(aligner, classifier)
-            print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_acc:.2f}")
+            print(f"Best model was epoch {stopper.best_epoch} with loss {100*stopper.min_acc:.2f}")
             break
     writer.flush()
     writer.close()
