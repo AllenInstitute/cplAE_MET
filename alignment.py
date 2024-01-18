@@ -166,10 +166,11 @@ class EarlyStopping():
         ridge_acc = results.get("validators", (0,))[0]
         if ridge_acc < (1 - self.frac) * self.min_acc:
             self.counter = 0
-            self.max_acc = ridge_acc
+            self.min_acc = ridge_acc
             torch.save(aligner.state_dict(), self.exp_dir / "aligner_best_params.pt")
             torch.save(classifier.state_dict(), self.exp_dir / "classifier_best_params.pt")
             self.best_epoch = epoch
+            print(f"New best model, accuracy {100*ridge_acc:.2f}")
         else:
             self.counter += 1
         stop = self.counter > self.patience
@@ -284,9 +285,11 @@ def train_loop(aligner, classifier, train_loader, val_loader, config, exp_dir):
                 epoch_results["val_count"] += np.asarray([patch_val_arbors.shape[0], em_val_arbors.shape[0]])
             if epoch % config["validator_step"] == 0 or epoch + 1 == config["num_epochs"]:
                 epoch_results["validators"] = fit_validators(train_loader, config["gauss_noise"], aligner, config["perturb"])
+        log_tensorboard(writer, epoch_results, epoch + 1)
         if stopper.stop_check(epoch_results, aligner, classifier, epoch) or (epoch + 1 == config["num_epochs"]):
             stopper.load_best_parameters(aligner, classifier)
-        log_tensorboard(writer, epoch_results, epoch + 1)
+            print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_acc:.2f}")
+            break
     writer.flush()
     writer.close()
     print("")

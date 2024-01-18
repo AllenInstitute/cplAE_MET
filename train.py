@@ -1,15 +1,3 @@
-# Dataset class that can load data at different levels of preprocessing, and select
-# for different modalities, platforms, etc.
-
-# Model class that can be initialized with different autoencoder branches, where a 
-# branch is only loaded if it couples to another branch.
-
-# Loss generating class/function that can be used to easily produce a loss function
-# with the desired parameters.
-
-# Training function should have a consistent form across different model types, 
-# abstracting away particular of architecture and loss function.
-
 import subprocess
 import os
 import yaml
@@ -44,6 +32,7 @@ class EarlyStopping():
             self.min_loss = loss
             torch.save(model.state_dict(), self.exp_dir / f"best_params.pt")
             self.best_epoch = epoch
+            print(f"New best model, loss {loss:.4g}")
         else:
             self.counter += 1
         stop = self.counter > self.patience
@@ -104,33 +93,6 @@ def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
         "ME-M": val_loss.get('cpl_me->m', 0), "ME-E": val_loss.get('cpl_me->e', 0)
     }, epoch)
 
-    # tb_writer.add_scalar('Train/MSE_XT', train_loss.get('rec_t', 0), epoch)
-    # tb_writer.add_scalar('Validation/MSE_XT', val_loss.get('rec_t', 0), epoch)
-    # tb_writer.add_scalar('Train/MSE_XM', train_loss.get('rec_m', 0), epoch)
-    # tb_writer.add_scalar('Validation/MSE_XM', val_loss.get('rec_m', 0), epoch)
-    # tb_writer.add_scalar('Train/MSE_XE', train_loss.get('rec_e', 0), epoch)
-    # tb_writer.add_scalar('Validation/MSE_XE', val_loss.get('rec_e', 0), epoch)
-    # tb_writer.add_scalar('Train/MSE_M_XME', train_loss.get('rec_m_me', 0), epoch)
-    # tb_writer.add_scalar('Validation/MSE_M_XME', val_loss.get('rec_m_me', 0), epoch)
-    # tb_writer.add_scalar('Train/MSE_E_XME', train_loss.get('rec_e_me', 0), epoch)
-    # tb_writer.add_scalar('Validation/MSE_E_XME', val_loss.get('rec_e_me', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_T->E', train_loss.get('cpl_t->e', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_T->E', val_loss.get('cpl_t->e', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_E->T', train_loss.get('cpl_e->t', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_E->T', val_loss.get('cpl_e->t', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_T->M', train_loss.get('cpl_t->m', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_T->M', val_loss.get('cpl_t->m', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_M->T', train_loss.get('cpl_m->t', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_M->T', val_loss.get('cpl_m->t', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_ME->T', train_loss.get('cpl_me->t', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_ME->T', val_loss.get('cpl_me->t', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_T->ME', train_loss.get('cpl_t->me', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_T->ME', val_loss.get('cpl_t->me', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_ME->M', train_loss.get('cpl_me->m', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_ME->M', val_loss.get('cpl_me->m', 0), epoch)
-    # tb_writer.add_scalar('Train/cpl_ME->E', train_loss.get('cpl_me->e', 0), epoch)
-    # tb_writer.add_scalar('Validation/cpl_ME->E', val_loss.get('cpl_me->e', 0), epoch)
-
 def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, train_dataloader, val_dataloader, device):
     '''Train and evaluation function, this will be called at each trial and epochs will start from zero'''
     model.to(device)
@@ -164,6 +126,7 @@ def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, trai
         log_tensorboard(tb_writer, train_loss, val_loss, epoch)
         if stopper.stop_check(val_loss_comb, model, epoch) or (epoch + 1 == num_epochs):
             stopper.load_best_parameters(model)
+            print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
             break
     tb_writer.close()
     return model
