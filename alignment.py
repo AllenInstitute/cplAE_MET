@@ -47,14 +47,9 @@ def load_raw_data(config):
     anno_full = pd.read_csv(config["annotation_file"]).rename(columns = {"Unnamed: 0": "row_index"})
     anno_full["specimen_id"] = anno_full["specimen_id"].str.strip()
     arbor_dict = sio.loadmat(config["arbor_file"])
-    arbors = align(arbor_dict["hist_ax_de_api_bas"], arbor_dict["specimen_id"], anno_full)
-    anno = anno_full.query("M_cell")
-    (exp1, exp2) = ("EM", "patchseq")
-    (anno_unnorm, anno_samp) = normalize_sample_count(exp1, exp2, anno)
-    anno_exc = anno_unnorm.query("`class` == 'exc'")
-    em_arbors = select(arbors, anno_exc.query("platform == 'EM'"))[..., 2:].reshape((-1, 960))
-    patch_arbors = select(arbors, anno_exc.query("platform == 'patchseq'"))[..., 2:].reshape((-1, 960))
-    return (em_arbors, patch_arbors)
+    arbors = align(arbor_dict["hist_ax_de_api_bas"], arbor_dict["specimen_id"], anno_full)[..., 2:].reshape((-1, 960))
+    anno_exc = anno_full.query("M_cell").query("`class` == 'exc'").sample(frac = 1, replace = False, random_state = 42)
+    return (arbors, anno_exc)
 
 def ridge_regression(X_em, X_patch, alpha, fitting_gradient = False):
     fitting_context = torch.no_grad() if not fitting_gradient else contextlib.nullcontext()
@@ -295,12 +290,15 @@ def train_loop(aligner, classifier, train_loader, val_loader, config, exp_dir):
     print("")
 
 def train(config, exp_dir):
-    (em_arbors, patch_arbors) = load_raw_data(config)
-    (X_em_train, X_em_test) = train_test_split(em_arbors, test_size = 0.25)
-    (X_patch_train, X_patch_test) = train_test_split(patch_arbors, test_size = 0.25)
+    (arbors, anno_exc) = load_raw_data(config)
+    (em_id_train, em_id_test) = train_test_split(anno_exc.query("platform == 'EM'")["specimen_id"].to_numpy())
+    (patch_id_train, patch_id_test) = train_test_split(anno_exc.query("platform == 'patchseq'")["specimen_id"].to_numpy())
     if not config["oversample"]:
-        X_em_train = X_em_train[:len(X_patch_train)]
-        X_em_test = X_em_test[:len(X_patch_test)]
+        em_id_train = em_id_train[:len(patch_id_train)]
+        em_id_test = em_id_test[:len(patch_id_test)]
+    np.savez_compressed(exp_dir / "specimen_ids.npz", **{"em_train": em_id_train, "em_test": em_id_test, "patch_train": patch_id_train, "patch_test": patch_id_test})
+    (X_em_train, X_em_test) = (select(arbors, anno_exc[anno_exc["specimen_id"].isin(em_id_train)]), select(arbors, anno_exc[anno_exc["specimen_id"].isin(em_id_test)]))
+    (X_patch_train, X_patch_test) = (select(arbors, anno_exc[anno_exc["specimen_id"].isin(patch_id_train)]), select(arbors, anno_exc[anno_exc["specimen_id"].isin(patch_id_test)]))
     device = config["device"]
     batch_size = config["batch_size"]
     train_dataset = ArborDataset(X_em_train, X_patch_train, device)
