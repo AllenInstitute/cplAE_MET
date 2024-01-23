@@ -69,7 +69,8 @@ def build_model(config, train_dataset):
     model = MultiModal(model_config)
     return model
 
-def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
+def log_tensorboard(tb_writer, train_loss, train_total_loss, val_loss, val_total_loss, epoch):
+    tb_writer.add_scalars("Total Loss", {"Train": train_total_loss, "Validation": val_total_loss})
     tb_writer.add_scalars("Train/MSE", {
         "XT": train_loss.get('rec_t', 0), "XM": train_loss.get('rec_m', 0),
         "XE": train_loss.get('rec_e', 0), "XM_ME": train_loss.get('rec_m_me', 0),
@@ -81,19 +82,15 @@ def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
         "XE_ME": val_loss.get('rec_e_me', 0)
     }, epoch)
     tb_writer.add_scalars("Train/cpl", {
-        "T-E": train_loss.get('cpl_t->e', 0), "E-T": train_loss.get('cpl_e->t', 0),
-        "T-M": train_loss.get('cpl_t->m', 0), "M-T": train_loss.get('cpl_m->t', 0),
-        "ME-T": train_loss.get('cpl_me->t', 0), "T-ME": train_loss.get('cpl_t->me', 0),
-        "ME-M": train_loss.get('cpl_me->m', 0), "ME-E": train_loss.get('cpl_me->e', 0)
+        "T-E": train_loss.get('cpl_t->e', 0), "T-M": train_loss.get('cpl_t->m', 0),
+        "ME-T": train_loss.get('cpl_me->t', 0), "ME-M": train_loss.get('cpl_me->m', 0)
     }, epoch)
     tb_writer.add_scalars("Validation/cpl", {
-        "T-E": val_loss.get('cpl_t->e', 0), "E-T": val_loss.get('cpl_e->t', 0),
-        "T-M": val_loss.get('cpl_t->m', 0), "M-T": val_loss.get('cpl_m->t', 0),
-        "ME-T": val_loss.get('cpl_me->t', 0), "T-ME": val_loss.get('cpl_t->me', 0),
-        "ME-M": val_loss.get('cpl_me->m', 0), "ME-E": val_loss.get('cpl_me->e', 0)
+        "T-E": val_loss.get('cpl_t->e', 0), "T-M": val_loss.get('cpl_t->m', 0),
+        "ME-T": val_loss.get('cpl_me->t', 0), "ME-M": val_loss.get('cpl_me->m', 0)
     }, epoch)
 
-def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, train_dataloader, val_dataloader, device):
+def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, train_dataloader, val_dataloader, check_step, device):
     '''Train and evaluation function, this will be called at each trial and epochs will start from zero'''
     model.to(device)
     tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
@@ -102,10 +99,12 @@ def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, trai
     for epoch in range(num_epochs):
         print(epoch + 1)
         model.train()
+        if check_step > 0 and epoch % check_step == 0:
+            torch.save(model.state_dict(), exp_dir / "checkpoints" / f"model_{epoch + 1}.pt")
         for step, batch in enumerate(iter(train_dataloader)):
             optimizer.zero_grad()
             # forward pass -----------
-            loss_dict, _, _ = model(batch)
+            (loss_dict, z_dict, xr_dict) = model(batch)
             loss = Criterion(model_config, loss_dict)
             loss.backward()
             optimizer.step()
@@ -121,9 +120,9 @@ def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, trai
         with torch.no_grad():
             for val_batch in iter(val_dataloader):
                 model.eval()
-                val_loss, _, _ = model(val_batch)
+                (val_loss, z_val_dict, xr_val_dict) = model(val_batch)
             val_loss_comb = Criterion(model_config, val_loss)
-        log_tensorboard(tb_writer, train_loss, val_loss, epoch)
+        log_tensorboard(tb_writer, train_loss, loss, val_loss, val_loss_comb, epoch)
         if stopper.stop_check(val_loss_comb, model, epoch) or (epoch + 1 == num_epochs):
             stopper.load_best_parameters(model)
             print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
@@ -137,7 +136,7 @@ def train_model(config, exp_dir):
     (train_ind, val_ind, train_dataloader, val_dataloader, full_dataloader) = get_dataloaders(dat, device)
     model = build_model(config, train_dataloader.dataset)
     optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
-    trained_model = train_and_evaluate(config["num_epochs"], exp_dir, config, model, optimizer, train_dataloader, val_dataloader, device)
+    trained_model = train_and_evaluate(config["num_epochs"], exp_dir, config, model, optimizer, train_dataloader, val_dataloader, config["check_step"], device)
     save_results(trained_model, full_dataloader, D, exp_dir / "output.pkl", train_ind, val_ind)
 
 if __name__ == "__main__":
@@ -149,5 +148,5 @@ if __name__ == "__main__":
         config = yaml.safe_load(target)
     exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name
     exp_dir.mkdir(exist_ok = True)
+    (exp_dir / "checkpoints").mkdir(exist_ok = True)
     train_model(config, exp_dir)
-    

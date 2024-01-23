@@ -34,7 +34,7 @@ class Enc_xe_to_ze_int(nn.Module):
     def add_gnoise(self, x):
         if (self.training) and (self.gnoise_std is not None):
             # note: batch dim is inferred from shapes of x and self.noise_sd
-            x = torch.normal(mean=x, std=self.gnoise_std)
+            x = x + torch.randn_like(x)*self.gnoise_std
         return x
 
     def forward(self, xe):

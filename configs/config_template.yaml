@@ -17,6 +17,7 @@ fold: 0   # Which of the tenfold cross validations to use
 learning_rate: 0.001   # Learning rate for the ADAM optimizer
 patience: 2500   # How long to wait for improvement of loss
 improvement_frac: 0.1   # How much improvement needs to occur for stoppage to be delayed
+check_step: 100
 
 # Set model hyperparameters (taken from trial 1213 of Baftizadeh, Gala, Gliko, Marghi & Sumbul 2023)
 alpha_T: 1.0   # T reconstruction loss weight coefficient
@@ -43,4 +44,4 @@ directory: '/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/
 conda: 'cplae'
 
 # Set local parameters:
-device: "mps"
+device: "cuda"

@@ -25,11 +25,19 @@ def min_var_loss(zi, zj):
     batch_size = zj.shape[0]
 
     zj_centered = zj - torch.mean(zj, 0, True)
-    min_eig = torch.min(torch.linalg.svdvals(zj_centered))
+    try:
+        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
+    except torch._C._LinAlgError:
+        print("SVD failed.")
+        min_eig = (batch_size - 1)**0.5
     min_var_zj = torch.square(min_eig)/(batch_size-1)
 
     zi_centered = zi - torch.mean(zi, 0, True)
-    min_eig = torch.min(torch.linalg.svdvals(zi_centered))
+    try:
+        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
+    except torch._C._LinAlgError:
+        print("SVD failed.")
+        min_eig = (batch_size - 1)**0.5
     min_var_zi = torch.square(min_eig)/(batch_size-1)
 
     #Wij_paired is the weight of matched pairs
