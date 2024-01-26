@@ -35,7 +35,6 @@ class Enc_xt_to_zt(nn.Module):
         else:
             return self.bn(self.fc_mu(x))
 
-
 class Dec_zt_to_xt(nn.Module):
     """Encodes `ze_int` to `ze`
     """
@@ -64,25 +63,22 @@ class Dec_zt_to_xt(nn.Module):
         xrt = self.relu(self.fc_4(x))
         return xrt
 
-
-
 class AE_T(nn.Module):
     def __init__(self, config):
-        super(AE_T, self).__init__()
-        self.enc_xt_to_zt = Enc_xt_to_zt(
+        super().__init__()
+        self.encoder = Enc_xt_to_zt(
             config['dropout'], 1252, config['latent_dim'], variational = False)
-        self.dec_zt_to_xt = Dec_zt_to_xt(config['latent_dim'], 1252)
+        self.decoder = Dec_zt_to_xt(config['latent_dim'], 1252)
         self.variational = False
-        return
 
     def forward(self, xt):
         if self.variational:
-            mu, sigma = self.enc_xt_to_zt(xt)
+            mu, sigma = self.encoder(xt)
             log_sigma = (sigma + 1e-6).log()
-            zt = self.dec_zt_to_xt.reparametrize(mu, sigma)
+            zt = self.decoder.reparametrize(mu, sigma)
         else:
-            zt =  self.enc_xt_to_zt(xt)
+            zt =  self.encoder(xt)
             mu = []
             log_sigma = []
-        xrt = self.dec_zt_to_xt(zt)
-        return zt, xrt, mu, log_sigma
+        xrt = self.decoder(zt)
+        return (zt, xrt)

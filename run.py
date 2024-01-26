@@ -6,8 +6,14 @@ import shutil
 import pathlib
 import sys
 
-def safe_unlink(path):
-    if path.exists():
+def recursive_unlink(path):
+    if path.is_dir():
+        contents = list(path.iterdir())
+        for path in path.iterdir():
+            recursive_unlink(path)
+        if not contents:
+            path.rmdir()
+    elif path.is_file():
         path.unlink()
 
 def create_sbatch_script(python_file, exp_dir, config_path, slurm):
@@ -44,21 +50,17 @@ def record_settings(exp_dir, config_path):
     shutil.copy(config_path, exp_dir / "config.yaml")
 
 def clear_experiment(exp_dir):
-    safe_unlink(exp_dir / "config.yaml")
-    safe_unlink(exp_dir / "git_hash.txt")
-    safe_unlink(exp_dir / "terminal.out")
-    safe_unlink(exp_dir / "script.sh")
-    safe_unlink(exp_dir / "model.pt")
-    safe_unlink(exp_dir / "best_params.pt")
-    safe_unlink(exp_dir / "outputs.npz")
-    tensorboard_path = exp_dir / "tn_board"
-    if tensorboard_path.exists():
-        for path in tensorboard_path.iterdir():
-            if path.is_file():
-                path.unlink()
-            else:
-                for path2 in path.iterdir():
-                    path2.unlink()
+    recursive_unlink(exp_dir / "config.yaml")
+    recursive_unlink(exp_dir / "git_hash.txt")
+    recursive_unlink(exp_dir / "terminal.out")
+    recursive_unlink(exp_dir / "script.sh")
+    recursive_unlink(exp_dir / "model.pt")
+    recursive_unlink(exp_dir / "best_params.pt")
+    recursive_unlink(exp_dir / "outputs.npz")
+    recursive_unlink(exp_dir / "specimen_ids.npz")
+    recursive_unlink(exp_dir / "train_test_ids.npz")
+    recursive_unlink(exp_dir / "tn_board")
+    recursive_unlink(exp_dir / "checkpoints")
 
 if __name__ == "__main__":
     # Experiment name and path to the config YAML file must be provided.
@@ -77,10 +79,10 @@ if __name__ == "__main__":
         python_file = "train_morphology.py"
     elif config["experiment"] == "align":
         python_file = "alignment.py"
-    elif set(config["experiment"]) - set("met"):
-        raise ValueError(f'''Experiment "{config['experiment']}" not recognized.''')
-    else:
+    elif config["experiment"] == "autoencoder":
         python_file = "train.py"
+    else:
+        raise ValueError(f'''Experiment "{config['experiment']}" not recognized.''')
     
     # Define directory for experiment outputs and check if it already exists.
     exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name
@@ -101,4 +103,5 @@ if __name__ == "__main__":
         create_sbatch_script(python_file, exp_dir, args.config_file, config)
         subprocess.run(["sbatch", exp_dir / "script.sh"])
     else:
-        subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file])
+        with open(exp_dir / "terminal.out", "w") as target:
+            subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file], stdout = target)

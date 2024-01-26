@@ -1,33 +1,28 @@
 from torch import nn
 import torch
 
-class Enc_xm_to_zm_int(nn.Module):
-    """Common encoding network for (only M) and (M and E paired) cases.
-    - `xm` expected in [N, C=1, D=240, H=1, W=4] format, with C = 1, D=240, H=1, W=4
-     - Missing data is encoded as nans.
-     - Output is an intermediate representation, `zm_int`
-    """
-
+class Enc_xm_to_zm(nn.Module):
     def __init__(self,
-                 combine, 
-                 out_dim=10, 
+                 out_dim=3, 
                  gnoise_std=None,
-                 gnoise_std_frac=0.05):
-        
-        super(Enc_xm_to_zm_int, self).__init__()
-        conv_out_size = 9600 if not combine else 4800
+                 gnoise_std_frac=0.05,
+                 variational = False):
+        super().__init__()
+        self.variational = variational
         if gnoise_std is not None:
             self.gnoise_std = gnoise_std * gnoise_std_frac
-        self.conv_0 = nn.Conv3d(1, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
-        self.pool_0 = nn.MaxPool3d((2, 1, 1), return_indices=True)
-        self.conv_1 = nn.Conv3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
-        self.pool_1 = nn.MaxPool3d((2, 1, 1), return_indices=True)
-        self.fc_0 = nn.Linear(conv_out_size, out_dim)
-        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
+        
+        self.conv_0 = nn.Conv1d(4*4, 10, kernel_size=6, stride = 2)
+        self.conv_1 = nn.Conv1d(10, 10, kernel_size=6, stride = 2)
+        self.fc_0 = nn.Linear(270, 10)
+        self.bn_1 = nn.BatchNorm1d(10, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()
-        return
-    
+        
+        self.fc_mu = nn.Linear(10, out_dim, bias=False)
+        self.fc_sigma = nn.Linear(10, out_dim, bias=False)
+        self.bn_2 = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
+
     def aug_noise(self, x):
         # get the nanzero mask for M for adding noise
         mask = x != 0.
@@ -37,115 +32,60 @@ class Enc_xm_to_zm_int(nn.Module):
             return x
         else:
             return x
-        
 
     def forward(self, xm):
-        # x = self.aug_noise(xm)
-        x, self.pool_0_ind = self.pool_0(self.relu(self.conv_0(xm)))
-        x, self.pool_1_ind = self.pool_1(self.relu(self.conv_1(x)))
+        x = torch.flatten(xm, 2).transpose(1, 2)
+        x = self.relu(self.conv_0(x))
+        x = self.relu(self.conv_1(x))
         x = x.view(x.shape[0], -1)
-        zm_int = self.bn(self.relu(self.fc_0(x)))
+        zm_int = self.bn_1(self.relu(self.fc_0(x)))
         
-        return zm_int
-
-
-class Enc_zm_int_to_zm(nn.Module):
-    """Intermediate representation `zm_int` is encoded into `zm`
-    """
-    def __init__(self, in_dim=10, out_dim=3, variational=False):
-        super(Enc_zm_int_to_zm, self).__init__()
-        self.fc_mu = nn.Linear(in_dim, out_dim, bias=False)
-        self.fc_sigma = nn.Linear(in_dim, out_dim, bias=False)
-        self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
-        self.variational = variational
-        return
-
-    def forward(self, zm_int):
         if self.variational:
             mu = self.fc_mu(zm_int)
             var = torch.sigmoid(self.fc_sigma(zm_int))
             return mu, var
         else:
-            return self.bn(self.fc_mu(zm_int))
+            return self.bn_2(self.fc_mu(zm_int))
 
-
-class Dec_zm_to_zm_int(nn.Module):
-    """Decodes `zm` into `zm_int`
-    """
-
-    def __init__(self, in_dim=3, out_dim=10):
-        super(Dec_zm_to_zm_int, self).__init__()
-        self.fc_0 = nn.Linear(in_dim, out_dim)
-        self.fc_1 = nn.Linear(out_dim, out_dim)
+class Dec_zm_to_xm(nn.Module):
+    def __init__(self, in_dim=3):
+        super().__init__()
+        self.fc_0_1 = nn.Linear(in_dim, 10)
+        self.fc_1_1 = nn.Linear(10, 10)
         self.elu = nn.ELU()
         self.relu = nn.ReLU()
-        return
 
-    def reparametrize(self, mu, var):
-        std = torch.sqrt(var)
-        eps = torch.randn_like(std)
-        return mu + eps * std
+        self.fc_0_2 = nn.Linear(10, 270)
+        self.convT_0 = nn.ConvTranspose1d(10, 10, kernel_size=6, stride=2)
+        self.convT_1 = nn.ConvTranspose1d(10, 4*4, kernel_size=6, stride=2)
 
     def forward(self, zm):
-        x = self.elu(self.fc_0(zm))
-        zm_int = self.relu(self.fc_1(x))
-        return zm_int
+        x = self.elu(self.fc_0_1(zm))
+        zm_int = self.relu(self.fc_1_1(x))
 
-
-class Dec_zm_int_to_xm(nn.Module):
-    """Decodes `zm_int` into the reconstruction `xrm` and `xrsd`
-    """
-
-    def __init__(self, combine, in_dim=10):
-        super(Dec_zm_int_to_xm, self).__init__()
-        conv_input_size = 9600 if not combine else 4800
-        self.fc_0 = nn.Linear(in_dim, conv_input_size)
-        self.convT_0 = nn.ConvTranspose3d(10, 10, kernel_size=(5, 1, 1), padding=(2, 1, 0))
-        self.convT_1 = nn.ConvTranspose3d(10, 1, kernel_size=(5, 1, 1), padding=(2, 1, 0))
-        self.unpool_0 = nn.MaxUnpool3d((2, 1, 1))
-        self.unpool_1 = nn.MaxUnpool3d((2, 1, 1))
-        self.elu = nn.ELU()
-        self.relu = nn.ReLU()
-        self.view_tuple = (-1, 10, 30, 8, 4) if not combine else (-1, 10, 30, 8, 2)
-        return
-
-    def forward(self, zm_int, enc_pool_0_ind, enc_pool_1_ind):
-        x = zm_int[:, 0:10]
-        x = self.elu(self.fc_0(x))
-        x = x.view(*self.view_tuple)
-        # if you are running a 120x1 arbor convolution, use the above line instead of
-        # the following shape. Also change 9600 to 6000
-        # x = x.view(-1, 10, 30, 5, 4)
-        x = self.elu(self.unpool_0(x, enc_pool_1_ind))
-        x = self.convT_0(x)
-        x = self.elu(self.unpool_1(x, enc_pool_0_ind))
-        xrm = self.relu(self.convT_1(x))
+        x = self.elu(self.fc_0_2(zm_int))
+        x = x.view(-1, 10, 27)
+        x = self.elu(self.convT_0(x))
+        x = self.relu(self.convT_1(x))
+        xrm = x.transpose(1, 2).reshape([-1, 120, 4, 4])
         return xrm
-
 
 class AE_M(nn.Module):
     def __init__(self, config):
-        super(AE_M, self).__init__()
-        self.enc_xm_to_zm_int = Enc_xm_to_zm_int(config["combine_types"], 10, config["gauss_m_baseline"], config["gauss_var_frac"])
-        self.enc_zm_int_to_zm = Enc_zm_int_to_zm(10, config['latent_dim'], variational = False)
-        self.dec_zm_to_zm_int = Dec_zm_to_zm_int(config['latent_dim'], 10)
-        self.dec_zm_int_to_xm = Dec_zm_int_to_xm(config["combine_types"], 10)
+        super().__init__()
         self.variational = False
-        return
+        self.encoder = Enc_xm_to_zm(config['latent_dim'], config["gauss_m_baseline"], 
+                                    config["gauss_var_frac"], self.variational)
+        self.decoder = Dec_zm_to_xm(config['latent_dim'])
 
     def forward(self, xm):
-        zm_int_enc = self.enc_xm_to_zm_int(xm.nan_to_num())
         if self.variational:
-            mu, sigma = self.enc_zm_int_to_zm(zm_int_enc)
+            mu, sigma = self.encoder(xm)
             log_sigma = (sigma + 1e-6).log()
-            zm = self.dec_zm_to_zm_int.reparametrize(mu, sigma)
+            zm = self.decoder.reparametrize(mu, sigma)
         else:
-            zm = self.enc_zm_int_to_zm(zm_int_enc)
+            zm = self.encoder(xm)
             mu=[]
             log_sigma=[]
-
-        zm_int_dec = self.dec_zm_to_zm_int(zm)
-        xrm = self.dec_zm_int_to_xm(zm_int_dec,
-                                          self.enc_xm_to_zm_int.pool_0_ind,
-                                          self.enc_xm_to_zm_int.pool_1_ind)
-        return zm_int_enc, zm, zm_int_dec, xrm, mu, log_sigma
+        xrm = self.decoder(zm)
+        return (zm, xrm)

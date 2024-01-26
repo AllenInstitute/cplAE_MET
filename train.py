@@ -1,21 +1,14 @@
-import subprocess
-import os
 import yaml
 import pathlib
 import argparse
-import shutil
 
 import torch
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 import numpy as np
 
-from cplAE_MET.utils.dataset import MET_exc_inh
-from cplAE_MET.models.torch_utils import MET_dataset
-from cplAE_MET.models.model_classes import Model_ME_T_conv, MultiModal
-from cplAE_MET.models.train_utils import init_losses, save_results, optimizer_to, Criterion
-from cplAE_MET.models.optuna_utils import run_classification
-from cplAE_MET.utils.utils import save_ckp
+from data import MET_Data, MET_Dataset, get_collator
+from cplAE_MET.models.model_classes import MultiModal
 
 class EarlyStopping():
     def __init__(self, exp_dir, patience, min_improvement_fraction):
@@ -42,88 +35,124 @@ class EarlyStopping():
         best_state = torch.load(self.exp_dir / "best_params.pt")
         model.load_state_dict(best_state)
 
-def get_dataloaders(dat, device):
-    dat.XM = np.expand_dims(dat.XM, axis = 1) # TODO check if 1D Conv could be used here
-    (train_ind, val_ind) = dat.train_val_split(fold = config["fold"], n_folds = 10, seed = 0)
-    (train_dat, val_dat) = (dat[train_ind,:], dat[val_ind,:])
-    # We define weights for each sample in a way that in each batch there are at least 54 met cells from exc and
-    # 54 met cells from inh data. 54 was decided based on the previous runs just by observation!
-    # Weighted sampling strategy -----------
-    weights = train_dat.make_weights_for_balanced_classes(n_met = 54, met_subclass_id = [2, 3], batch_size = 1000)                                   
-    sampler = torch.utils.data.sampler.WeightedRandomSampler(torch.DoubleTensor(weights), len(weights)) 
-    # Dataset and Dataloader -----------
-    train_dataset = MET_dataset(train_dat, device = device)
-    train_dataloader = DataLoader(train_dataset, batch_size = config["batch_size"], 
-                                  shuffle = False, drop_last = True, sampler = sampler)
-    val_dataset = MET_dataset(val_dat, device = device)
-    val_dataloader = DataLoader(val_dataset, batch_size = len(val_dataset), shuffle = False)
-    full_dataset = MET_dataset(dat, device = device)
-    full_dataloader = DataLoader(full_dataset, batch_size = config["batch_size"], shuffle = False, 
-                            drop_last = False)
-    return (train_ind, val_ind, train_dataloader, val_dataloader, full_dataloader)
+def min_var_loss(zi, zj):
+    batch_size = zj.shape[0]
+    zj_centered = zj - torch.mean(zj, 0, True)
+    try:
+        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
+    except torch._C._LinAlgError:
+        print("SVD failed.")
+        min_eig = (batch_size - 1)**0.5
+    min_var_zj = torch.square(min_eig)/(batch_size-1)
+    zi_centered = zi - torch.mean(zi, 0, True)
+    try:
+        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
+    except torch._C._LinAlgError:
+        print("SVD failed.")
+        min_eig = (batch_size - 1)**0.5
+    min_var_zi = torch.square(min_eig)/(batch_size-1)
+    zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
+    loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
+    return loss_ij
+
+def squared_error_loss(x_tupl, xr_tupl, mask):
+    squares = (torch.square(x[mask] - xr).sum() for (x, xr) in zip(x_tupl, xr_tupl))
+    mean_squared_error = sum(squares) / (len(xr_tupl)*xr_tupl[0].shape[0])
+    return mean_squared_error
+
+def combine_losses(cuml_losses, recon_losses, coupling_losses, total_loss):
+    cuml_recon = {key: value + cuml_losses.get(key, 0) for (key, value) in recon_losses.items()}
+    cuml_coupling = {key: value + cuml_losses.get(key, 0) for (key, value) in coupling_losses.items()}
+    new_cuml = {**cuml_losses, **cuml_recon, **cuml_coupling, "total": cuml_losses.get("total", 0) + total_loss}
+    return new_cuml
+
+def compute_weighted_loss(config, recon_loss_dict, coupling_dict):
+    recon_loss = sum([config[modal]*loss_value for (modal, loss_value) in recon_loss_dict.items()])
+    coupl_loss = sum([config[modal]*loss_value for (modal, loss_value) in coupling_dict.items()])
+    weighted_loss = recon_loss + coupl_loss
+    return weighted_loss
+
+def get_gauss_baselines(dataset):
+    e_indices = np.concatenate(
+        [dataset.modal_indices["E"], dataset.modal_indices["TE"], dataset.modal_indices["EM"],
+        dataset.modal_indices["MET"]])
+    m_indices = np.concatenate(
+        [dataset.modal_indices["M"], dataset.modal_indices["TM"], dataset.modal_indices["EM"],
+        dataset.modal_indices["MET"]])
+    (xe, xm) = (dataset.MET["E_dat"][e_indices], dataset.MET["M_dat"][m_indices])
+    (std_e, std_m) = (np.std(xe, 0, keepdims = True), np.std(xm, 0, keepdims = True))
+    return (std_e, std_m)
 
 def build_model(config, train_dataset):
     model_config = config.copy()
-    model_config["gauss_e_baseline"] = train_dataset.gnoise_e_std
-    model_config["gauss_m_baseline"] = train_dataset.gnoise_m_std
+    (std_e, std_m) = get_gauss_baselines(train_dataset)
+    model_config["gauss_e_baseline"] = std_e.astype("float32")
+    model_config["gauss_m_baseline"] = std_m.astype("float32")
     model = MultiModal(model_config)
     return model
 
-def log_tensorboard(tb_writer, train_loss, train_total_loss, val_loss, val_total_loss, epoch):
-    tb_writer.add_scalars("Total Loss", {"Train": train_total_loss, "Validation": val_total_loss})
-    tb_writer.add_scalars("Train/MSE", {
-        "XT": train_loss.get('rec_t', 0), "XM": train_loss.get('rec_m', 0),
-        "XE": train_loss.get('rec_e', 0), "XM_ME": train_loss.get('rec_m_me', 0),
-        "XE_ME": train_loss.get('rec_e_me', 0)
-    }, epoch)
-    tb_writer.add_scalars("Validation/MSE", {
-        "XT": val_loss.get('rec_t', 0), "XM": val_loss.get('rec_m', 0),
-        "XE": val_loss.get('rec_e', 0), "XM_ME": val_loss.get('rec_m_me', 0),
-        "XE_ME": val_loss.get('rec_e_me', 0)
-    }, epoch)
-    tb_writer.add_scalars("Train/cpl", {
-        "T-E": train_loss.get('cpl_t->e', 0), "T-M": train_loss.get('cpl_t->m', 0),
-        "ME-T": train_loss.get('cpl_me->t', 0), "ME-M": train_loss.get('cpl_me->m', 0)
-    }, epoch)
-    tb_writer.add_scalars("Validation/cpl", {
-        "T-E": val_loss.get('cpl_t->e', 0), "T-M": val_loss.get('cpl_t->m', 0),
-        "ME-T": val_loss.get('cpl_me->t', 0), "ME-M": val_loss.get('cpl_me->m', 0)
-    }, epoch)
+def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
+    tb_writer.add_scalars("Weighted Loss", {"Train": train_loss["total"], "Validation": val_loss["total"]}, epoch)
+    for key in train_loss:
+        if "-" not in key and key != "total":
+            tb_writer.add_scalars(f"MSE/{key}", {"Train": train_loss[key], "Validation": val_loss[key]}, epoch)
+    tb_writer.add_scalars("Coupling/Train", 
+        {key:value for (key, value) in train_loss.items() if "->" in key}, epoch)
+    tb_writer.add_scalars("Coupling/Validation",
+        {key:value for (key, value) in val_loss.items() if "->" in key}, epoch)
+    print(f"Epoch {epoch} -- Train: {train_loss['total']:.4e} | Val: {val_loss['total']:.4e}")
 
-def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, train_dataloader, val_dataloader, check_step, device):
-    '''Train and evaluation function, this will be called at each trial and epochs will start from zero'''
-    model.to(device)
+def process_batch(model, X_dict, mask_dict, config):
+    (latent_dict, recon_dict, recon_loss_dict, coupling_dict) = ({}, {}, {}, {})
+    for modal in config["modalities"]:
+        (arm, x_tupl, mask) = (model.modal_arms[modal], X_dict[modal], mask_dict[modal])
+        (z, xr) = arm(*(x[mask] for x in x_tupl))
+        xr_tupl = (xr,) if type(xr) != tuple else xr
+        latent_dict[modal] = z
+        recon_dict[modal] = xr_tupl
+        recon_loss_dict[modal] = squared_error_loss(x_tupl, xr_tupl, mask)
+        for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
+            prev_mask = mask_dict[prev_modal]
+            if torch.any(prev_mask[mask]):
+                (z_masked, prev_masked) = (z[prev_mask[mask]], prev_z[mask[prev_mask]])
+                coupling_dict[f"{prev_modal}->{modal}"] = min_var_loss(z_masked, prev_masked.detach())
+                coupling_dict[f"{modal}->{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
+    return (latent_dict, recon_dict, recon_loss_dict, coupling_dict)
+
+def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
+    model = build_model(config, train_dataset)
+    optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
+    model.to(config["device"])
     tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
-    stopper = EarlyStopping(exp_dir, model_config["patience"], model_config["improvement_frac"])
-    # Training -----------
-    for epoch in range(num_epochs):
-        print(epoch + 1)
+    stopper = EarlyStopping(exp_dir, config["patience"], config["improvement_frac"])
+    collate = get_collator(config["device"], torch.float32)
+    train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
+    val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
+    for epoch in range(config["num_epochs"]):
+        # Training -----------
+        cuml_losses = {}
         model.train()
-        if check_step > 0 and epoch % check_step == 0:
-            torch.save(model.state_dict(), exp_dir / "checkpoints" / f"model_{epoch + 1}.pt")
-        for step, batch in enumerate(iter(train_dataloader)):
+        if config["check_step"] > 0 and epoch % config["check_step"] == 0:
+            torch.save(model.state_dict(), exp_dir / "checkpoints" / f"model_{epoch}.pt")
+        for (X_dict, mask_dict, specimen_ids) in train_loader:
             optimizer.zero_grad()
-            # forward pass -----------
-            (loss_dict, z_dict, xr_dict) = model(batch)
-            loss = Criterion(model_config, loss_dict)
+            (latent_dict, recon_dict, recon_loss_dict, coupling_dict) = process_batch(model, X_dict, mask_dict, config)
+            loss = compute_weighted_loss(config, recon_loss_dict, coupling_dict)
             loss.backward()
             optimizer.step()
-            if step == 0:
-                train_loss = init_losses(loss_dict)
-            # track loss over batches -----------
-            for k, v in loss_dict.items():
-                train_loss[k] += v
-        # Average losses over batches -----------
-        for k, v in train_loss.items():
-            train_loss[k] = train_loss[k] / len(train_dataloader)
+            cuml_losses = combine_losses(cuml_losses, recon_loss_dict, coupling_dict, loss)
+        avg_losses = {key: value / len(train_dataset) for (key, value) in cuml_losses.items()}
         # Validation -----------
         with torch.no_grad():
-            for val_batch in iter(val_dataloader):
+            cuml_val_losses = {}
+            for (X_val, mask_val, _) in val_loader:
                 model.eval()
-                (val_loss, z_val_dict, xr_val_dict) = model(val_batch)
-            val_loss_comb = Criterion(model_config, val_loss)
-        log_tensorboard(tb_writer, train_loss, loss, val_loss, val_loss_comb, epoch)
-        if stopper.stop_check(val_loss_comb, model, epoch) or (epoch + 1 == num_epochs):
+                (latent_val, recon_val, recon_loss_val, coupling_val) = process_batch(model, X_val, mask_val, config)
+                val_loss = compute_weighted_loss(config, recon_loss_val, coupling_val)
+                cuml_val_losses = combine_losses(cuml_val_losses, recon_loss_val, coupling_val, val_loss)
+            avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
+        log_tensorboard(tb_writer, avg_losses, avg_val_losses, epoch + 1)
+        if stopper.stop_check(avg_val_losses["total"], model, epoch) or (epoch + 1 == config["num_epochs"]):
             stopper.load_best_parameters(model)
             print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
             break
@@ -131,13 +160,13 @@ def train_and_evaluate(num_epochs, exp_dir, model_config, model, optimizer, trai
     return model
 
 def train_model(config, exp_dir):
-    (dat, D) = MET_exc_inh.from_file(config["data_file"])
-    device = config["device"]
-    (train_ind, val_ind, train_dataloader, val_dataloader, full_dataloader) = get_dataloaders(dat, device)
-    model = build_model(config, train_dataloader.dataset)
-    optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
-    trained_model = train_and_evaluate(config["num_epochs"], exp_dir, config, model, optimizer, train_dataloader, val_dataloader, config["check_step"], device)
-    save_results(trained_model, full_dataloader, D, exp_dir / "output.pkl", train_ind, val_ind)
+    met_data = MET_Data(config["data_file"])
+    (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = 42)
+    train_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], train_ids)
+    test_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], test_ids)
+    np.savez_compressed(exp_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
+    trained_model = train_and_evaluate(exp_dir, config, train_dataset, test_dataset)
+    return trained_model
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
