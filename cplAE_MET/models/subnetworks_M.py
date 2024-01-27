@@ -10,7 +10,7 @@ class Enc_xm_to_zm(nn.Module):
         super().__init__()
         self.variational = variational
         if gnoise_std is not None:
-            self.gnoise_std = gnoise_std * gnoise_std_frac
+            self.gnoise_std = torch.nn.Parameter(torch.from_numpy(gnoise_std*gnoise_std_frac))
         
         self.conv_0 = nn.Conv1d(4*4, 10, kernel_size=6, stride = 2)
         self.conv_1 = nn.Conv1d(10, 10, kernel_size=6, stride = 2)

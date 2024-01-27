@@ -9,7 +9,7 @@ class Enc_xme_to_zme(nn.Module):
         super().__init__()
         self.variational = variational
         if gnoise_std is not None:
-            self.gnoise_std = gnoise_std * gnoise_std_frac
+            self.gnoise_std = torch.nn.Parameter(torch.from_numpy(gnoise_std*gnoise_std_frac))
         self.fc_0_e = nn.Linear(82, 40)
         self.fc_1_e = nn.Linear(40, 40)
         self.fc_2_e = nn.Linear(40, 40)

@@ -11,7 +11,7 @@ class Enc_xe_to_ze(nn.Module):
         super().__init__()
         self.variational = variational
         if gnoise_std is not None:
-            self.gnoise_std = gnoise_std * gnoise_std_frac
+            self.gnoise_std = torch.nn.Parameter(torch.from_numpy(gnoise_std*gnoise_std_frac))
         self.drp = nn.Dropout(p=dropout_p)
         self.fc_0 = nn.Linear(82, 40)
         self.fc_1 = nn.Linear(40, 40)
