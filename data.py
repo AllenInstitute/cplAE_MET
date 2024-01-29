@@ -126,7 +126,7 @@ class MET_Dataset(IterableDataset):
             (is_xt, is_xe, is_xm) = (self.is_xt[indices], self.is_xe[indices], self.is_xm[indices])
             specimen_ids = self.MET["specimen_id"][indices]
             outputs = ({"T": (xt,), "E": (xe,), "M": (xm,), "EM": (xe, xm)}, 
-                       {"T": is_xt, "E": is_xe, "M": is_xm, "EM": is_xe | is_xm}, 
+                       {"T": is_xt, "E": is_xe, "M": is_xm, "EM": is_xe & is_xm}, 
                        specimen_ids)
             yield outputs
 

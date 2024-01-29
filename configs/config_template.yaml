@@ -35,18 +35,18 @@ T: 1.0   # T reconstruction loss weight coefficient
 E: 2.512   # E reconstruction loss weight coefficient
 M: 1.046   # M reconstruction loss weight coefficient
 EM: 0.202   # ME reconstruction loss weight coefficient
-E->T: 0.165   # E_T coupling loss weight coefficient
-M->T: 0.00623   # M_T coupling loss weight coefficient
-EM->T: 0.294   # ME_T coupling loss weight coefficient
-T->E: 90.288   # T_E coupling loss weight coefficient
-T->M: 3.908   # T_M coupling loss weight coefficient
-T->EM: 10.859   # T_ME coupling loss weight coefficient
-EM->E: 3.857   # ME_E coupling loss weight coefficient
-EM->M: 22.153   # ME_M coupling loss weight coefficient
-M->E: 0.0
-E->M: 0.0
-E->EM: 0.0
-M->EM: 0.0
+E-T: 0.165   # E_T coupling loss weight coefficient
+M-T: 0.00623   # M_T coupling loss weight coefficient
+EM-T: 0.294   # ME_T coupling loss weight coefficient
+T-E: 90.288   # T_E coupling loss weight coefficient
+T-M: 3.908   # T_M coupling loss weight coefficient
+T-EM: 10.859   # T_ME coupling loss weight coefficient
+EM-E: 3.857   # ME_E coupling loss weight coefficient
+EM-M: 22.153   # ME_M coupling loss weight coefficient
+M-E: 0.0
+E-M: 0.0
+E-EM: 0.0
+M-EM: 0.0
 
 # Set SLURM parameters:
 partition: 'celltypes'

@@ -68,6 +68,7 @@ if __name__ == "__main__":
     parser.add_argument("exp_name", help = "Name of experiment.")
     parser.add_argument("config_file", help = "Path to configuration YAML file.")
     parser.add_argument("--local", action = "store_true")
+    parser.add_argument("--terminal", action = "store_true")
     args = parser.parse_args()
 
     # Config YAML file contains the specific parameters for the experiment.
@@ -103,5 +104,8 @@ if __name__ == "__main__":
         create_sbatch_script(python_file, exp_dir, args.config_file, config)
         subprocess.run(["sbatch", exp_dir / "script.sh"])
     else:
-        with open(exp_dir / "terminal.out", "w") as target:
-            subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file], stdout = target)
+        if args.terminal:
+            subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file])
+        else:
+            with open(exp_dir / "terminal.out", "w") as target:
+                subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file], stdout = target)

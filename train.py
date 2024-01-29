@@ -42,14 +42,14 @@ def min_var_loss(zi, zj):
         min_eig = torch.min(torch.linalg.svdvals(zj_centered))
     except torch._C._LinAlgError:
         print("SVD failed.")
-        min_eig = (batch_size - 1)**0.5
+        min_eig = torch.as_tensor((batch_size - 1)**0.5).to(zj)
     min_var_zj = torch.square(min_eig)/(batch_size-1)
     zi_centered = zi - torch.mean(zi, 0, True)
     try:
         min_eig = torch.min(torch.linalg.svdvals(zi_centered))
     except torch._C._LinAlgError:
         print("SVD failed.")
-        min_eig = (batch_size - 1)**0.5
+        min_eig = torch.as_tensor((batch_size - 1)**0.5).to(zi)
     min_var_zi = torch.square(min_eig)/(batch_size-1)
     zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
@@ -97,9 +97,9 @@ def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
         if "-" not in key and key != "total":
             tb_writer.add_scalars(f"MSE/{key}", {"Train": train_loss[key], "Validation": val_loss[key]}, epoch)
     tb_writer.add_scalars("Coupling/Train", 
-        {key:value for (key, value) in train_loss.items() if "->" in key}, epoch)
+        {key:value for (key, value) in train_loss.items() if "-" in key}, epoch)
     tb_writer.add_scalars("Coupling/Validation",
-        {key:value for (key, value) in val_loss.items() if "->" in key}, epoch)
+        {key:value for (key, value) in val_loss.items() if "-" in key}, epoch)
     print(f"Epoch {epoch} -- Train: {train_loss['total']:.4e} | Val: {val_loss['total']:.4e}")
 
 def process_batch(model, X_dict, mask_dict, config):
@@ -115,8 +115,8 @@ def process_batch(model, X_dict, mask_dict, config):
             prev_mask = mask_dict[prev_modal]
             if torch.any(prev_mask[mask]):
                 (z_masked, prev_masked) = (z[prev_mask[mask]], prev_z[mask[prev_mask]])
-                coupling_dict[f"{prev_modal}->{modal}"] = min_var_loss(z_masked, prev_masked.detach())
-                coupling_dict[f"{modal}->{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
+                coupling_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_masked.detach())
+                coupling_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
     return (latent_dict, recon_dict, recon_loss_dict, coupling_dict)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
