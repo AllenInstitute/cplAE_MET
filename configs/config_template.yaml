@@ -29,7 +29,9 @@ modal_frac:
   TE: native
   EM: native
   MET: native
-  
+
+T_hidden: [512, 256, 128, 64]
+
 # Set model hyperparameters (taken from trial 1213 of Baftizadeh, Gala, Gliko, Marghi & Sumbul 2023)
 T: 1.0   # T reconstruction loss weight coefficient
 E: 2.512   # E reconstruction loss weight coefficient

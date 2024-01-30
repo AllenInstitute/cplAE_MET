@@ -12,9 +12,9 @@ class Enc_xm_to_zm(nn.Module):
         if gnoise_std is not None:
             self.gnoise_std = torch.nn.Parameter(torch.from_numpy(gnoise_std*gnoise_std_frac))
         
-        self.conv_0 = nn.Conv1d(4*4, 10, kernel_size=6, stride = 2)
-        self.conv_1 = nn.Conv1d(10, 10, kernel_size=6, stride = 2)
-        self.fc_0 = nn.Linear(270, 10)
+        self.conv_0 = nn.Conv1d(4*4, 128, kernel_size=6, stride = 2)
+        self.conv_1 = nn.Conv1d(128, 128, kernel_size=6, stride = 2)
+        self.fc_0 = nn.Linear(3456, 10)
         self.bn_1 = nn.BatchNorm1d(10, eps=1e-05, momentum=0.05, affine=True, track_running_stats=True)
         self.relu = nn.ReLU()
         self.elu = nn.ELU()

@@ -39,7 +39,7 @@ class MET_Data():
         stripped = [string.strip() for string in specimen_ids]
         data_dict = {}
         for (key, value) in self.items():
-            cleaned = [np.squeeze(value)[self.id_map[spec]].reshape([1, -1]) for spec in stripped]
+            cleaned = [np.squeeze(value)[None, self.id_map[spec]] for spec in stripped]
             data_dict[key] = np.concatenate(cleaned)
         return data_dict
     
