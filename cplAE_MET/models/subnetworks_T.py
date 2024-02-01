@@ -18,14 +18,12 @@ class Enc_xt_to_zt(nn.Module):
 
         self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
         self.relu = nn.ReLU()
-        self.elu = nn.ELU()
 
     def forward(self, xt):
         x = self.drp(xt)
-        for (i, layer_name) in enumerate(self.layer_names[:-1]):
-            activation = (self.elu if i == 0 else self.relu)
+        for layer_name in self.layer_names[:-1]:
             layer = getattr(self, layer_name)
-            x = activation(layer(x))
+            x = self.relu(layer(x))
         final_layer = getattr(self, self.layer_names[-1])
         output = self.bn(final_layer(x))
         return output
@@ -42,7 +40,6 @@ class Dec_zt_to_xt(nn.Module):
             setattr(self, f"fc_{i}", torch.nn.Linear(i_dim, o_dim))
             self.layer_names.append(f"fc_{i}")
         self.relu = nn.ReLU()
-        self.elu = nn.ELU()
 
     def reparametrize(self, mu, var):
         std = torch.sqrt(var)
@@ -51,17 +48,16 @@ class Dec_zt_to_xt(nn.Module):
 
     def forward(self, zt):
         x = zt
-        for (i, layer_name) in enumerate(self.layer_names):
-            activation = (self.elu if i == 0 else self.relu)
+        for layer_name in self.layer_names:
             layer = getattr(self, layer_name)
-            x = activation(layer(x))
+            x = self.relu(layer(x))
         return x
 
 class AE_T(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.encoder = Enc_xt_to_zt(config["T_hidden"],
-            config['dropout'], 1252, config['latent_dim'], variational = False)
+            config['T_dropout'], 1252, config['latent_dim'], variational = False)
         self.decoder = Dec_zt_to_xt(reversed(config["T_hidden"]), config['latent_dim'], 1252)
         self.variational = False
 

@@ -56,8 +56,8 @@ def min_var_loss(zi, zj):
     return loss_ij
 
 def squared_error_loss(x_tupl, xr_tupl, mask):
-    squares = (torch.square(x[mask] - xr).sum() for (x, xr) in zip(x_tupl, xr_tupl))
-    mean_squared_error = sum(squares) / (len(xr_tupl)*xr_tupl[0].shape[0])
+    squares = (torch.square(x[mask] - xr).mean() for (x, xr) in zip(x_tupl, xr_tupl))
+    mean_squared_error = sum(squares) / len(xr_tupl)
     return mean_squared_error
 
 def combine_losses(cuml_losses, recon_losses, coupling_losses, total_loss):
