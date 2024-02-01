@@ -35,6 +35,16 @@ class MET_Data():
     def items(self):
         return (item for item in self.MET.items() if item[0] not in self.exclude)
 
+    def query(self, specimen_ids = None, modalities = []):
+        specimen_ids = (self["specimen_id"] if specimen_ids is None else specimen_ids)
+        valid = np.isin(self["specimen_id"], specimen_ids)
+        for modal in modalities:
+            data = self[f"{modal}_dat"]
+            valid = valid & ~np.isnan(data).reshape([data.shape[0], -1]).any(1)
+        valid_specimens = self["specimen_id"][valid]
+        data_dict = self.get_specimens(valid_specimens)
+        return data_dict
+
     def get_specimens(self, specimen_ids):
         stripped = [string.strip() for string in specimen_ids]
         data_dict = {}
