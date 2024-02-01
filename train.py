@@ -55,10 +55,11 @@ def min_var_loss(zi, zj):
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
     return loss_ij
 
-def squared_error_loss(x_tupl, xr_tupl, mask):
-    squares = (torch.square(x[mask] - xr).mean() for (x, xr) in zip(x_tupl, xr_tupl))
-    mean_squared_error = sum(squares) / len(xr_tupl)
-    return mean_squared_error
+def r2_loss(x_tupl, xr_tupl, mask):
+    squares = (torch.square(x[mask] - xr).sum(0) for (x, xr) in zip(x_tupl, xr_tupl))
+    variances = (torch.square(x[mask] - x[mask].mean(0, keepdim = True)).sum(0) + 1e-5 for x in x_tupl)
+    r2_error = sum([(square / var).mean() for (square, var) in zip(squares, variances)]) 
+    return r2_error
 
 def combine_losses(cuml_losses, recon_losses, coupling_losses, total_loss):
     cuml_recon = {key: value + cuml_losses.get(key, 0) for (key, value) in recon_losses.items()}
@@ -110,7 +111,7 @@ def process_batch(model, X_dict, mask_dict, config):
         xr_tupl = (xr,) if type(xr) != tuple else xr
         latent_dict[modal] = z
         recon_dict[modal] = xr_tupl
-        recon_loss_dict[modal] = squared_error_loss(x_tupl, xr_tupl, mask)
+        recon_loss_dict[modal] = r2_loss(x_tupl, xr_tupl, mask)
         for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
             prev_mask = mask_dict[prev_modal]
             if torch.any(prev_mask[mask]):
