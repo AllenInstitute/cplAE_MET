@@ -23,15 +23,11 @@ class Enc_xm_to_zm(nn.Module):
         self.fc_sigma = nn.Linear(10, out_dim, bias=False)
         self.bn_2 = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
 
-    def aug_noise(self, x):
-        # get the nanzero mask for M for adding noise
-        mask = x != 0.
+    def add_noise(self, x):
         if (self.training) and (self.gnoise_std is not None):
-            x = torch.where(mask, torch.normal(mean=x, std=self.gnoise_std), x)
+            x = x + torch.randn_like(x)*self.gnoise_std
             x = torch.clamp(x, min=0)
-            return x
-        else:
-            return x
+        return x
 
     def forward(self, xm):
         x = torch.flatten(xm, 2).transpose(1, 2)

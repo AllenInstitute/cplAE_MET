@@ -1,54 +1,79 @@
 ---
 # Config file for training MET autoencoder (triple modality)
 
+# Set device
+device: "cpu"
+
 # Set paths
-data_file: data/raw/MET_M120x4_13k_25Jul23.mat  # Location of MATLAB file containing processed input data
-output_dir: data/results   # Location to save training results (new folder will be created within output_dir)
+data_file: data/raw/MET_M120x4_50k_4Apr23.mat  # Location of MATLAB file containing processed input data
+output_dir: data/rohan   # Location to save training results (new folder will be created within output_dir)
 
-# Set experiment properties:
+# Set experiment/optimization properties:
 experiment: autoencoder   # Type of experiment
-modalities: [M, E, T, EM]
-combine_types: False   # Whether to keep distinct excitatory and inhibitory density slices
-num_epochs: 2500   # Number of epochs to train
-latent_dim: 5   # Dimension of latent space for each modality
+modalities: [E, T] # Which modalities to use in the experiment
+num_epochs: 5000   # Number of epochs to train
+latent_dim: 3   # Dimension of latent space for each modality
 batch_size: 1000   # Batch size used during training
-dropout: 0.2   # Dropout probability
-gauss_var_frac: 0.05   # Fraction of data variance to insert as data augmentation
-fold: 0   # Which of the tenfold cross validations to use
 learning_rate: 0.001   # Learning rate for the ADAM optimizer
-patience: 2500   # How long to wait for improvement of loss
-improvement_frac: 0.1   # How much improvement needs to occur for stoppage to be delayed
-check_step: 100
-val_split: 0.25
+patience: 5000   # How long to wait for improvement of loss
+improvement_frac: 0.01   # How much improvement needs to occur for stoppage to be delayed
+check_step: 100 # How often to save model checkpoints
+val_split: 0.25 # Fraction of data to use for validation
 
+# Set modality-type sample fraction for each batch ("native" uses frequency found in data)
+# Note that these fractions will be used regardless of what is specified for "modalities" above
+# T -> transcriptomic, E -> electro-physiological, M -> morphological
 modal_frac:
   T: native
   E: native
-  M: native
   TM: native
   TE: native
   EM: native
   MET: native
 
-T_hidden: [512, 256, 128, 64]
+# Set auto-encoder architecture
+T_hidden: [256, 128] # Hidden layer output size for transcriptomic arm
+E_hidden: [128, 64] # Hidden layer output size for electro-physiological arm
+T_dropout: 0.5 # Dropout fraction for transcriptomic arm
+E_dropout: 0.1 # Dropout fraction for electro-physiological arm
+gauss_var_frac: 0.05   # Fraction of variance to insert as augmentation for electro-physiological arm
 
-# Set model hyperparameters (taken from trial 1213 of Baftizadeh, Gala, Gliko, Marghi & Sumbul 2023)
-T: 1.0   # T reconstruction loss weight coefficient
-E: 2.512   # E reconstruction loss weight coefficient
-M: 1.046   # M reconstruction loss weight coefficient
-EM: 0.202   # ME reconstruction loss weight coefficient
-E-T: 0.165   # E_T coupling loss weight coefficient
-M-T: 0.00623   # M_T coupling loss weight coefficient
-EM-T: 0.294   # ME_T coupling loss weight coefficient
-T-E: 90.288   # T_E coupling loss weight coefficient
-T-M: 3.908   # T_M coupling loss weight coefficient
-T-EM: 10.859   # T_ME coupling loss weight coefficient
-EM-E: 3.857   # ME_E coupling loss weight coefficient
-EM-M: 22.153   # ME_M coupling loss weight coefficient
-M-E: 0.0
+# Set loss weights. Single letters indicates self-reconstruction loss, 
+# A=B is cross-reconstruction loss for modal A generating modality B
+# A-B is the coupling loss between latent spaces of modality A and B, with gradient only propogated to B
+T: 1.0   # transcriptomic
+E: 1.0   # E reconstruction loss weight coefficient
+M: 1.0   # M reconstruction loss weight coefficient
+
+E-T: 0.0   # E_T coupling loss weight coefficient
 E-M: 0.0
+M-T: 0.0   # M_T coupling loss weight coefficient
+M-E: 0.0
+T-E: 0.0   # T_E coupling loss weight coefficient
+T-M: 0.0   # T_M coupling loss weight coefficient
+
+E=T: 1.0   # E_T coupling loss weight coefficient
+E=M: 1.0
+M=T: 1.0   # M_T coupling loss weight coefficient
+M=E: 1.0
+T=E: 1.0   # T_E coupling loss weight coefficient
+T=M: 1.0   # T_M coupling loss weight coefficient
+
+EM: 0.0   # ME reconstruction loss weight coefficient
+T-EM: 0.0   # T_ME coupling loss weight coefficient
+EM-T: 0.0   # ME_T coupling loss weight coefficient
+EM-E: 0.0   # ME_E coupling loss weight coefficient
+EM-M: 0.0   # ME_M coupling loss weight coefficient
 E-EM: 0.0
 M-EM: 0.0
+
+T=EM: 0.0   # T_ME coupling loss weight coefficient
+EM=T: 0.0   # ME_T coupling loss weight coefficient
+EM=E: 0.0   # ME_E coupling loss weight coefficient
+EM=M: 0.0   # ME_M coupling loss weight coefficient
+E=EM: 0.0
+M=EM: 0.0
+
 
 # Set SLURM parameters:
 partition: 'celltypes'
@@ -59,6 +84,3 @@ memory: '20g'
 time: '100:00:00'
 directory: '/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Ian/code/cplAE_MET'
 conda: 'cplae'
-
-# Set local parameters:
-device: "cpu"
