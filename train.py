@@ -77,7 +77,7 @@ def min_var_loss(zi, zj):
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
     return loss_ij
 
-def cross_r2_loss(model, x, z, out_modal):
+def cross_r2_loss(model, x, z, out_modal, variances):
     # This function computes the 1 - R2 score of the cross-modality 
     # reconstruction, which is the ratio of the model's reconstruction error 
     # with that of a dummy model which always outputs the mean of the data,
@@ -85,20 +85,23 @@ def cross_r2_loss(model, x, z, out_modal):
 
     xr = model.modal_arms[out_modal].decoder(z)
     squares = torch.square(x - xr).sum(0)
-    variances = torch.square(x - x.mean(0, keepdim = True)).sum(0) + 1e-5
-    r2_error = (squares / variances).mean()
+    r2_error = (squares / (variances*z.shape[0])).mean()
     return r2_error
 
-def r2_loss(x_tupl, xr_tupl, mask):
+def r2_loss(x_tupl, xr_tupl, mask, variances):
     # This function computes the 1 - R2 score of the self-modality 
     # reconstruction, which compares the model's reconstruction error 
     # to that of a dummy model which always outputs the mean of the data,
     # computed for each feature and then averaged.
 
     squares = (torch.square(x[mask] - xr).sum(0) for (x, xr) in zip(x_tupl, xr_tupl))
-    variances = (torch.square(x[mask] - x[mask].mean(0, keepdim = True)).sum(0) + 1e-5 for x in x_tupl)
-    r2_error = sum([(square / var).mean() for (square, var) in zip(squares, variances)]) 
+    r2_error = sum([(square / (var*xr_tupl[0].shape[0])).mean() for (square, var) in zip(squares, variances)]) 
     return r2_error
+
+def mse_loss(x_tupl, xr_tupl, mask):
+    squares = (torch.square(x[mask] - xr).mean() for (x, xr) in zip(x_tupl, xr_tupl))
+    mean_squared_error = sum(squares) / len(xr_tupl)
+    return mean_squared_error
 
 def combine_losses(cuml_losses, recon_losses, coupling_losses, cross_losses, total_loss):
     # This function takes an existing dictionary of cumulative loses and adds
@@ -137,6 +140,14 @@ def get_gauss_baselines(dataset):
     (std_e, std_m) = (np.std(xe, 0, keepdims = True), np.std(xm, 0, keepdims = True))
     return (std_e, std_m)
 
+def get_variances(dataset, modalities, device, dtype, reg = 1e-2):
+    variances = {}
+    for modal in modalities:
+        data = dataset.MET.query(dataset.allowed_specimen_ids, [modal])[f"{modal}_dat"]
+        var = (np.square(data - data.mean(0, keepdims = True)).sum(0) + reg) / data.shape[0] 
+        variances[modal] = torch.from_numpy(var).to(device, dtype)
+    return variances
+
 def build_model(config, train_dataset):
     # This function builds the model specified in the config YAML file. It completes
     # the specification by computing the baseline variances of the morphological and
@@ -169,7 +180,7 @@ def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
         {key:value for (key, value) in val_loss.items() if "-" in key}, epoch)
     print(f"Epoch {epoch} -- Train: {train_loss['total']:.4e} | Val: {val_loss['total']:.4e}")
 
-def process_batch(model, X_dict, mask_dict, config):
+def process_batch(model, X_dict, mask_dict, config, var_dict):
     # This function processes a single batch during model optimization. It takes as
     # argument the target model, a dictionary of data from different modalities, a
     # dictionary of masks specifying which samples hold valid data for each modality,
@@ -186,7 +197,7 @@ def process_batch(model, X_dict, mask_dict, config):
         xr_tupl = (xr,) if type(xr) != tuple else xr
         latent_dict[modal] = z
         recon_dict[modal] = xr_tupl
-        recon_loss_dict[modal] = r2_loss(x_tupl, xr_tupl, mask)
+        recon_loss_dict[modal] = r2_loss(x_tupl, xr_tupl, mask, (var_dict[modal],))
         for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
             prev_mask = mask_dict[prev_modal]
             if torch.any(prev_mask[mask]):
@@ -194,8 +205,8 @@ def process_batch(model, X_dict, mask_dict, config):
                 coupling_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_masked.detach())
                 coupling_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
                 (x_masked, x_prev_masked) = (X_dict[modal][0][mask & prev_mask], X_dict[prev_modal][0][mask & prev_mask])
-                cross_dict[f"{modal}={prev_modal}"] = cross_r2_loss(model, x_prev_masked, z_masked.detach(), prev_modal)
-                cross_dict[f"{prev_modal}={modal}"] = cross_r2_loss(model, x_masked, prev_masked.detach(), modal)
+                cross_dict[f"{modal}={prev_modal}"] = cross_r2_loss(model, x_prev_masked, z_masked.detach(), prev_modal, var_dict[prev_modal])
+                cross_dict[f"{prev_modal}={modal}"] = cross_r2_loss(model, x_masked, prev_masked.detach(), modal, var_dict[modal])
     return (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
@@ -213,6 +224,8 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     collate = get_collator(config["device"], torch.float32) # Converts tensors to desired device and type
     train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
+    train_variances = get_variances(train_dataset, model.modal_arms, config["device"], torch.float32)
+    val_variances = get_variances(val_dataset, model.modal_arms, config["device"], torch.float32)
     for epoch in range(config["num_epochs"]):
         # Training -----------
         cuml_losses = {}
@@ -221,7 +234,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             torch.save(model.state_dict(), exp_dir / "checkpoints" / f"model_{epoch}.pt")
         for (X_dict, mask_dict, specimen_ids) in train_loader:
             optimizer.zero_grad()
-            (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = process_batch(model, X_dict, mask_dict, config)
+            (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = process_batch(model, X_dict, mask_dict, config, train_variances)
             loss = compute_weighted_loss(config, recon_loss_dict, coupling_dict, cross_dict)
             loss.backward()
             optimizer.step()
@@ -232,7 +245,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             cuml_val_losses = {}
             for (X_val, mask_val, _) in val_loader:
                 model.eval()
-                (latent_val, recon_val, recon_loss_val, coupling_val, cross_val) = process_batch(model, X_val, mask_val, config)
+                (latent_val, recon_val, recon_loss_val, coupling_val, cross_val) = process_batch(model, X_val, mask_val, config, val_variances)
                 val_loss = compute_weighted_loss(config, recon_loss_val, coupling_val, cross_val)
                 cuml_val_losses = combine_losses(cuml_val_losses, recon_loss_val, coupling_val, cross_val, val_loss)
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}

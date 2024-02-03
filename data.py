@@ -68,8 +68,8 @@ class MET_Data():
 class MET_Dataset(IterableDataset):
     def __init__(self, met_data, batch_size, modal_frac, allowed_specimen_ids = None):
         self.MET = met_data
-        allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)
-        (self.modal_indices, self.is_xt, self.is_xe, self.is_xm) = self.get_modal_indices(allowed_specimen_ids)
+        self.allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)
+        (self.modal_indices, self.is_xt, self.is_xe, self.is_xm) = self.get_modal_indices(self.allowed_specimen_ids)
         (self.repeaters, self.counts) = self.get_repeaters(batch_size, modal_frac)
         self.num_batches = self.get_num_batches()
 
