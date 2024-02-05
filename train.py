@@ -148,6 +148,11 @@ def get_variances(dataset, modalities, device, dtype, reg = 1e-2):
         variances[modal] = torch.from_numpy(var).to(device, dtype)
     return variances
 
+def filter_specimens(met_data, specimen_ids, config):
+    platforms = config["select"]["platforms"]
+    specimens = met_data.query(specimen_ids, platforms = platforms)["specimen_id"]
+    return specimens
+
 def build_model(config, train_dataset):
     # This function builds the model specified in the config YAML file. It completes
     # the specification by computing the baseline variances of the morphological and
@@ -226,6 +231,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
     train_variances = get_variances(train_dataset, model.modal_arms, config["device"], torch.float32)
     val_variances = get_variances(val_dataset, model.modal_arms, config["device"], torch.float32)
+    (exp_dir / "checkpoints").mkdir(exist_ok = True)
     for epoch in range(config["num_epochs"]):
         # Training -----------
         cuml_losses = {}
@@ -259,12 +265,22 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
 
 def train_model(config, exp_dir):
     met_data = MET_Data(config["data_file"])
-    (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = 42)
-    train_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], train_ids)
-    test_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], test_ids)
-    np.savez_compressed(exp_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
-    trained_model = train_and_evaluate(exp_dir, config, train_dataset, test_dataset)
-    return trained_model
+    num_folds = config["folds"]
+    if num_folds > 0:
+        indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
+    else:
+        (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = config["seed"])
+        indices = [(train_ids, test_ids)]
+    for (fold, (train_ids, test_ids)) in enumerate(indices, 1):
+        print(f"Processing fold {fold} / {num_folds}.")
+        exp_fold_dir = (exp_dir / f"fold_{fold}") if num_folds > 0 else exp_dir
+        exp_fold_dir.mkdir(exist_ok = True)
+        filtered_train_ids = filter_specimens(met_data, train_ids, config)
+        filtered_test_ids = filter_specimens(met_data, test_ids, config)
+        train_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], filtered_train_ids)
+        test_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], filtered_test_ids)
+        np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
+        train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -275,5 +291,4 @@ if __name__ == "__main__":
         config = yaml.safe_load(target)
     exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name
     exp_dir.mkdir(exist_ok = True)
-    (exp_dir / "checkpoints").mkdir(exist_ok = True)
     train_model(config, exp_dir)

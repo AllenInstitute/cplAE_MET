@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import IterableDataset
 import scipy.io as sio
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 
 def get_collator(device, dtype):
     def collate(X):
@@ -35,12 +35,28 @@ class MET_Data():
     def items(self):
         return (item for item in self.MET.items() if item[0] not in self.exclude)
 
-    def query(self, specimen_ids = None, modalities = []):
+    def query(self, specimen_ids = None, modalities = [], exclude_modal_string = [], platforms = None):
         specimen_ids = (self["specimen_id"] if specimen_ids is None else specimen_ids)
+        platforms = (np.char.strip(np.unique(self["platform"])) if platforms is None else platforms)
         valid = np.isin(self["specimen_id"], specimen_ids)
+        valid = valid & np.isin(np.char.strip(self["platform"]), platforms)
+
         for modal in modalities:
             data = self[f"{modal}_dat"]
             valid = valid & ~np.isnan(data).reshape([data.shape[0], -1]).any(1)
+
+        modal_string_valid = np.full_like(valid, True)
+        for modal_string in exclude_modal_string:
+            modal_match = np.full_like(valid, True)
+            for modal in ["T", "E", "M"]:
+                data = self[f"{modal}_dat"]
+                if modal in modal_string:
+                    modal_match = modal_match & ~np.isnan(data).reshape([data.shape[0], -1]).any(1)
+                else:
+                    modal_match = modal_match & np.isnan(data).reshape([data.shape[0], -1]).any(1)
+            modal_string_valid = modal_string_valid & ~modal_match
+        valid = valid & modal_string_valid
+    
         valid_specimens = self["specimen_id"][valid]
         data_dict = self.get_specimens(valid_specimens)
         return data_dict
@@ -50,7 +66,7 @@ class MET_Data():
         data_dict = {}
         for (key, value) in self.items():
             cleaned = [np.squeeze(value)[None, self.id_map[spec]] for spec in stripped]
-            data_dict[key] = np.concatenate(cleaned)
+            data_dict[key] = np.concatenate(cleaned) if cleaned else value[:0]
         return data_dict
     
     def get_stratified_split(self, test_frac, seed = 42):
@@ -64,6 +80,20 @@ class MET_Data():
             labels[np.isin(labels, singleton_labels)] = values[np.argmax(counts)]
         (train_ids, test_ids) = train_test_split(self["specimen_id"], test_size = test_frac, random_state = seed, stratify = labels)
         return (train_ids, test_ids)
+    
+    def get_stratified_KFold(self, folds, seed = 42):
+        strat_cats = ["platform", "class", "cluster_label"]
+        labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
+        (values, counts) = np.unique(labels, return_counts = True)
+        singleton_labels = values[counts == 1]
+        if singleton_labels.size > 1:
+            labels[np.isin(labels, singleton_labels)] = "_singleton"
+        else:
+            labels[np.isin(labels, singleton_labels)] = values[np.argmax(counts)]
+        splitter = StratifiedKFold(folds, shuffle = True, random_state = seed)
+        for (train_ids, test_ids) in splitter.split(self["specimen_id"], labels):
+            (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
+            yield (train_spec, test_spec)
 
 class MET_Dataset(IterableDataset):
     def __init__(self, met_data, batch_size, modal_frac, allowed_specimen_ids = None):
@@ -158,11 +188,4 @@ class RepeatingRandomIndex():
     
 if __name__ == "__main__":
     met_data = MET_Data("data/raw/MET_M120x4_50k_4Apr23.mat")
-    batch_size = 20
-    modal_frac = {"T": 0.5, "M": 0.5}
-    met = MET_Dataset(met_data, batch_size, modal_frac, met_data["specimen_id"][:1000])
-    print(met.counts)
-    print(met.num_batches)
-    print([(modal, len(indices)) for (modal, indices) in met.modal_indices.items()])
-    # x = next(iter(met))
-    # print(np.unique(np.unique(x[-1], return_counts = True)[-1], return_counts = True))
+    print(met_data.query(modalities = ["M"], exclude_modal_string = ["M", "ME"], platforms = ["ME"])["specimen_id"].shape)

@@ -73,3 +73,27 @@ def load_model(config, state_dict):
     model = MultiModal(config)
     model.load_state_dict(state_dict)
     return model
+
+def load_cross_validation(exp_dir, get_checkpoints = False):
+    exp_path = project_dir / "data" / exp_dir
+    results = {}
+    with open(exp_path / "config.yaml", "r") as target:
+        results["config"] = yaml.safe_load(target)
+    results["data"] = load_data(results)
+    fold_paths = list(exp_path.glob("trial_*"))
+    fold_paths.sort()
+    results["folds"] = []
+    for path in fold_paths:
+        info_dict = {}
+        specimen_ids = np.load(path / "train_test_ids.npz")
+        info_dict["train_ids"] = specimen_ids["train"]
+        info_dict["test_ids"] = specimen_ids["test"]
+        info_dict["best"] = torch.load(exp_path / "best_params.pt", torch.device("cpu"))
+        if get_checkpoints:
+            info_dict["checkpoints"] = {}
+            for path in (exp_path / "checkpoints").iterdir():
+                epoch = int(path.stem.split("_")[-1])
+                state = torch.load(path, torch.device("cpu"))
+                info_dict["checkpoints"][epoch] = state
+        results["folds"].append(info_dict)
+    return results

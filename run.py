@@ -8,11 +8,9 @@ import sys
 
 def recursive_unlink(path):
     if path.is_dir():
-        contents = list(path.iterdir())
-        for path in path.iterdir():
-            recursive_unlink(path)
-        if not contents:
-            path.rmdir()
+        for child_path in path.iterdir():
+            recursive_unlink(child_path)
+        path.rmdir()
     elif path.is_file():
         path.unlink()
 
@@ -61,6 +59,8 @@ def clear_experiment(exp_dir):
     recursive_unlink(exp_dir / "train_test_ids.npz")
     recursive_unlink(exp_dir / "tn_board")
     recursive_unlink(exp_dir / "checkpoints")
+    for path in exp_dir.glob("fold_*"):
+        recursive_unlink(path)
 
 if __name__ == "__main__":
     # Experiment name and path to the config YAML file must be provided.
