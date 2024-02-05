@@ -84,12 +84,6 @@ class MET_Data():
     def get_stratified_KFold(self, folds, seed = 42):
         strat_cats = ["platform", "class", "cluster_label"]
         labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
-        (values, counts) = np.unique(labels, return_counts = True)
-        singleton_labels = values[counts == 1]
-        if singleton_labels.size > 1:
-            labels[np.isin(labels, singleton_labels)] = "_singleton"
-        else:
-            labels[np.isin(labels, singleton_labels)] = values[np.argmax(counts)]
         splitter = StratifiedKFold(folds, shuffle = True, random_state = seed)
         for (train_ids, test_ids) in splitter.split(self["specimen_id"], labels):
             (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
