@@ -101,11 +101,11 @@ if __name__ == "__main__":
     print(f'\nRunning experiment "{args.exp_name}":\n')
     record_settings(exp_dir, args.config_file)
     if not args.local:
-        create_sbatch_script(python_file, exp_dir, args.config_file, config)
+        create_sbatch_script(python_file, exp_dir, exp_dir / "config.yaml", config)
         subprocess.run(["sbatch", exp_dir / "script.sh"])
     else:
         if args.terminal:
-            subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file])
+            subprocess.run(["python", "-u", python_file, args.exp_name, exp_dir / "config.yaml"])
         else:
             with open(exp_dir / "terminal.out", "w") as target:
-                subprocess.run(["python", "-u", python_file, args.exp_name, args.config_file], stdout = target)
+                subprocess.run(["python", "-u", python_file, args.exp_name, exp_dir / "config.yaml"], stdout = target)
