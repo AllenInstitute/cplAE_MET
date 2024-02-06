@@ -18,12 +18,16 @@ learning_rate: 0.001   # Learning rate for the ADAM optimizer
 patience: .inf   # How long to wait for improvement of loss
 improvement_frac: 0.01   # How much improvement needs to occur for stoppage to be delayed
 check_step: 100 # How often to save model checkpoints
-folds: 4 # Number of folds to use for cross-validation
+folds: 10 # Number of folds to use for cross-validation
 val_split: 0.25 # Fraction of data to use for validation (ignored if folds > 0)
 seed: 42 # Random seed to use for validation splits
 
+# Set criteria for cell specimen inclusion in experiment
+select:
+  platforms: ["patchseq"]
+
 # Set modality-type sample fraction for each batch ("native" uses frequency found in data)
-# Note that these fractions will be used regardless of what is specified for "modalities" above
+# Note that these fractions are computed after the filtering criteria in the "select" field above
 # T -> transcriptomic, E -> electro-physiological, M -> morphological
 modal_frac:
   T: native
@@ -34,8 +38,6 @@ modal_frac:
   EM: native
   MET: native
 
-select:
-  platforms: 
 
 # Set auto-encoder architecture
 T_hidden: [256, 128] # Hidden layer output size for transcriptomic arm
@@ -51,12 +53,12 @@ T: 1.0   # transcriptomic
 E: 1.0   # E reconstruction loss weight coefficient
 M: 1.0   # M reconstruction loss weight coefficient
 
-E-T: 0.0   # E_T coupling loss weight coefficient
-E-M: 0.0
-M-T: 0.0   # M_T coupling loss weight coefficient
-M-E: 0.0
-T-E: 0.0   # T_E coupling loss weight coefficient
-T-M: 0.0   # T_M coupling loss weight coefficient
+E-T: 1.0   # E_T coupling loss weight coefficient
+E-M: 1.0
+M-T: 1.0   # M_T coupling loss weight coefficient
+M-E: 1.0
+T-E: 1.0   # T_E coupling loss weight coefficient
+T-M: 1.0   # T_M coupling loss weight coefficient
 
 E=T: 1.0   # E_T coupling loss weight coefficient
 E=M: 1.0
