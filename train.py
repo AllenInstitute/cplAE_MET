@@ -271,9 +271,10 @@ def train_model(config, exp_dir):
     else:
         (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = config["seed"])
         indices = [(train_ids, test_ids)]
+        num_folds = 1
     for (fold, (train_ids, test_ids)) in enumerate(indices, 1):
         print(f"Processing fold {fold} / {num_folds}.")
-        exp_fold_dir = (exp_dir / f"fold_{fold}") if num_folds > 0 else exp_dir
+        exp_fold_dir = exp_dir / f"fold_{fold}"
         exp_fold_dir.mkdir(exist_ok = True)
         filtered_train_ids = filter_specimens(met_data, train_ids, config)
         filtered_test_ids = filter_specimens(met_data, test_ids, config)
