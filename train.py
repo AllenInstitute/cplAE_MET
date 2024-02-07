@@ -77,12 +77,13 @@ def min_var_loss(zi, zj):
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
     return loss_ij
 
-def cross_r2_loss(model, x, z, out_modal, variances):
+def cross_r2_loss(model, x, z, out_modal, variances, enc_grad):
     # This function computes the 1 - R2 score of the cross-modality 
     # reconstruction, which is the ratio of the model's reconstruction error 
     # with that of a dummy model which always outputs the mean of the data,
     # computed for each feature and then averaged.
 
+    z = (z.detach() if not enc_grad else z)
     xr = model.modal_arms[out_modal].decoder(z)
     squares = torch.square(x - xr).sum(0)
     r2_error = (squares / (variances*z.shape[0])).mean()
@@ -196,6 +197,7 @@ def process_batch(model, X_dict, mask_dict, config, var_dict):
     # pairs of modalities.
 
     (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = ({}, {}, {}, {}, {})
+    enc_grad = config["encoder_cross_grad"]
     for modal in config["modalities"]:
         (arm, x_tupl, mask) = (model.modal_arms[modal], X_dict[modal], mask_dict[modal])
         (z, xr) = arm(*(x[mask] for x in x_tupl))
@@ -210,8 +212,8 @@ def process_batch(model, X_dict, mask_dict, config, var_dict):
                 coupling_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_masked.detach())
                 coupling_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
                 (x_masked, x_prev_masked) = (X_dict[modal][0][mask & prev_mask], X_dict[prev_modal][0][mask & prev_mask])
-                cross_dict[f"{modal}={prev_modal}"] = cross_r2_loss(model, x_prev_masked, z_masked.detach(), prev_modal, var_dict[prev_modal])
-                cross_dict[f"{prev_modal}={modal}"] = cross_r2_loss(model, x_masked, prev_masked.detach(), modal, var_dict[modal])
+                cross_dict[f"{modal}={prev_modal}"] = cross_r2_loss(model, x_prev_masked, z_masked, prev_modal, var_dict[prev_modal], enc_grad)
+                cross_dict[f"{prev_modal}={modal}"] = cross_r2_loss(model, x_masked, prev_masked, modal, var_dict[modal], enc_grad)
     return (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):

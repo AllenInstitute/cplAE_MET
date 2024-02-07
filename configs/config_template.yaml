@@ -45,6 +45,7 @@ E_hidden: [128, 64] # Hidden layer output size for electro-physiological arm
 T_dropout: 0.5 # Dropout fraction for transcriptomic arm
 E_dropout: 0.1 # Dropout fraction for electro-physiological arm
 gauss_var_frac: 0.05   # Fraction of variance to insert as augmentation for electro-physiological arm
+encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder
 
 # Set loss weights. Single letters indicates self-reconstruction loss, 
 # A=B is cross-reconstruction loss for modal A generating modality B
