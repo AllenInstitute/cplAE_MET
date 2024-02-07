@@ -59,6 +59,10 @@ def clear_experiment(exp_dir):
     recursive_unlink(exp_dir / "train_test_ids.npz")
     recursive_unlink(exp_dir / "tn_board")
     recursive_unlink(exp_dir / "checkpoints")
+    recursive_unlink(exp_dir / "cca.pkl")
+    recursive_unlink(exp_dir / "T_pca.pkl")
+    recursive_unlink(exp_dir / "E_pca.pkl")
+    recursive_unlink(exp_dir / "M_pca.pkl")
     for path in exp_dir.glob("fold_*"):
         recursive_unlink(path)
 
@@ -82,6 +86,8 @@ if __name__ == "__main__":
         python_file = "alignment.py"
     elif config["experiment"] == "autoencoder":
         python_file = "train.py"
+    elif config["experiment"] == "pca-cca":
+        python_file = "pca_cca.py"
     else:
         raise ValueError(f'''Experiment "{config['experiment']}" not recognized.''')
     

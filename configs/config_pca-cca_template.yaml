@@ -1,0 +1,38 @@
+---
+# Config file for training PCA-CCA bi-modality model
+
+# Set paths
+data_file: data/raw/MET_M120x4_50k_4Apr23.mat  # Location of MATLAB file containing processed input data
+output_dir: data/pca-cca   # Location to save training results (new folder will be created within output_dir)
+
+# Set experiment/optimization properties:
+experiment: pca-cca   # Type of experiment
+modalities: [T, M] # Which two modalities to use in the experiment
+latent_dim: 3   # Dimension of CCA latent space
+pca_dim_T: 50 # PCA dimension for transcriptomic modality
+pca_dim_E: 50 # PCA dimension for electro-physiological modality
+pca_dim_M: 50 # PCA dimension for morphologicalmodality
+folds: 0 # Number of folds to use for cross-validation
+val_split: 0.25 # Fraction of data to use for validation (ignored if folds > 0)
+seed: 42 # Random seed to use for validation splits
+
+# Set criteria for cell specimen inclusion in experiment
+select:
+  platforms: ["patchseq"]
+
+# Set modality-type sample fraction for training and validation data (must include both modalities)
+# Note that these fractions are computed after the filtering criteria in the "select" field above
+# T -> transcriptomic, E -> electro-physiological, M -> morphological
+modal_frac:
+  TM: native
+  MET: native
+
+# Set SLURM parameters:
+partition: 'celltypes'
+cpus: 8
+gpus: 1
+nodes: 1
+memory: '20g'
+time: '100:00:00'
+directory: '/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Ian/code/cplAE_MET'
+conda: 'cplae'

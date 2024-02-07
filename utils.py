@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from cplAE_MET.models.model_classes import MultiModal
+from pca_cca import PCA_CCA
 from data import MET_Data
 
 project_dir = pathlib.Path("/Users/ian.convy/code/cplAE_MET")
@@ -79,7 +80,6 @@ def load_cross_validation(exp_dir, get_checkpoints = False):
     results = {}
     with open(exp_path / "config.yaml", "r") as target:
         results["config"] = yaml.safe_load(target)
-    results["data"] = load_data(results)
     fold_paths = list(exp_path.glob("fold_*"))
     fold_paths.sort()
     results["folds"] = []
@@ -95,5 +95,24 @@ def load_cross_validation(exp_dir, get_checkpoints = False):
                 epoch = int(path.stem.split("_")[-1])
                 state = torch.load(path, torch.device("cpu"))
                 info_dict["checkpoints"][epoch] = state
+        results["folds"].append(info_dict)
+    return results
+
+def load_pca_cca(exp_dir):
+    exp_path = project_dir / "data" / exp_dir
+    results = {}
+    with open(exp_path / "config.yaml", "r") as target:
+        results["config"] = yaml.safe_load(target)
+    fold_paths = list(exp_path.glob("fold_*"))
+    fold_paths.sort()
+    results["folds"] = []
+    for fold_path in fold_paths:
+        info_dict = {}
+        pca_cca = PCA_CCA(results["config"])
+        pca_cca.load(fold_path)
+        info_dict["model"] = pca_cca
+        specimen_ids = np.load(fold_path / "train_test_ids.npz")
+        info_dict["train_ids"] = specimen_ids["train"]
+        info_dict["test_ids"] = specimen_ids["test"]
         results["folds"].append(info_dict)
     return results
