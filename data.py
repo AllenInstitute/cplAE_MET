@@ -10,8 +10,7 @@ from sklearn.model_selection import train_test_split, StratifiedKFold
 def get_collator(device, dtype):
     def collate(X):
         (X_dict, mask_dict, specimen_ids) = X
-        X_torch = {modal: [torch.from_numpy(arr).to(device, dtype = dtype) for arr in tupl] 
-                   for (modal, tupl) in X_dict.items()}
+        X_torch = {modal: torch.from_numpy(arr).to(device, dtype = dtype) for (modal, arr) in X_dict.items()}
         mask_torch = {modal: torch.from_numpy(arr).to(device) for (modal, arr) in mask_dict.items()}
         return (X_torch, mask_torch, specimen_ids)
     return collate
@@ -159,8 +158,8 @@ class MET_Dataset(IterableDataset):
             (xt, xe, xm) = (self.MET["T_dat"][indices], self.MET["E_dat"][indices], self.MET["M_dat"][indices])
             (is_xt, is_xe, is_xm) = (self.is_xt[indices], self.is_xe[indices], self.is_xm[indices])
             specimen_ids = self.MET["specimen_id"][indices]
-            outputs = ({"T": (xt,), "E": (xe,), "M": (xm,), "EM": (xe, xm)}, 
-                       {"T": is_xt, "E": is_xe, "M": is_xm, "EM": is_xe & is_xm}, 
+            outputs = ({"T": xt, "E": xe, "M": xm,}, 
+                       {"T": is_xt, "E": is_xe, "M": is_xm}, 
                        specimen_ids)
             yield outputs
 

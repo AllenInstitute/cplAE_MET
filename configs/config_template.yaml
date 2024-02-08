@@ -47,6 +47,11 @@ E_dropout: 0.1 # Dropout fraction for electro-physiological arm
 gauss_var_frac: 0.05   # Fraction of variance to insert as augmentation for electro-physiological arm
 encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder
 
+losses:
+  T: r2
+  E: r2
+  M: mse
+
 # Set loss weights. Single letters indicates self-reconstruction loss, 
 # A=B is cross-reconstruction loss for modal A generating modality B
 # A-B is the coupling loss between latent spaces of modality A and B, with gradient only propogated to B
