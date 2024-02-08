@@ -9,42 +9,7 @@ import numpy as np
 
 from data import MET_Data, MET_Dataset, get_collator
 from cplAE_MET.models.model_classes import MultiModal
-
-class MSE():
-    def __init__(self, config, dataset):
-        self.enc_grad = config["encoder_cross_grad"]
-        self.variances = get_variances(dataset, ["T", "E", "M"], config["device"], torch.float32)
-    
-    def loss(self, x, xr, modal):
-        squares = torch.square(x - xr).mean()
-        variance = self.variances[modal]
-        mean_squared_error = squares / variance.mean()
-        return mean_squared_error
-    
-    def cross_loss(self, model, x, z, out_modal):
-        z = (z.detach() if not self.enc_grad else z)
-        xr = model.modal_arms[out_modal].decoder(z)
-        loss = self.loss(x, xr, out_modal)
-        return loss
-
-class R2():
-    def __init__(self, config, dataset):
-        self.enc_grad = config["encoder_cross_grad"]
-        self.variances = get_variances(dataset, ["T", "E", "M"], config["device"], torch.float32)
-
-    def loss(self, x, xr, modal):
-        squares = torch.square(x - xr).mean(0)
-        variance = self.variances[modal]
-        r2_error = (squares / variance).mean()
-        return r2_error
-    
-    def cross_loss(self, model, x, z, out_modal):
-        z = (z.detach() if not self.enc_grad else z)
-        xr = model.modal_arms[out_modal].decoder(z)
-        loss = self.loss(x, xr, out_modal)
-        return loss
-
-loss_classes = {"r2": R2, "mse": MSE}
+from losses import loss_classes
 
 class EarlyStopping():
     # This class keeps track of the passed loss value and saves the model
@@ -113,33 +78,6 @@ def min_var_loss(zi, zj):
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
     return loss_ij
 
-def cross_r2_loss(model, x, z, out_modal, variances, var_mask, enc_grad):
-    # This function computes the 1 - R2 score of the cross-modality 
-    # reconstruction, which is the ratio of the model's reconstruction error 
-    # with that of a dummy model which always outputs the mean of the data,
-    # computed for each feature and then averaged.
-
-    z = (z.detach() if not enc_grad else z)
-    xr = model.modal_arms[out_modal].decoder(z)
-    squares = torch.square(x - xr).sum(0)
-    r2_error = (squares[var_mask] / (variances[var_mask]*z.shape[0])).mean()
-    return r2_error
-
-def r2_loss(x_tupl, xr_tupl, mask, variances, var_mask):
-    # This function computes the 1 - R2 score of the self-modality 
-    # reconstruction, which compares the model's reconstruction error 
-    # to that of a dummy model which always outputs the mean of the data,
-    # computed for each feature and then averaged.
-
-    squares = (torch.square(x[mask] - xr).sum(0) for (x, xr) in zip(x_tupl, xr_tupl))
-    r2_error = sum([(square[var_mask] / (var[var_mask]*xr_tupl[0].shape[0])).mean() for (square, var) in zip(squares, variances)]) 
-    return r2_error
-
-def mse_loss(x_tupl, xr_tupl, mask):
-    squares = (torch.square(x[mask] - xr).mean() for (x, xr) in zip(x_tupl, xr_tupl))
-    mean_squared_error = sum(squares) / len(xr_tupl)
-    return mean_squared_error
-
 def combine_losses(cuml_losses, recon_losses, coupling_losses, cross_losses, total_loss):
     # This function takes an existing dictionary of cumulative loses and adds
     # a set of new loss values to it, matching across the different loss keys. 
@@ -176,13 +114,6 @@ def get_gauss_baselines(dataset):
     (xe, xm) = (dataset.MET["E_dat"][e_indices], dataset.MET["M_dat"][m_indices])
     (std_e, std_m) = (np.std(xe, 0, keepdims = True), np.std(xm, 0, keepdims = True))
     return (std_e, std_m)
-
-def get_variances(dataset, modalities, device, dtype):
-    variances = {}
-    for modal in modalities:
-        data = dataset.MET.query(dataset.allowed_specimen_ids, [modal])[f"{modal}_dat"]
-        variances[modal] = torch.from_numpy(np.var(data, 0)).to(device, dtype)
-    return variances
 
 def filter_specimens(met_data, specimen_ids, config):
     platforms = config["select"]["platforms"]
@@ -233,11 +164,11 @@ def process_batch(model, X_dict, mask_dict, config, loss_funcs):
 
     (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = ({}, {}, {}, {}, {})
     for modal in config["modalities"]:
-        (arm, x, mask, loss_func) = (model.modal_arms[modal], X_dict[modal], mask_dict[modal], loss_funcs[modal])
+        (arm, x, mask) = (model.modal_arms[modal], X_dict[modal], mask_dict[modal])
         (z, xr) = arm(x[mask])
         latent_dict[modal] = z
         recon_dict[modal] = xr
-        recon_loss_dict[modal] = loss_func.loss(x[mask], xr, modal)
+        recon_loss_dict[modal] = loss_funcs[modal].loss(x[mask], xr, modal)
         for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
             prev_mask = mask_dict[prev_modal]
             if torch.any(prev_mask[mask]):
@@ -245,8 +176,8 @@ def process_batch(model, X_dict, mask_dict, config, loss_funcs):
                 coupling_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_masked.detach())
                 coupling_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
                 (x_masked, x_prev_masked) = (x[mask & prev_mask], X_dict[prev_modal][mask & prev_mask])
-                cross_dict[f"{modal}={prev_modal}"] = loss_func.cross_loss(model, x_prev_masked, z_masked, prev_modal)
-                cross_dict[f"{prev_modal}={modal}"] = loss_func.cross_loss(model, x_masked, prev_masked, modal)
+                cross_dict[f"{modal}={prev_modal}"] = loss_funcs[prev_modal].cross_loss(model, x_prev_masked, z_masked, prev_modal)
+                cross_dict[f"{prev_modal}={modal}"] = loss_funcs[modal].cross_loss(model, x_masked, prev_masked, modal)
     return (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
