@@ -34,11 +34,14 @@ class MET_Data():
     def items(self):
         return (item for item in self.MET.items() if item[0] not in self.exclude)
 
-    def query(self, specimen_ids = None, modalities = [], exclude_modal_string = [], platforms = None):
+    def query(self, specimen_ids = None, modalities = [], exclude_modal_string = [], platforms = None,
+              classes = None):
         specimen_ids = (self["specimen_id"] if specimen_ids is None else specimen_ids)
         platforms = (np.char.strip(np.unique(self["platform"])) if platforms is None else platforms)
+        classes = (np.char.strip(np.unique(self["class"])) if classes is None else classes)
         valid = np.isin(self["specimen_id"], specimen_ids)
         valid = valid & np.isin(np.char.strip(self["platform"]), platforms)
+        valid = valid & np.isin(np.char.strip(self["class"]), classes)
 
         for modal in modalities:
             data = self[f"{modal}_dat"]
