@@ -19,6 +19,7 @@ patience: .inf   # How long to wait for improvement of loss
 improvement_frac: 0.01   # How much improvement needs to occur for stoppage to be delayed
 check_step: 100 # How often to save model checkpoints
 folds: 10 # Number of folds to use for cross-validation
+fold_list: [1, 2, 3] # Which folds to run in this experiment
 val_split: 0.25 # Fraction of data to use for validation (ignored if folds > 0)
 seed: 42 # Random seed to use for validation splits
 

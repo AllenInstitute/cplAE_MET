@@ -196,7 +196,8 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
     (exp_dir / "checkpoints").mkdir(exist_ok = True)
-    loss_funcs = {modal: loss_classes[loss](config, train_dataset) for (modal, loss) in config["losses"].items()}
+    loss_funcs = {modal: loss_classes[loss](config, train_dataset.MET, train_dataset.allowed_specimen_ids) 
+                  for (modal, loss) in config["losses"].items()}
     for epoch in range(config["num_epochs"]):
         # Training -----------
         cuml_losses = {}
@@ -237,7 +238,9 @@ def train_model(config, exp_dir):
         (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = config["seed"])
         indices = [(train_ids, test_ids)]
         num_folds = 1
-    for (fold, (train_ids, test_ids)) in enumerate(indices, 1):
+    fold_list = config["fold_list"] if config["fold_list"] else range(1, num_folds + 1)
+    for fold in fold_list:
+        (train_ids, test_ids) = indices[fold - 1]
         print(f"Processing fold {fold} / {num_folds}.")
         exp_fold_dir = exp_dir / f"fold_{fold}"
         exp_fold_dir.mkdir(exist_ok = True)

@@ -1,17 +1,17 @@
 import torch
 import numpy as np
 
-def get_variances(dataset, modalities, device, dtype):
+def get_variances(met_data, specimens, modalities, device, dtype):
     variances = {}
     for modal in modalities:
-        data = dataset.MET.query(dataset.allowed_specimen_ids, [modal])[f"{modal}_dat"]
+        data = met_data.query(specimens, [modal])[f"{modal}_dat"]
         variances[modal] = torch.from_numpy(np.var(data, 0)).to(device, dtype)
     return variances
 
 class MSE():
-    def __init__(self, config, dataset):
+    def __init__(self, config, met_data, specimens):
         self.enc_grad = config["encoder_cross_grad"]
-        self.variances = get_variances(dataset, ["T", "E", "M"], config["device"], torch.float32)
+        self.variances = get_variances(met_data, specimens, ["T", "E", "M"], config["device"], torch.float32)
     
     def loss(self, x, xr, modal):
         squares = torch.square(x - xr).mean()
@@ -26,9 +26,9 @@ class MSE():
         return loss
 
 class R2():
-    def __init__(self, config, dataset):
+    def __init__(self, config, met_data, specimens):
         self.enc_grad = config["encoder_cross_grad"]
-        self.variances = get_variances(dataset, ["T", "E", "M"], config["device"], torch.float32)
+        self.variances = get_variances(met_data, specimens, ["T", "E", "M"], config["device"], torch.float32)
 
     def loss(self, x, xr, modal):
         squares = torch.square(x - xr).mean(0)
