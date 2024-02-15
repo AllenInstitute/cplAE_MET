@@ -6,7 +6,7 @@ device: "cpu"
 
 # Set paths
 data_file: data/raw/MET_M120x4_50k_4Apr23.mat  # Location of MATLAB file containing processed input data
-output_dir: data/met   # Location to save training results (new folder will be created within output_dir)
+output_dir: data/test   # Location to save training results (new folder will be created within output_dir)
 
 # Set experiment/optimization properties:
 experiment: autoencoder   # Type of experiment
@@ -19,7 +19,7 @@ patience: .inf   # How long to wait for improvement of loss
 improvement_frac: 0.01   # How much improvement needs to occur for stoppage to be delayed
 check_step: 100 # How often to save model checkpoints
 folds: 10 # Number of folds to use for cross-validation
-fold_list: [1, 2, 3] # Which folds to run in this experiment
+fold_list: [] # Which folds to run in this experiment
 val_split: 0.25 # Fraction of data to use for validation (ignored if folds > 0)
 seed: 42 # Random seed to use for validation splits
 
@@ -34,8 +34,8 @@ modal_frac:
   T: native
   E: native
   M: native
-  TM: native
   TE: native
+  TM: native
   EM: native
   MET: native
 
@@ -43,8 +43,12 @@ modal_frac:
 # Set auto-encoder architecture
 T_hidden: [256, 128] # Hidden layer output size for transcriptomic arm
 E_hidden: [128, 64] # Hidden layer output size for electro-physiological arm
+M_conv: [[10, 1, 10], [10, 1, 10]] # (kernel length, stride, channels) for morphological convolutions
+M_hidden: [10] # Hidden layer output size for morphological arm
+
 T_dropout: 0.5 # Dropout fraction for transcriptomic arm
 E_dropout: 0.1 # Dropout fraction for electro-physiological arm
+M_dropout: 0.5
 gauss_var_frac: 0.05   # Fraction of variance to insert as augmentation for electro-physiological arm
 encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder
 

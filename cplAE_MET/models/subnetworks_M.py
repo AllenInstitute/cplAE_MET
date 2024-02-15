@@ -14,6 +14,7 @@ class Enc_xm_to_zm(nn.Module):
                  out_dim=3, 
                  gnoise_std=None,
                  gnoise_std_frac=0.05,
+                 dropout = 0.0,
                  variational = False):
         super().__init__()
         self.variational = variational
@@ -37,6 +38,7 @@ class Enc_xm_to_zm(nn.Module):
 
         self.bn = nn.BatchNorm1d(out_dim, eps=1e-05, momentum=0.05, affine=False, track_running_stats=True)
         self.relu = nn.ReLU()
+        self.drop = torch.nn.Dropout(dropout)
 
     def add_noise(self, x):
         if (self.training) and (self.gnoise_std is not None):
@@ -46,6 +48,7 @@ class Enc_xm_to_zm(nn.Module):
 
     def forward(self, xm):
         x = torch.flatten(xm, 2).transpose(1, 2)
+        x = self.drop(x)
         for conv_name in self.conv_names:
             conv_layer = getattr(self, conv_name)
             x = self.relu(conv_layer(x))
@@ -93,7 +96,8 @@ class AE_M(nn.Module):
         super().__init__()
         self.variational = False
         self.encoder = Enc_xm_to_zm(config["M_conv"], config["M_hidden"], config['latent_dim'], 
-                                    config["gauss_m_baseline"], config["gauss_var_frac"], self.variational)
+                                    config["gauss_m_baseline"], config["gauss_var_frac"], config["M_dropout"],
+                                    self.variational)
         self.decoder = Dec_zm_to_xm(config["M_conv"][::-1], config["M_hidden"][::-1], config['latent_dim'])
 
     def forward(self, xm):
