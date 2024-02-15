@@ -9,7 +9,7 @@ import numpy as np
 
 from data import MET_Data, MET_Dataset, get_collator
 from cplAE_MET.models.model_classes import MultiModal
-from losses import loss_classes
+from losses import loss_classes, min_var_loss
 
 class EarlyStopping():
     # This class keeps track of the passed loss value and saves the model
@@ -49,71 +49,36 @@ class EarlyStopping():
         best_state = torch.load(self.exp_dir / "best_params.pt")
         model.load_state_dict(best_state)
 
-def min_var_loss(zi, zj):
-    # This function computes a loss which penalizes differences
-    # between the passed latent vectors (from different modalities).
-    # The value is computed by taking the L2 distance between 
-    # the vectors, and then dividing this value by the smallest 
-    # singular value of the latent space covariance matrices 
-    # (approximated using the passed batch of latent vectors). This
-    # scaling helps prevent the latent spaces from collpasing into
-    # the origin or into a low-dimensional subspace. 
-
-    batch_size = zj.shape[0]
-    zj_centered = zj - torch.mean(zj, 0, True)
-    try: # If SVD fails, do not scale L2 distance
-        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
-    except torch._C._LinAlgError:
-        print("SVD failed.")
-        min_eig = torch.as_tensor((batch_size - 1)**0.5).to(zj)
-    min_var_zj = torch.square(min_eig)/(batch_size-1)
-    zi_centered = zi - torch.mean(zi, 0, True)
-    try: # If SVD fails, do not scale L2 distance
-        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
-    except torch._C._LinAlgError:
-        print("SVD failed.")
-        min_eig = torch.as_tensor((batch_size - 1)**0.5).to(zi)
-    min_var_zi = torch.square(min_eig)/(batch_size-1)
-    zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
-    loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
-    return loss_ij
-
-def combine_losses(cuml_losses, recon_losses, coupling_losses, cross_losses, total_loss):
+def combine_losses(total_loss, cuml_losses, *new_losses):
     # This function takes an existing dictionary of cumulative loses and adds
     # a set of new loss values to it, matching across the different loss keys. 
 
-    cuml_recon = {key: value + cuml_losses.get(key, 0) for (key, value) in recon_losses.items()}
-    cuml_coupling = {key: value + cuml_losses.get(key, 0) for (key, value) in coupling_losses.items()}
-    cuml_cross = {key: value + cuml_losses.get(key, 0) for (key, value) in cross_losses.items()}
+    incremented = {key:value + cuml_losses.get(key, 0) 
+                   for l_dict in new_losses for (key, value) in l_dict.items()}
     cuml_total = cuml_losses.get("total", 0) + total_loss
-    new_cuml = {**cuml_losses, **cuml_recon, **cuml_coupling, **cuml_cross, "total": cuml_total}
+    new_cuml = {**cuml_losses, **incremented, "total": cuml_total}
     return new_cuml
 
-def compute_weighted_loss(config, recon_loss_dict, coupling_dict, cross_dict):
+def compute_weighted_loss(config, *loss_dicts):
     # This function takes a set of component losses and combines them into a 
     # a single scalar loss value using weighrs specified in the config YAML file.
 
-    recon_loss = sum([config[modal]*loss_value for (modal, loss_value) in recon_loss_dict.items()])
-    coupl_loss = sum([config[modal]*loss_value for (modal, loss_value) in coupling_dict.items()])
-    cross_loss = sum([config[modal]*loss_value for (modal, loss_value) in cross_dict.items()])
-    weighted_loss = recon_loss + coupl_loss + cross_loss
-    return weighted_loss
+    weighted = [sum([config[modal]*loss_value for (modal, loss_value) in l_dict.items()]) 
+                for l_dict in loss_dicts]
+    total_loss = sum(weighted)
+    return total_loss
 
-def get_gauss_baselines(dataset):
+def get_gauss_baselines(dataset, modal):
     # This function computes the variances of the morphological and 
     # eletrophysiological modalities. It selects samples with the correct
     # modalities by using the indices of the passed MET_Dataset object,
     # which has already separated the samples by modality combination.
 
-    e_indices = np.concatenate(
-        [dataset.modal_indices["E"], dataset.modal_indices["TE"], dataset.modal_indices["EM"],
-        dataset.modal_indices["MET"]])
-    m_indices = np.concatenate(
-        [dataset.modal_indices["M"], dataset.modal_indices["TM"], dataset.modal_indices["EM"],
-        dataset.modal_indices["MET"]])
-    (xe, xm) = (dataset.MET["E_dat"][e_indices], dataset.MET["M_dat"][m_indices])
-    (std_e, std_m) = (np.std(xe, 0, keepdims = True), np.std(xm, 0, keepdims = True))
-    return (std_e, std_m)
+    all_modalities = ["T", "E", "M", "TE", "TM", "EM", "MET"]
+    indices = np.concatenate([dataset.modal_indices[string] for string in all_modalities if modal in string])
+    x = dataset.MET[f"{modal}_dat"][indices]
+    std = np.std(x, 0, keepdims = True)
+    return std
 
 def filter_specimens(met_data, specimen_ids, config):
     platforms = config["select"]["platforms"]
@@ -126,9 +91,12 @@ def build_model(config, train_dataset):
     # electro-physiological data.
 
     model_config = config.copy()
-    (std_e, std_m) = get_gauss_baselines(train_dataset)
-    model_config["gauss_e_baseline"] = std_e.astype("float32")
-    model_config["gauss_m_baseline"] = std_m.astype("float32")
+    if "E" in config["modalities"]:
+        std_e = get_gauss_baselines(train_dataset, "E")
+        model_config["gauss_e_baseline"] = std_e.astype("float32")
+    if "M" in config["modalities"]:
+        std_m = get_gauss_baselines(train_dataset, "M")
+        model_config["gauss_m_baseline"] = std_m.astype("float32")
     model = MultiModal(model_config)
     return model
 
@@ -210,7 +178,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             loss = compute_weighted_loss(config, recon_loss_dict, coupling_dict, cross_dict)
             loss.backward()
             optimizer.step()
-            cuml_losses = combine_losses(cuml_losses, recon_loss_dict, coupling_dict, cross_dict, loss)
+            cuml_losses = combine_losses(loss, cuml_losses, recon_loss_dict, coupling_dict, cross_dict)
         avg_losses = {key: value / len(train_dataset) for (key, value) in cuml_losses.items()}
         # Validation -----------
         with torch.no_grad():
@@ -219,7 +187,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
                 model.eval()
                 (latent_val, recon_val, recon_loss_val, coupling_val, cross_val) = process_batch(model, X_val, mask_val, config, loss_funcs)
                 val_loss = compute_weighted_loss(config, recon_loss_val, coupling_val, cross_val)
-                cuml_val_losses = combine_losses(cuml_val_losses, recon_loss_val, coupling_val, cross_val, val_loss)
+                cuml_val_losses = combine_losses(val_loss, cuml_val_losses, recon_loss_val, coupling_val, cross_val)
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
         log_tensorboard(tb_writer, avg_losses, avg_val_losses, epoch + 1)
         if stopper.stop_check(avg_val_losses["total"], model, epoch) or (epoch + 1 == config["num_epochs"]):
