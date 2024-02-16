@@ -24,7 +24,7 @@ def create_sbatch_script(python_file, exp_dir, config_path, slurm):
             f"#SBATCH --gpus={slurm['gpus']}", f"#SBATCH --nodes={slurm['nodes']}",
             f"#SBATCH --mem={slurm['memory']}", f"#SBATCH --time={slurm['time']}",
             f"#SBATCH --output={output_path}", "", f"cd {slurm['directory']}",
-            f"source activate {slurm['conda']}", "", f"python -u {python_file} {exp_name} {config_path}" 
+            f"source activate {slurm['conda']}", "", f"python -u {python_file} {exp_dir} {config_path}" 
         ])
         target.write(script_string)
 
