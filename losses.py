@@ -44,21 +44,12 @@ class ReconstructionLoss():
     def loss(self, x, xr, modal):
         pass
 
-    def cross_loss(self, model, x, z, out_modal):
+    def cross(self, model, x, z, out_modal):
         z = (z.detach() if not self.enc_grad else z)
         xr = model[out_modal]["dec"](z)
         loss = self.loss(x, xr, out_modal)
         return loss
     
-    def recurrent_loss(self, model, x, z, out_modal, interm_modal):
-        xr_1 = model[interm_modal]["dec"](z).detach()
-        zr = model[interm_modal]["enc"](xr_1)
-        xr_2 = model[out_modal]["dec"](zr)
-        coupling_loss = min_var_loss(z.detach(), zr)
-        recon_loss = self.loss(x, xr_2, out_modal)
-        total_loss = coupling_loss + recon_loss
-        return total_loss 
-
 class MSE(ReconstructionLoss):
     def __init__(self, config, met_data, specimens):
         super().__init__(config, met_data, specimens)

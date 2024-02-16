@@ -69,7 +69,7 @@ def clear_experiment(exp_dir):
 if __name__ == "__main__":
     # Experiment name and path to the config YAML file must be provided.
     parser = argparse.ArgumentParser()
-    parser.add_argument("exp_name", help = "Name of experiment.")
+    parser.add_argument("exp_path", help = "Name of experiment.")
     parser.add_argument("config_file", help = "Path to configuration YAML file.")
     parser.add_argument("--local", action = "store_true")
     parser.add_argument("--terminal", action = "store_true")
@@ -92,9 +92,9 @@ if __name__ == "__main__":
         raise ValueError(f'''Experiment "{config['experiment']}" not recognized.''')
     
     # Define directory for experiment outputs and check if it already exists.
-    exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name
+    exp_dir = pathlib.Path(args.exp_path)
     if exp_dir.exists():
-        choice = input(f'Experiment "{args.exp_name}" already exists. Replace? (yes/no) ')
+        choice = input(f'Experiment "{exp_dir.name}" already exists. Replace? (yes/no) ')
         if choice == "yes":
             clear_experiment(exp_dir)
         else:
@@ -104,14 +104,14 @@ if __name__ == "__main__":
         exp_dir.mkdir(parents = True)
 
     # The parameters are recorded in the experiment directory, and the Python file is run on SLURM (if not local).
-    print(f'\nRunning experiment "{args.exp_name}":\n')
+    print(f'\nRunning experiment "{exp_dir.name}":\n')
     record_settings(exp_dir, args.config_file)
     if not args.local:
         create_sbatch_script(python_file, exp_dir, exp_dir / "config.yaml", config)
         subprocess.run(["sbatch", exp_dir / "script.sh"])
     else:
         if args.terminal:
-            subprocess.run(["python", "-u", python_file, args.exp_name, exp_dir / "config.yaml"])
+            subprocess.run(["python", "-u", python_file, exp_dir, exp_dir / "config.yaml"])
         else:
             with open(exp_dir / "terminal.out", "w") as target:
-                subprocess.run(["python", "-u", python_file, args.exp_name, exp_dir / "config.yaml"], stdout = target)
+                subprocess.run(["python", "-u", python_file, exp_dir, exp_dir / "config.yaml"], stdout = target)

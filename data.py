@@ -15,6 +15,11 @@ def get_collator(device, dtype):
         return (X_torch, mask_torch, specimen_ids)
     return collate
 
+def filter_specimens(met_data, specimen_ids, config):
+    platforms = config["select"]["platforms"]
+    specimens = met_data.query(specimen_ids, platforms = platforms)["specimen_id"]
+    return specimens
+
 class MET_Data():
     def __init__(self, mat_path):
         self.MET = sio.loadmat(mat_path)

@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 import numpy as np
 
-from data import MET_Data, MET_Dataset, get_collator
+from data import MET_Data, MET_Dataset, get_collator, filter_specimens
 from losses import loss_classes, min_var_loss
 import utils
 
@@ -112,11 +112,6 @@ def get_gauss_baselines(dataset, modal):
     std = np.std(x, 0, keepdims = True)
     return std
 
-def filter_specimens(met_data, specimen_ids, config):
-    platforms = config["select"]["platforms"]
-    specimens = met_data.query(specimen_ids, platforms = platforms)["specimen_id"]
-    return specimens
-
 def build_model(config, train_dataset):
     # This function builds the model specified in the config YAML file. It completes
     # the specification by computing the baseline variances of the morphological and
@@ -184,14 +179,14 @@ def process_batch(model, X_dict, mask_dict, config, loss_funcs):
         (latent_dict[modal], recon_dict[modal]) = (z, xr)
         loss_dict[modal] = loss_funcs[modal].loss(x[mask], xr, modal)
         for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
-            prev_mask = mask_dict[prev_modal]
+            (prev_x, prev_mask) = (X_dict[prev_modal], mask_dict[prev_modal])
             if torch.any(prev_mask[mask]):
                 (z_masked, prev_masked) = (z[prev_mask[mask]], prev_z[mask[prev_mask]])
                 loss_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_masked.detach())
                 loss_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
-                (x_masked, x_prev_masked) = (x[mask & prev_mask], X_dict[prev_modal][mask & prev_mask])
-                loss_dict[f"{modal}={prev_modal}"] = loss_funcs[prev_modal].cross_loss(model, x_prev_masked, z_masked, prev_modal)
-                loss_dict[f"{prev_modal}={modal}"] = loss_funcs[modal].cross_loss(model, x_masked, prev_masked, modal)
+                (x_masked, prev_x_masked) = (x[mask & prev_mask], prev_x[mask & prev_mask])
+                loss_dict[f"{modal}={prev_modal}"] = loss_funcs[prev_modal].cross(model, prev_x_masked, z_masked, prev_modal)
+                loss_dict[f"{prev_modal}={modal}"] = loss_funcs[modal].cross(model, x_masked, prev_masked, modal)
     return (latent_dict, recon_dict, loss_dict)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
@@ -229,10 +224,10 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
         log_tensorboard(tb_writer, avg_losses, avg_val_losses, epoch + 1)
         grad_freezer.freeze_check(avg_val_losses, epoch)
-        if stopper.stop_check(avg_val_losses["total"], model, epoch) or (epoch + 1 == config["num_epochs"]):
-            stopper.load_best_parameters(model)
-            print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
+        if stopper.stop_check(avg_val_losses["total"], model, epoch):
             break
+    stopper.load_best_parameters(model)
+    print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
     utils.save_trace(exp_dir / "best", model, train_dataset)
     tb_writer.close()
     return model
@@ -262,11 +257,11 @@ def train_model(config, exp_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("exp_name", help = "Name of experiment.")
+    parser.add_argument("exp_path", help = "Name of experiment.")
     parser.add_argument("config_path", help = "path to config yaml file")
     args = parser.parse_args()
     with open(args.config_path, "r") as target:
         config = yaml.safe_load(target)
-    exp_dir = pathlib.Path(config["output_dir"]) / args.exp_name
+    exp_dir = pathlib.Path(args.exp_path)
     exp_dir.mkdir(exist_ok = True)
     train_model(config, exp_dir)
