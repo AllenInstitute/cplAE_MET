@@ -7,6 +7,13 @@ def get_conv_out_size(conv_dims, initial_length):
         output_length = 1 + (output_length - kernel) / stride
     return int(output_length)
 
+def get_m_arm(config):
+    arm = {}
+    arm["enc"] = Enc_xm_to_zm(config["M_conv"], config["M_hidden"], config['latent_dim'], 
+                                    config["gauss_m_baseline"], config["gauss_var_frac"], config["M_dropout"],
+                                    variational = False)
+    arm["dec"] = Dec_zm_to_xm(config["M_conv"][::-1], config["M_hidden"][::-1], config['latent_dim'])
+
 class Enc_xm_to_zm(nn.Module):
     def __init__(self,
                  conv_params,
@@ -90,24 +97,3 @@ class Dec_zm_to_xm(nn.Module):
             x = self.relu(conv_T_layer(x))
         xrm = x.transpose(1, 2).reshape([-1, 120, 4, 4])
         return xrm
-
-class AE_M(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.variational = False
-        self.encoder = Enc_xm_to_zm(config["M_conv"], config["M_hidden"], config['latent_dim'], 
-                                    config["gauss_m_baseline"], config["gauss_var_frac"], config["M_dropout"],
-                                    self.variational)
-        self.decoder = Dec_zm_to_xm(config["M_conv"][::-1], config["M_hidden"][::-1], config['latent_dim'])
-
-    def forward(self, xm):
-        if self.variational:
-            mu, sigma = self.encoder(xm)
-            log_sigma = (sigma + 1e-6).log()
-            zm = self.decoder.reparametrize(mu, sigma)
-        else:
-            zm = self.encoder(xm)
-            mu=[]
-            log_sigma=[]
-        xrm = self.decoder(zm)
-        return (zm, xrm)

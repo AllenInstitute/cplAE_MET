@@ -1,6 +1,14 @@
 from torch import nn
 import torch
 
+def get_e_arm(config):
+    arm = {}
+    arm["enc"] = Enc_xe_to_ze(config["E_hidden"],
+            config["gauss_e_baseline"], config["gauss_var_frac"], 
+            config['E_dropout'], config['latent_dim'], variational = False)
+    arm["dec"] = Dec_ze_to_xe(reversed(config["E_hidden"]), config['latent_dim'])
+    return arm
+
 class Enc_xe_to_ze(nn.Module):
     def __init__(self,
                  hidden_dims,
@@ -61,25 +69,3 @@ class Dec_ze_to_xe(nn.Module):
         final_layer = getattr(self, self.layer_names[-1])
         x = final_layer(self.drp(x))
         return x
-
-class AE_E(nn.Module):
-    def __init__(self, config):
-        super(AE_E, self).__init__()
-        self.encoder = Enc_xe_to_ze(config["E_hidden"],
-            config["gauss_e_baseline"], config["gauss_var_frac"], 
-            config['E_dropout'], config['latent_dim'], variational = False)
-        self.decoder = Dec_ze_to_xe(reversed(config["E_hidden"]), config['latent_dim'])
-        self.variational = False
-
-    def forward(self, xe):
-        if self.variational:
-            mu, sigma = self.encoder(xe)
-            log_sigma = (sigma + 1e-6).log()
-            ze = self.decoder.reparametrize(mu, sigma)
-        else:
-            ze = self.encoder(xe)
-            mu=[]
-            log_sigma=[]
-        xre = self.decoder(ze)
-        return (ze, xre)
-

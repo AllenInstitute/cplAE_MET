@@ -1,6 +1,13 @@
 import torch
 from torch import nn
 
+def get_t_arm(config):
+    arm = {}
+    arm["enc"] = Enc_xt_to_zt(config["T_hidden"],
+            config['T_dropout'], 1252, config['latent_dim'], variational = False)
+    arm["dec"] = Dec_zt_to_xt(reversed(config["T_hidden"]), config['latent_dim'], 1252)
+    return arm
+
 class Enc_xt_to_zt(nn.Module):
     def __init__(self, hidden_dims, dropout_p=0.2, in_dim=1252, out_dim=3, variational=False):
         super().__init__()
@@ -52,23 +59,3 @@ class Dec_zt_to_xt(nn.Module):
             layer = getattr(self, layer_name)
             x = self.relu(layer(x))
         return x
-
-class AE_T(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.encoder = Enc_xt_to_zt(config["T_hidden"],
-            config['T_dropout'], 1252, config['latent_dim'], variational = False)
-        self.decoder = Dec_zt_to_xt(reversed(config["T_hidden"]), config['latent_dim'], 1252)
-        self.variational = False
-
-    def forward(self, xt):
-        if self.variational:
-            mu, sigma = self.encoder(xt)
-            log_sigma = (sigma + 1e-6).log()
-            zt = self.decoder.reparametrize(mu, sigma)
-        else:
-            zt =  self.encoder(xt)
-            mu = []
-            log_sigma = []
-        xrt = self.decoder(zt)
-        return (zt, xrt)

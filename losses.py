@@ -37,9 +37,31 @@ def min_var_loss(zi, zj):
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
     return loss_ij
 
-class MSE():
+class ReconstructionLoss():
     def __init__(self, config, met_data, specimens):
         self.enc_grad = config["encoder_cross_grad"]
+
+    def loss(self, x, xr, modal):
+        pass
+
+    def cross_loss(self, model, x, z, out_modal):
+        z = (z.detach() if not self.enc_grad else z)
+        xr = model[out_modal]["dec"](z)
+        loss = self.loss(x, xr, out_modal)
+        return loss
+    
+    def recurrent_loss(self, model, x, z, out_modal, interm_modal):
+        xr_1 = model[interm_modal]["dec"](z).detach()
+        zr = model[interm_modal]["enc"](xr_1)
+        xr_2 = model[out_modal]["dec"](zr)
+        coupling_loss = min_var_loss(z.detach(), zr)
+        recon_loss = self.loss(x, xr_2, out_modal)
+        total_loss = coupling_loss + recon_loss
+        return total_loss 
+
+class MSE(ReconstructionLoss):
+    def __init__(self, config, met_data, specimens):
+        super().__init__(config, met_data, specimens)
         self.variances = get_variances(met_data, specimens, config["modalities"], config["device"], torch.float32)
     
     def loss(self, x, xr, modal):
@@ -47,25 +69,10 @@ class MSE():
         variance = self.variances[modal]
         mean_squared_error = squares / variance.mean()
         return mean_squared_error
-    
-    def cross_loss(self, model, x, z, out_modal):
-        z = (z.detach() if not self.enc_grad else z)
-        xr = model.modal_arms[out_modal].decoder(z)
-        loss = self.loss(x, xr, out_modal)
-        return loss
-    
-    def recurrent_loss(self, model, x, z, out_modal, interm_modal):
-        xr_1 = model.modal_arms[interm_modal].decoder(z).detach()
-        zr = model.modal_arms[interm_modal].encoder(xr_1)
-        xr_2 = model.modal_arms[out_modal].decoder(zr)
-        coupling_loss = min_var_loss(z.detach(), zr)
-        recon_loss = self.loss(x, xr_2, out_modal)
-        total_loss = coupling_loss + recon_loss
-        return recon_loss
 
-class R2():
+class R2(ReconstructionLoss):
     def __init__(self, config, met_data, specimens):
-        self.enc_grad = config["encoder_cross_grad"]
+        super().__init__(config, met_data, specimens)
         self.variances = get_variances(met_data, specimens, config["modalities"], config["device"], torch.float32)
 
     def loss(self, x, xr, modal):
@@ -73,20 +80,5 @@ class R2():
         variance = self.variances[modal]
         r2_error = (squares / variance).mean()
         return r2_error
-    
-    def cross_loss(self, model, x, z, out_modal):
-        z = (z.detach() if not self.enc_grad else z)
-        xr = model.modal_arms[out_modal].decoder(z)
-        loss = self.loss(x, xr, out_modal)
-        return loss
-    
-    def recurrent_loss(self, model, x, z, out_modal, interm_modal):
-        xr_1 = model.modal_arms[interm_modal].decoder(z).detach()
-        zr = model.modal_arms[interm_modal].encoder(xr_1)
-        xr_2 = model.modal_arms[out_modal].decoder(zr)
-        coupling_loss = min_var_loss(z.detach(), zr)
-        recon_loss = self.loss(x, xr_2, out_modal)
-        total_loss = coupling_loss + recon_loss
-        return recon_loss
 
 loss_classes = {"r2": R2, "mse": MSE}

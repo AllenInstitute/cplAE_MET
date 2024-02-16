@@ -8,8 +8,8 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 from data import MET_Data, MET_Dataset, get_collator
-from cplAE_MET.models.model_classes import MultiModal
 from losses import loss_classes, min_var_loss
+import utils
 
 class EarlyStopping():
     # This class keeps track of the passed loss value and saves the model
@@ -97,7 +97,8 @@ def build_model(config, train_dataset):
     if "M" in config["modalities"]:
         std_m = get_gauss_baselines(train_dataset, "M")
         model_config["gauss_m_baseline"] = std_m.astype("float32")
-    model = MultiModal(model_config)
+    model_dict = utils.get_model(model_config)
+    model = utils.ModelWrapper(model_dict)
     return model
 
 def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
@@ -132,10 +133,10 @@ def process_batch(model, X_dict, mask_dict, config, loss_funcs):
 
     (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = ({}, {}, {}, {}, {})
     for modal in config["modalities"]:
-        (arm, x, mask) = (model.modal_arms[modal], X_dict[modal], mask_dict[modal])
-        (z, xr) = arm(x[mask])
-        latent_dict[modal] = z
-        recon_dict[modal] = xr
+        (arm, x, mask) = (model[modal], X_dict[modal], mask_dict[modal])
+        z = arm["enc"](x[mask])
+        xr = arm["dec"](z)
+        (latent_dict[modal], recon_dict[modal]) = (z, xr)
         recon_loss_dict[modal] = loss_funcs[modal].loss(x[mask], xr, modal)
         for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
             prev_mask = mask_dict[prev_modal]
@@ -171,7 +172,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
         cuml_losses = {}
         model.train()
         if config["check_step"] > 0 and epoch % config["check_step"] == 0:
-            torch.save(model.state_dict(), exp_dir / "checkpoints" / f"model_{epoch}.pt")
+            utils.save_trace(exp_dir / "checkpoints" / f"model_{epoch}", model, train_dataset)
         for (X_dict, mask_dict, specimen_ids) in train_loader:
             optimizer.zero_grad()
             (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = process_batch(model, X_dict, mask_dict, config, loss_funcs)
@@ -194,6 +195,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             stopper.load_best_parameters(model)
             print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
             break
+    utils.save_trace(exp_dir / "best", model, train_dataset)
     tb_writer.close()
     return model
 
