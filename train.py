@@ -49,24 +49,56 @@ class EarlyStopping():
         best_state = torch.load(self.exp_dir / "best_params.pt")
         model.load_state_dict(best_state)
 
-def combine_losses(total_loss, cuml_losses, *new_losses):
+class GradFreezer():
+    def __init__(self, model, modules, loss_keys, patience):
+        self.modules = self.get_modules(model, modules)
+        self.loss_keys = loss_keys
+        self.patience = patience
+        self.counter = 0
+        self.best_epoch = 0
+        self.min_loss = np.inf
+        self.initialized = bool(self.modules)
+        self.frozen = False
+
+    def get_modules(self, model, module_strings):
+        modules = []
+        for string in module_strings:
+            (modal, enc_or_dec) = string.split("_")
+            module = model[modal][enc_or_dec]
+            modules.append(module)
+        return modules
+
+    def freeze_check(self, loss_dict, epoch):
+        if self.initialized and not self.frozen:
+            loss = sum([loss_dict[key] for key in self.loss_keys])
+            if loss < self.min_loss:
+                self.counter = 0
+                self.min_loss = loss
+                self.best_epoch = epoch
+            else:
+                self.counter += 1
+            freeze = self.counter > self.patience
+            if freeze:
+                for module in self.modules:
+                    module.requires_grad_(False)
+                self.frozen = True
+                print("Gradient frozen.")
+
+def combine_losses(total_loss, cuml_losses, new_losses):
     # This function takes an existing dictionary of cumulative loses and adds
     # a set of new loss values to it, matching across the different loss keys. 
 
-    incremented = {key:value + cuml_losses.get(key, 0) 
-                   for l_dict in new_losses for (key, value) in l_dict.items()}
+    incremented = {key:value + cuml_losses.get(key, 0) for (key, value) in new_losses.items()}
     cuml_total = cuml_losses.get("total", 0) + total_loss
     new_cuml = {**cuml_losses, **incremented, "total": cuml_total}
     return new_cuml
 
-def compute_weighted_loss(config, *loss_dicts):
+def compute_weighted_loss(config, loss_dict):
     # This function takes a set of component losses and combines them into a 
     # a single scalar loss value using weighrs specified in the config YAML file.
 
-    weighted = [sum([config[modal]*loss_value for (modal, loss_value) in l_dict.items()]) 
-                for l_dict in loss_dicts]
-    total_loss = sum(weighted)
-    return total_loss
+    weighted = sum([config[modal]*loss_value for (modal, loss_value) in loss_dict.items()])
+    return weighted
 
 def get_gauss_baselines(dataset, modal):
     # This function computes the variances of the morphological and 
@@ -101,6 +133,19 @@ def build_model(config, train_dataset):
     model = utils.ModelWrapper(model_dict)
     return model
 
+def train_setup(exp_dir, config, train_dataset, val_dataset):
+    model = build_model(config, train_dataset)
+    optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
+    tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
+    stopper = EarlyStopping(exp_dir, config["patience"], config["improvement_frac"])
+    grad_freezer = GradFreezer(model, config["freeze_modules"], config["freeze_losses"], config["freeze_patience"])
+    collate = get_collator(config["device"], torch.float32) # Converts tensors to desired device and type
+    train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
+    val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
+    loss_funcs = {modal: loss_classes[loss](config, train_dataset.MET, train_dataset.allowed_specimen_ids) 
+                  for (modal, loss) in config["losses"].items()}
+    return (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_funcs)
+
 def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
     # This function takes the training/validation losses and logs them
     # in Tensoboard. The component losses are reported without any scaling,
@@ -131,23 +176,23 @@ def process_batch(model, X_dict, mask_dict, config, loss_funcs):
     # and the cross-modal R2 loss. The modality masks are combined in order to select data for
     # pairs of modalities.
 
-    (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = ({}, {}, {}, {}, {})
+    (latent_dict, recon_dict, loss_dict) = ({}, {}, {})
     for modal in config["modalities"]:
         (arm, x, mask) = (model[modal], X_dict[modal], mask_dict[modal])
         z = arm["enc"](x[mask])
         xr = arm["dec"](z)
         (latent_dict[modal], recon_dict[modal]) = (z, xr)
-        recon_loss_dict[modal] = loss_funcs[modal].loss(x[mask], xr, modal)
+        loss_dict[modal] = loss_funcs[modal].loss(x[mask], xr, modal)
         for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
             prev_mask = mask_dict[prev_modal]
             if torch.any(prev_mask[mask]):
                 (z_masked, prev_masked) = (z[prev_mask[mask]], prev_z[mask[prev_mask]])
-                coupling_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_masked.detach())
-                coupling_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
+                loss_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_masked.detach())
+                loss_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_masked)
                 (x_masked, x_prev_masked) = (x[mask & prev_mask], X_dict[prev_modal][mask & prev_mask])
-                cross_dict[f"{modal}={prev_modal}"] = loss_funcs[prev_modal].cross_loss(model, x_prev_masked, z_masked, prev_modal)
-                cross_dict[f"{prev_modal}={modal}"] = loss_funcs[modal].cross_loss(model, x_masked, prev_masked, modal)
-    return (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict)
+                loss_dict[f"{modal}={prev_modal}"] = loss_funcs[prev_modal].cross_loss(model, x_prev_masked, z_masked, prev_modal)
+                loss_dict[f"{prev_modal}={modal}"] = loss_funcs[modal].cross_loss(model, x_masked, prev_masked, modal)
+    return (latent_dict, recon_dict, loss_dict)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     # This function takes trains a model as specified in the passed configuration
@@ -155,18 +200,10 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     # validation datasets. It monitors the loss improvement using and EarlyStopping
     # instance, and also saves the model at regular intervals. At the end of each
     # epoch the training and validation losses are logged in Tensorboard.
-
-    model = build_model(config, train_dataset)
-    optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
+    
+    (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_funcs) = train_setup(
+        exp_dir, config, train_dataset, val_dataset)
     model.to(config["device"])
-    tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
-    stopper = EarlyStopping(exp_dir, config["patience"], config["improvement_frac"])
-    collate = get_collator(config["device"], torch.float32) # Converts tensors to desired device and type
-    train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
-    val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
-    (exp_dir / "checkpoints").mkdir(exist_ok = True)
-    loss_funcs = {modal: loss_classes[loss](config, train_dataset.MET, train_dataset.allowed_specimen_ids) 
-                  for (modal, loss) in config["losses"].items()}
     for epoch in range(config["num_epochs"]):
         # Training -----------
         cuml_losses = {}
@@ -175,22 +212,23 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             utils.save_trace(exp_dir / "checkpoints" / f"model_{epoch}", model, train_dataset)
         for (X_dict, mask_dict, specimen_ids) in train_loader:
             optimizer.zero_grad()
-            (latent_dict, recon_dict, recon_loss_dict, coupling_dict, cross_dict) = process_batch(model, X_dict, mask_dict, config, loss_funcs)
-            loss = compute_weighted_loss(config, recon_loss_dict, coupling_dict, cross_dict)
+            (latent_dict, recon_dict, loss_dict) = process_batch(model, X_dict, mask_dict, config, loss_funcs)
+            loss = compute_weighted_loss(config, loss_dict)
             loss.backward()
             optimizer.step()
-            cuml_losses = combine_losses(loss, cuml_losses, recon_loss_dict, coupling_dict, cross_dict)
+            cuml_losses = combine_losses(loss, cuml_losses, loss_dict)
         avg_losses = {key: value / len(train_dataset) for (key, value) in cuml_losses.items()}
         # Validation -----------
         with torch.no_grad():
             cuml_val_losses = {}
             for (X_val, mask_val, _) in val_loader:
                 model.eval()
-                (latent_val, recon_val, recon_loss_val, coupling_val, cross_val) = process_batch(model, X_val, mask_val, config, loss_funcs)
-                val_loss = compute_weighted_loss(config, recon_loss_val, coupling_val, cross_val)
-                cuml_val_losses = combine_losses(val_loss, cuml_val_losses, recon_loss_val, coupling_val, cross_val)
+                (latent_val, recon_val, val_loss_dict) = process_batch(model, X_val, mask_val, config, loss_funcs)
+                val_loss = compute_weighted_loss(config, val_loss_dict)
+                cuml_val_losses = combine_losses(val_loss, cuml_val_losses, val_loss_dict)
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
         log_tensorboard(tb_writer, avg_losses, avg_val_losses, epoch + 1)
+        grad_freezer.freeze_check(avg_val_losses, epoch)
         if stopper.stop_check(avg_val_losses["total"], model, epoch) or (epoch + 1 == config["num_epochs"]):
             stopper.load_best_parameters(model)
             print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
@@ -214,6 +252,7 @@ def train_model(config, exp_dir):
         print(f"Processing fold {fold} / {num_folds}.")
         exp_fold_dir = exp_dir / f"fold_{fold}"
         exp_fold_dir.mkdir(exist_ok = True)
+        (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
         filtered_train_ids = filter_specimens(met_data, train_ids, config)
         filtered_test_ids = filter_specimens(met_data, test_ids, config)
         train_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], filtered_train_ids)

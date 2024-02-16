@@ -23,6 +23,10 @@ fold_list: [] # Which folds to run in this experiment
 val_split: 0.25 # Fraction of data to use for validation (ignored if folds > 0)
 seed: 42 # Random seed to use for validation splits
 
+freeze_modules: []
+freeze_patience: 100
+freeze_losses: []
+
 # Set criteria for cell specimen inclusion in experiment
 select:
   platforms: ["patchseq"]
