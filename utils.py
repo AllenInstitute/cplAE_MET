@@ -33,7 +33,7 @@ class ModelWrapper(torch.nn.Module):
         return self.model_dict.keys()
     
     def values(self):
-        return self.model_dict.keys()
+        return self.model_dict.values()
     
     def items(self):
         return self.model_dict.items()
@@ -58,10 +58,11 @@ def save_trace(path, model, dataset):
     encoder_path.mkdir(parents = True)
     decoder_path.mkdir(parents = True)
     was_training = model.training
+    device = next(model.parameters()).device
     model.eval()
     with torch.no_grad():
         for (modal, arm) in model.items():
-            example_input = torch.as_tensor(dataset.MET[f"{modal}_dat"][:1]).float()
+            example_input = torch.as_tensor(dataset.MET[f"{modal}_dat"][:1]).to(device, dtype = torch.float32)
             encoder_trace = torch.jit.trace(arm["enc"], (example_input,))
             decoder_input = (encoder_trace(example_input), )
             decoder_trace = torch.jit.trace(arm["dec"], decoder_input)
