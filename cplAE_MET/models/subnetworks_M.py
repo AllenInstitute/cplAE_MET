@@ -13,6 +13,7 @@ def get_m_arm(config):
                                     config["gauss_m_baseline"], config["gauss_var_frac"], config["M_dropout"],
                                     variational = False)
     arm["dec"] = Dec_zm_to_xm(config["M_conv"][::-1], config["M_hidden"][::-1], config['latent_dim'])
+    return arm
 
 class Enc_xm_to_zm(nn.Module):
     def __init__(self,
