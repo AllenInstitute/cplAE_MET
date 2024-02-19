@@ -6,7 +6,7 @@
 device: "cpu"
 
 # Set paths:
-data_file: data/raw/MET_M120x4_50k_4Apr23.mat # Location of MATLAB file containing processed input data
+data_file: data/raw/MET_M120x4_50k_4Apr23_wTasic.mat # Location of MATLAB file containing processed input data
 
 # Set experiment/optimization properties:
 experiment: autoencoder # Type of experiment
@@ -28,14 +28,20 @@ patience: .inf # How long to wait for improvement of loss
 improvement_frac: 0.01 # How much improvement needs to occur for stoppage to be delayed
 
 # Set parameters for gradient freezing:
-freeze_modules: ["M_enc"] # Which modules to freeze (format "modality_enc" or "modality_dec")
+freeze_modules: [M_enc] # Which modules to freeze (format "modality_enc" or "modality_dec")
 freeze_patience: 100 # How long to wait for loss improvement
-freeze_losses: ["T-M"] # Which losses to sum together and monitor (specify based on config key)
+freeze_losses: [T-M] # Which losses to sum together and monitor (specify based on config key)
 
 # Set criteria for cell specimen inclusion in experiment
 # Note that these are applied after the stratified test-validation split
 select:
-  platforms: ["patchseq"]
+  platforms: [patchseq]
+
+# Specify data transformations and corresponding parameters for each modality
+# Functions -- binarize: threshold
+transform: 
+  T:
+    binarize: 0.1
 
 # Set modality-type sample fraction for each batch ("native" uses frequency found in data)
 # Note that these fractions are computed after the filtering criteria in the "select" field above
@@ -56,6 +62,9 @@ T_hidden: [256, 128] # Hidden layer output size for transcriptomic arm
 E_hidden: [128, 64] # Hidden layer output size for electro-physiological arm
 M_conv: [[10, 1, 10], [10, 1, 10]] # (kernel length, stride, channels) for morphological convolutions
 M_hidden: [10] # Hidden layer sizes for morphological arm
+T_output: relu # Final activation function for transcriptomic decoder
+E_output: linear # Final activation function for electro-physiological decoder
+M_output: relu # Final activation function for morphological decoder
 
 # Set augmention/regularization parameters
 T_dropout: 0.5 # Dropout fraction for transcriptomic arm

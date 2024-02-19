@@ -20,6 +20,19 @@ def filter_specimens(met_data, specimen_ids, config):
     specimens = met_data.query(specimen_ids, platforms = platforms)["specimen_id"]
     return specimens
 
+def binarize(threshold):
+    def transform(data):
+        binarized = (data > threshold).astype(data.dtype)
+        return binarized
+    return transform
+
+def get_transformation_function(transform_dict):
+    functions = [transform_functions[func](params) for (func, params) in transform_dict.items()]
+    def chain(data):
+        output = functools.reduce(lambda x, func: func(x), functions, data)
+        return output
+    return chain
+
 class MET_Data():
     def __init__(self, mat_path):
         self.MET = sio.loadmat(mat_path)
@@ -97,12 +110,17 @@ class MET_Data():
             yield (train_spec, test_spec)
 
 class MET_Dataset(IterableDataset):
-    def __init__(self, met_data, batch_size, modal_frac, allowed_specimen_ids = None):
+    def __init__(self, met_data, batch_size, modal_frac, transformations, allowed_specimen_ids = None):
         self.MET = met_data
         self.allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)
         (self.modal_indices, self.is_xt, self.is_xe, self.is_xm) = self.get_modal_indices(self.allowed_specimen_ids)
         (self.repeaters, self.counts) = self.get_repeaters(batch_size, modal_frac)
         self.num_batches = self.get_num_batches()
+        if transformations:
+            self.transform = {modal: get_transformation_function(transform_dict) 
+                            for (modal, transform_dict) in transformations.items()}
+        else:
+            self.transform = {}
 
     def get_modal_indices(self, allowed_specimen_ids):
         num_cells = self.MET["specimen_id"].size
@@ -163,10 +181,11 @@ class MET_Dataset(IterableDataset):
             indices = []
             for (modal, repeating_index) in self.repeaters.items():
                 indices += repeating_index.get(self.counts[modal])
-            (xt, xe, xm) = (self.MET["T_dat"][indices], self.MET["E_dat"][indices], self.MET["M_dat"][indices])
-            (is_xt, is_xe, is_xm) = (self.is_xt[indices], self.is_xe[indices], self.is_xm[indices])
             specimen_ids = self.MET["specimen_id"][indices]
-            outputs = ({"T": xt, "E": xe, "M": xm,}, 
+            (is_xt, is_xe, is_xm) = (self.is_xt[indices], self.is_xe[indices], self.is_xm[indices])
+            data = {"T": self.MET["T_dat"][indices], "E": self.MET["E_dat"][indices], "M": self.MET["M_dat"][indices]}
+            transformed = {modal: func(data[modal]) for (modal, func) in self.transform.items()}
+            outputs = ({**data, **transformed}, 
                        {"T": is_xt, "E": is_xe, "M": is_xm}, 
                        specimen_ids)
             yield outputs
@@ -186,7 +205,11 @@ class RepeatingRandomIndex():
             indices.append(self.indices[self.order[self.step]])
             self.step += 1
         return indices
-    
+
+transform_functions = {
+    "binarize": binarize
+}
+
 if __name__ == "__main__":
     met_data = MET_Data("data/raw/MET_M120x4_50k_4Apr23.mat")
     print(met_data.query(modalities = ["M"], exclude_modal_string = ["M", "ME"], platforms = ["ME"])["specimen_id"].shape)

@@ -10,6 +10,7 @@ import numpy as np
 from data import MET_Data, MET_Dataset, get_collator, filter_specimens
 from losses import loss_classes, min_var_loss
 import utils
+import subnetworks
 
 class EarlyStopping():
     # This class keeps track of the passed loss value and saves the model
@@ -124,7 +125,7 @@ def build_model(config, train_dataset):
     if "M" in config["modalities"]:
         std_m = get_gauss_baselines(train_dataset, "M")
         model_config["gauss_m_baseline"] = std_m.astype("float32")
-    model_dict = utils.get_model(model_config)
+    model_dict = subnetworks.get_model(model_config)
     model = utils.ModelWrapper(model_dict)
     return model
 
@@ -250,8 +251,8 @@ def train_model(config, exp_dir):
         (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
         filtered_train_ids = filter_specimens(met_data, train_ids, config)
         filtered_test_ids = filter_specimens(met_data, test_ids, config)
-        train_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], filtered_train_ids)
-        test_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], filtered_test_ids)
+        train_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], config["transform"], filtered_train_ids)
+        test_dataset = MET_Dataset(met_data, config["batch_size"], config["modal_frac"], config["transform"], filtered_test_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
         train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
 

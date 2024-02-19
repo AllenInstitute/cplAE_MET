@@ -1,10 +1,15 @@
 import torch
 import numpy as np
+from data import get_transformation_function
 
-def get_variances(met_data, specimens, modalities, device, dtype):
+def get_variances(met_data, specimens, modalities, transformations, device, dtype):
+    transformations = {} if transformations is None else transformations
     variances = {}
     for modal in modalities:
         data = met_data.query(specimens, [modal])[f"{modal}_dat"]
+        if modal in transformations:
+            transf_func = get_transformation_function(transformations[modal])
+            data = transf_func(data)
         variances[modal] = torch.from_numpy(np.var(data, 0)).to(device, dtype)
     return variances
 
@@ -53,7 +58,8 @@ class ReconstructionLoss():
 class MSE(ReconstructionLoss):
     def __init__(self, config, met_data, specimens):
         super().__init__(config, met_data, specimens)
-        self.variances = get_variances(met_data, specimens, config["modalities"], config["device"], torch.float32)
+        self.variances = get_variances(met_data, specimens, config["modalities"], 
+                                       config["transform"], config["device"], torch.float32)
     
     def loss(self, x, xr, modal):
         squares = torch.square(x - xr).mean()
@@ -64,12 +70,21 @@ class MSE(ReconstructionLoss):
 class R2(ReconstructionLoss):
     def __init__(self, config, met_data, specimens):
         super().__init__(config, met_data, specimens)
-        self.variances = get_variances(met_data, specimens, config["modalities"], config["device"], torch.float32)
+        self.variances = get_variances(met_data, specimens, config["modalities"], 
+                                       config["transform"], config["device"], torch.float32)
 
     def loss(self, x, xr, modal):
         squares = torch.square(x - xr).mean(0)
         variance = self.variances[modal]
         r2_error = (squares / variance).mean()
         return r2_error
+    
+class CrossEntropy(ReconstructionLoss):
+    def __init__(self, config, met_data, specimens):
+        super().__init__(config, met_data, specimens)
 
-loss_classes = {"r2": R2, "mse": MSE}
+    def loss(self, x, xr, modal):
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(xr, x)
+        return loss
+
+loss_classes = {"r2": R2, "mse": MSE, "bce": CrossEntropy}

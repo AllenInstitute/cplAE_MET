@@ -4,17 +4,7 @@ import yaml
 import numpy as np
 import torch
 
-from cplAE_MET.models.subnetworks_T import get_t_arm
-from cplAE_MET.models.subnetworks_E import get_e_arm
-from cplAE_MET.models.subnetworks_M import get_m_arm
-
 from pca_cca import PCA_CCA
-
-model_builders = {
-    "T": get_t_arm,
-    "E": get_e_arm,
-    "M": get_m_arm,
-}
 
 project_dir = pathlib.Path("/Users/ian.convy/code/cplAE_MET")
 
@@ -37,10 +27,6 @@ class ModelWrapper(torch.nn.Module):
     
     def items(self):
         return self.model_dict.items()
-
-def get_model(config):
-    model = {modal: model_builders[modal](config) for modal in config["modalities"]}
-    return model
 
 def assemble_jit(jit_path, device = "cpu"):
     model = {}
