@@ -1,21 +1,22 @@
 ---
 # Config file for training MET autoencoder (triple modality)
-# Modality abbreviation key: T -> transcriptomic, E -> electro-physiological, M -> morphological
+# Modality abbreviations: T -> transcriptomic, E -> electro-physiological, M -> morphological
 
 # Set device:
 device: "cpu"
 
 # Set paths:
-data_file: data/raw/MET_M120x4_50k_4Apr23_wTasic.mat # Location of MATLAB file containing processed input data
+data_file: data/raw/MET_full_data.npz # Location of Numpy zipped archive (.npz) file containing processed input data
 
 # Set experiment/optimization properties:
 experiment: autoencoder # Type of experiment
-modalities: [T, E, M] # Which modalities to use in the experiment
+modalities: [M, E, T] # Which modalities to use in the experiment
 num_epochs: 5000 # Number of epochs to train
 latent_dim: 3 # Dimension of latent space
 batch_size: 1000 # Batch size used during training
 learning_rate: 0.001 # Learning rate for the ADAM optimizer
 check_step: 100 # How often to save model checkpoints
+encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder 
 
 # Set validation parameters:
 folds: 10 # Number of folds to use for cross-validation
@@ -28,77 +29,106 @@ patience: .inf # How long to wait for improvement of loss
 improvement_frac: 0.01 # How much improvement needs to occur for stoppage to be delayed
 
 # Set parameters for gradient freezing:
-freeze_modules: [M_enc] # Which modules to freeze (format "modality_enc" or "modality_dec")
+freeze_modules: [] # Which modules to freeze (format "modality_enc" or "modality_dec")
 freeze_patience: 100 # How long to wait for loss improvement
-freeze_losses: [T-M] # Which losses to sum together and monitor (specify based on config key)
+freeze_losses: [] # Which losses to sum together and monitor (specify based on config key)
+
+# Specify which data format(s) to use for each modality
+# The corresponding model must accept multiple data batches, one for each format given
+# Supported: T -> [logcpm], E -> [pca-ipfx], M  -> [arbors, ivscc]
+formats:
+  T: [logcpm]
+  E: [pca-ipfx]
+  M: [arbors, ivscc]
+
+# Specify data transformations and corresponding parameters for each modality
+# Functions defined in data.py
+transform: 
+  logcpm:
+    binarize: 0.01
 
 # Set criteria for cell specimen inclusion in experiment
 # Note that these are applied after the stratified test-validation split
 select:
   platforms: [patchseq]
 
-# Specify data transformations and corresponding parameters for each modality
-# Functions -- binarize: threshold
-transform: 
-  T:
-    binarize: 0.1
-
 # Set modality-type sample fraction for each batch ("native" uses frequency found in data)
 # Note that these fractions are computed after the filtering criteria in the "select" field above
 modal_frac:
-  # Unimodal
+# -- Unimodal --
   T: native
   E: native
   M: native
-  # Bimodal
+# -- Bimodal --
   TE: native
   TM: native
   EM: native
-  # Trimodal
+# -- Trimodal --
   MET: native
-
-# Set auto-encoder architecture
-T_hidden: [256, 128] # Hidden layer output size for transcriptomic arm
-E_hidden: [128, 64] # Hidden layer output size for electro-physiological arm
-M_conv: [[10, 1, 10], [10, 1, 10]] # (kernel length, stride, channels) for morphological convolutions
-M_hidden: [10] # Hidden layer sizes for morphological arm
-T_output: relu # Final activation function for transcriptomic decoder
-E_output: linear # Final activation function for electro-physiological decoder
-M_output: relu # Final activation function for morphological decoder
-
-# Set augmention/regularization parameters
-T_dropout: 0.5 # Dropout fraction for transcriptomic arm
-E_dropout: 0.1 # Dropout fraction for electro-physiological arm
-M_dropout: 0.0 # Dropout fraction for morphological arm
-gauss_var_frac: 0.05   # Fraction of variance to insert as augmentation for electro-physiological arm
-encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder
 
 # Specify metric to use for reconstruction losses
 losses:
-  T: r2
-  E: r2
-  M: mse
+  logcpm: feature_r2
+  pca-ipfx: feature_r2
+  arbors: sample_r2
+  ivscc: sample_r2
+
+# Set auto-encoder architecture
+architecture:
+  logcpm:
+    data_size: [1252]
+    out_activation: relu
+    hidden: [256, 128]
+    dropout: 0.5
+  pca-ipfx:
+    data_size: [82]
+    out_activation: linear
+    hidden: [128, 64]
+    dropout: 0.1
+    std_frac: 0.05
+  arbors:
+    data_size: [120, 4, 4]
+    out_activation: relu
+    conv_params: [[6, 2, 10], [6, 2, 10]] # [(kernel length, stride, channels), ...]
+    hidden: [10]
+    dropout: 0.0
+  ivscc:
+    data_size: [75]
+    out_activation: linear
+    hidden: [128, 64]
+    dropout: 0.0
+    std_frac: 0.05
+  ivscc_arbors:
+    arbors_size: [120, 4, 4]
+    ivscc_size: [75]
+    conv_params: [[6, 2, 10], [6, 2, 10]] # [(kernel length, stride, channels), ...]
+    ivscc_hidden: [64]
+    final_hidden: [256, 128]
+    arbors_activation: relu
+    ivscc_activation: linear
+    arbors_dropout: 0.0
+    ivscc_dropout: 0.0
 
 # Set loss weights (used when computing the combined loss scalar)
-
-# Single letters indicates within-modality reconstruction loss:
-T: 1.0   
-E: 1.0   
-M: 1.0  
-# A-B is the coupling loss between latent spaces of modality A and B, with the gradient only propogated to B
-E-T: 1.0  
-E-M: 1.0
-M-T: 1.0  
-M-E: 1.0
-T-E: 1.0  
-T-M: 1.0 
-# A=B is cross reconstruction loss for modal A generating modality B
-E=T: 1.0  
-E=M: 1.0
-M=T: 1.0  
-M=E: 1.0
-T=E: 1.0 
-T=M: 1.0  
+weights:
+  # Single letters indicates within-modality reconstruction loss:
+  T: 1.0   
+  E: 1.0   
+  M: 1.0  
+  # A-B is the coupling loss between latent spaces of modality A and B, with the gradient only propogated to B
+  E-T: 1.0  
+  E-M: 1.0
+  M-T: 1.0  
+  M-E: 1.0
+  T-E: 1.0  
+  T-M: 1.0 
+  # A=B is cross reconstruction loss for modal A generating modality B
+  E=T: 1.0  
+  E=M: 1.0
+  M=T: 1.0  
+  M=E: 1.0
+  T=E: 1.0 
+  T=M: 1.0  
 
 # Set SLURM parameters:
 partition: 'celltypes'

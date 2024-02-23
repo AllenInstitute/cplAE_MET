@@ -37,7 +37,7 @@ def assemble_jit(jit_path, device = "cpu"):
         model[modal]["dec"] = torch.jit.load(jit_path / "decoder" / f"{modal}.pt", map_location = device)
     return model
 
-def save_trace(path, model, dataset):
+def save_trace(path, model, config, dataset):
     path = pathlib.Path(path)
     encoder_path = path / "encoder"
     decoder_path = path / "decoder"
@@ -48,10 +48,13 @@ def save_trace(path, model, dataset):
     model.eval()
     with torch.no_grad():
         for (modal, arm) in model.items():
-            example_input = torch.as_tensor(dataset.MET[f"{modal}_dat"][:1]).to(device, dtype = torch.float32)
-            encoder_trace = torch.jit.trace(arm["enc"], (example_input,))
-            decoder_input = (encoder_trace(example_input), )
-            decoder_trace = torch.jit.trace(arm["dec"], decoder_input)
+            encoder_input = {}
+            for form in config["formats"][modal]:
+                raw_data = torch.from_numpy(dataset.MET[form][:1])
+                encoder_input[form] = torch.nan_to_num(raw_data).to(device, dtype = torch.float32)
+            encoder_trace = torch.jit.trace(arm["enc"], encoder_input, strict = False)
+            decoder_input = encoder_trace(encoder_input)
+            decoder_trace = torch.jit.trace(arm["dec"], decoder_input, strict = False)
             encoder_trace.save(encoder_path /  f"{modal}.pt")
             decoder_trace.save(decoder_path / f"{modal}.pt")
     if was_training:
