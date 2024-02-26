@@ -3,6 +3,7 @@ import pathlib
 import argparse
 from copy import deepcopy
 import pickle
+import torch
 
 import numpy as np
 from sklearn.decomposition import PCA
@@ -52,6 +53,13 @@ class PCA_CCA():
         pca_data = {modal: self.pca[modal].transform(X) for (modal, X) in data_dict.items()}
         self.cca = CCA_extended(n_components = self.cca_dim, scale = True, max_iter = 10000, tol = 1e-06, copy = True)
         self.cca.fit(pca_data)
+        self.generate_components()
+
+    def generate_components(self):
+        self.models = {modal: {
+            "enc": lambda x, modal=modal: torch.from_numpy(self.get_latent(x.cpu().numpy(), modal)),
+            "dec": lambda z, modal=modal: torch.from_numpy(self.get_reconstruction(z.cpu().numpy(), modal))
+            } for modal in self.pca_dims}
 
     def __call__(self, X, in_modal, out_modals):
         X = X.reshape([X.shape[0], -1])
@@ -86,6 +94,7 @@ class PCA_CCA():
             self.pca[modal] = pca
         with open(exp_dir / "cca.pkl", "rb") as target:
             self.cca = pickle.load(target)
+        self.generate_components()
 
 def train_pca(exp_dir, config, train_dataset):
     pca_cca = PCA_CCA(config)

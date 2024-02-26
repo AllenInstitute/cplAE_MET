@@ -80,8 +80,9 @@ class SampleR2():
         self.var_means = {form: torch.nanmean(var) for (form, var) in variances.items()}
 
     def __call__(self, x, xr, form):
-        mask = ~torch.isnan(x)
-        (x_flat, xr_flat) = (torch.masked_select(x, mask), torch.masked_select(xr, mask))
+        (x_flat, xr_flat) = (torch.flatten(x, 1), torch.flatten(xr, 1))
+        mask = ~torch.isnan(x_flat)
+        (x_flat, xr_flat) = (torch.masked_select(x_flat, mask), torch.masked_select(xr_flat, mask))
         mse = torch.square(x_flat - xr_flat).mean()
         loss_ratio = mse / self.var_means[form]
         return loss_ratio

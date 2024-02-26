@@ -74,8 +74,8 @@ def load_jit_folds(exp_path, folds = None, get_checkpoints = False):
         fold = int(fold_path.stem.split("_")[-1])
         info_dict = {}
         specimen_ids = np.load(fold_path / "train_test_ids.npz")
-        info_dict["train_ids"] = specimen_ids["train"]
-        info_dict["test_ids"] = specimen_ids["test"]
+        info_dict["train_ids"] = np.char.strip(specimen_ids["train"])
+        info_dict["test_ids"] = np.char.strip(specimen_ids["test"])
         info_dict["best"] = assemble_jit(fold_path / "best")
         if get_checkpoints:
             info_dict["checkpoints"] = {}
