@@ -1,21 +1,14 @@
 import yaml
 import pathlib
 import argparse
-from copy import deepcopy
 import pickle
 import torch
 
 import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import CCA
-from scipy.linalg import sqrtm
 
-from data import MET_Data, MET_Dataset
-
-def filter_specimens(met_data, specimen_ids, config):
-    platforms = config["select"]["platforms"]
-    specimens = met_data.query(specimen_ids, platforms = platforms)["specimen_id"]
-    return specimens
+from data import MET_Data, RandomizedDataset, filter_specimens
 
 class CCA_extended(CCA):
     def __init__(self, **kwargs):
@@ -118,9 +111,11 @@ def train_model(config, exp_dir):
         exp_fold_dir = exp_dir / f"fold_{fold}"
         exp_fold_dir.mkdir(exist_ok = True)
         filtered_train_ids = filter_specimens(met_data, train_ids, config)
-        train_dataset = MET_Dataset(met_data, 1024, config["modal_frac"], filtered_train_ids)
+        train_dataset = RandomizedDataset(met_data, 1024, config["modal_frac"], filtered_train_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
         train_pca(exp_fold_dir, config, train_dataset)
+
+#TODO: This code is currently broken.
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

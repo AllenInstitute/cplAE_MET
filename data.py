@@ -5,7 +5,6 @@ import itertools
 import operator
 
 import numpy as np
-import scipy.io as sio
 import torch
 from torch.utils.data import IterableDataset
 from sklearn.model_selection import train_test_split, StratifiedKFold
@@ -77,7 +76,7 @@ class MET_Data():
         specimen_ids = (self["specimen_id"] if specimen_ids is None else specimen_ids)
         platforms = (np.char.strip(np.unique(self["platform"])) if platforms is None else platforms)
         classes = (np.char.strip(np.unique(self["class"])) if classes is None else classes)
-        valid = np.isin(self["specimen_id"], specimen_ids)
+        valid = np.isin(np.char.strip(self["specimen_id"]), np.char.strip(specimen_ids))
         valid = valid & np.isin(np.char.strip(self["platform"]), platforms)
         valid = valid & np.isin(np.char.strip(self["class"]), classes)
         if formats is not None:
@@ -127,7 +126,48 @@ class MET_Data():
             (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
             yield (train_spec, test_spec)
 
-class MET_Dataset(IterableDataset):
+class DeterministicDataset(IterableDataset):
+    def __init__(self, met_data, batch_size, modal_formats, transformations, allowed_specimen_ids = None):
+        self.MET = met_data
+        self.allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)
+        if transformations:
+            self.transform = {form: get_transformation_function(transform_dict) 
+                            for (form, transform_dict) in transformations.items()}
+        else:
+            self.transform = {}
+        (self.data, self.modal_masks) = self.get_data(modal_formats, self.transform)
+        indices = np.arange(self.allowed_specimen_ids.size)
+        num_batches = max(indices.size // batch_size, 1)
+        self.batch_indices = [indices[i::num_batches] for i in range(num_batches)]
+
+    def get_data(self, modal_formats, transform):
+        (data, masks) = ({}, {})
+        allowed_data = self.MET.query(self.allowed_specimen_ids)
+        for (modal, formats) in modal_formats.items():
+            raw_data = {form: allowed_data[form] for form in formats}
+            transformed = {form: transf_func(raw_data[form]) for (form, transf_func) in transform.items()
+                           if form in raw_data}
+            data[modal] = {**raw_data, **transformed}
+            num_cells = self.allowed_specimen_ids.size
+            mask = np.full([num_cells], True)
+            for array in raw_data.values():
+                mask = mask & ~np.isnan(array.reshape([num_cells, -1])).all(1)
+            masks[modal] = mask
+        return (data, masks)
+    
+    def __len__(self):
+        return len(self.batch_indices)
+
+    def __iter__(self):
+        for indices in self.batch_indices:
+            specimen_ids = self.allowed_specimen_ids[indices]
+            data = {modal: {form: array[indices] for (form, array) in formats.items()}
+                    for (modal, formats) in self.data.items()}
+            masks = {modal: mask[indices] for (modal, mask) in self.modal_masks.items()}
+            outputs = (data, masks, specimen_ids)
+            yield outputs
+
+class RandomizedDataset(IterableDataset):
     def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, allowed_specimen_ids = None):
         self.MET = met_data
         self.allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)

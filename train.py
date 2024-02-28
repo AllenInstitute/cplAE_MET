@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 import numpy as np
 
-from data import MET_Data, MET_Dataset, get_collator, filter_specimens
+from data import MET_Data, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
 from losses import ReconstructionLoss, min_var_loss
 import utils
 import subnetworks
@@ -237,8 +237,8 @@ def train_model(config, exp_dir):
         (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
         filtered_train_ids = filter_specimens(met_data, train_ids, config)
         filtered_test_ids = filter_specimens(met_data, test_ids, config)
-        train_dataset = MET_Dataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], filtered_train_ids)
-        test_dataset = MET_Dataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], filtered_test_ids)
+        train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], filtered_train_ids)
+        test_dataset = DeterministicDataset(met_data, 10000, config["formats"], config["transform"], filtered_test_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
         train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
 
