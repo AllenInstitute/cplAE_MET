@@ -2,6 +2,8 @@ import torch
 from torch import nn
 import numpy as np
 
+from data import get_transformation_function
+
 activations = {
     "linear": torch.nn.Identity(),
     "relu": torch.nn.functional.relu,
@@ -407,6 +409,35 @@ modules = {
     }
 }
 
+class Enc_Dummy(nn.Module):
+    def __init__(self, latent_dim):
+        super().__init__()
+        self.dummy_latent = torch.nn.Parameter(torch.zeros([1, latent_dim]))
+    
+    def forward(self, x_forms):
+        x_exc = next(iter(x_forms.values()))
+        z = 0*self.dummy_latent + torch.randn_like(self.dummy_latent.tile((x_exc.shape[0], 1)))
+        return z
+
+class Dec_Dummy(nn.Module):
+    def __init__(self, forms, dataset, trans_funcs):
+        super().__init__()
+        self.dummy_param = torch.nn.Parameter(torch.as_tensor(0.0))
+        (self.means, self.axis_tuples) = ({}, {})
+        for form in forms:
+            data = dataset.MET.query(dataset.allowed_specimen_ids, formats = [(form,)])[form]
+            transformed = trans_funcs.get(form, lambda x: x)(data)
+            cleaned = np.nan_to_num(transformed)
+            self.means[form] = torch.from_numpy(np.mean(cleaned, 0, keepdims = True))
+            self.axis_tuples[form] = (data.ndim - 1)*[1]
+
+    def forward(self, x):
+        x_forms = {}
+        for (form, mean) in self.means.items():
+            xr = 0*self.dummy_param + mean.tile([x.shape[0]] + self.axis_tuples[form])
+            x_forms[form] = xr
+        return x_forms
+
 def get_model(config, train_dataset):
     architectures = {frozenset(forms.split("_")): params for (forms, params) in config["architecture"].items()}
     model = {}
@@ -414,7 +445,16 @@ def get_model(config, train_dataset):
         arm = {}
         forms = frozenset(config["formats"][modal])
         architecture = architectures[forms]
-        arm["enc"] = modules[forms]["enc"](architecture, config["latent_dim"], train_dataset)
-        arm["dec"] = modules[forms]["dec"](architecture, config["latent_dim"], train_dataset)
+        if architecture.get("dummy"):
+            if config["transform"]:
+                trans_funcs = {form: get_transformation_function(transform_dict)
+                    for (form, transform_dict) in config["transform"].items()}
+            else:
+                trans_funcs = {}
+            arm["enc"] = Enc_Dummy(config["latent_dim"])
+            arm["dec"] = Dec_Dummy(forms, train_dataset, trans_funcs)
+        else:
+            arm["enc"] = modules[forms]["enc"](architecture, config["latent_dim"], train_dataset)
+            arm["dec"] = modules[forms]["dec"](architecture, config["latent_dim"], train_dataset)
         model[modal] = arm
     return model
