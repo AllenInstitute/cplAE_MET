@@ -8,7 +8,9 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import CCA
 
-from data import MET_Data, RandomizedDataset, filter_specimens
+# from data import MET_Data, RandomizedDataset, filter_specimens
+
+#TODO: The training code is currently broken.
 
 class CCA_extended(CCA):
     def __init__(self, **kwargs):
@@ -114,8 +116,6 @@ def train_model(config, exp_dir):
         train_dataset = RandomizedDataset(met_data, 1024, config["modal_frac"], filtered_train_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
         train_pca(exp_fold_dir, config, train_dataset)
-
-#TODO: This code is currently broken.
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

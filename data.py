@@ -9,6 +9,8 @@ import torch
 from torch.utils.data import IterableDataset
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
+import utils
+
 def powerset(iterable):
     seq = list(iterable)
     combinations = (itertools.combinations(seq, i) for i in range(1, len(seq) + 1))
@@ -126,8 +128,123 @@ class MET_Data():
             (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
             yield (train_spec, test_spec)
 
+class MET_Simulated():
+    def __init__(self, config):
+        (latent_samples, simulated_data, labels) = self.simulate_data(config)
+        num_samples = labels.size
+        self.MET = {
+            "specimen_id": np.arange(num_samples).astype("str"),
+            "platform": np.full([num_samples], "simulated"),
+            "class": np.full([num_samples], "null"),
+            "cluster_label": labels.astype("str"),
+            "latent": latent_samples.reshape([num_samples, -1]),
+            "logcpm": simulated_data["logcpm"].reshape([num_samples, -1]),
+            "pca-ipfx": simulated_data["pca-ipfx"].reshape([num_samples, -1]),
+            "arbors": simulated_data["arbors"].reshape([num_samples, 120, 4, 4]),
+            "ivscc": simulated_data["ivscc"].reshape([num_samples, -1])
+        }
+        ids = self.MET["specimen_id"]
+        self.id_map = {spec_id.strip():i for (i, spec_id) in enumerate(ids)}
+        self.cached = {}
+
+    def simulate_data(self, config):
+        (counts, params) = (config["simulate"]["counts"], config["simulate"])
+        (latent_dim, num_clusters) = (config["latent_dim"], params["num_clusters"])
+        rng = np.random.default_rng(config["seed"])
+        format_strings = np.asarray(list(counts.keys()))
+        format_indices = np.concatenate([np.full([counts], i) for (i, counts) in enumerate(counts.values())])
+        rng.shuffle(format_indices)
+        formats = format_strings[format_indices]
+        cluster_indices = np.arange(formats.size)
+        index_segments = [cluster_indices[i::num_clusters] for i in range(num_clusters)]
+        for (i, segment) in enumerate(index_segments):
+            cluster_indices[segment] = i
+        cluster_centroids = rng.normal(0, params["category_std"], [num_clusters, latent_dim])
+        latent_samples = rng.normal(cluster_centroids[cluster_indices], params["cluster_std"])
+        models = {form: utils.load_jit_folds(path)["folds"][1]["best"] for (form, path) in params["model_paths"].items()}
+        simulated_data = {}
+        for (form, model) in models.items():
+            mask = (np.char.find(formats, form) == -1)
+            decoder = next(iter(model.values()))["dec"]
+            with torch.no_grad():
+                hidden_variables = rng.normal(0, params["category_std"], [latent_samples.shape[0], 10 - latent_dim])
+                latent_input = np.concatenate([latent_samples, hidden_variables], 1)
+                output = decoder(torch.from_numpy(latent_input).float())[form].numpy()
+            output[mask] = None
+            simulated_data[form] = output
+        return (latent_samples, simulated_data, cluster_indices)
+
+    def __getitem__(self, id_str):
+        if id_str not in self.cached:
+            self.cached[id_str] = self.MET[id_str]
+        data = self.cached[id_str]
+        return data
+    
+    def keys(self):
+        return (key for key in self.MET.keys())
+    
+    def values(self):
+        return (self[key] for key in self.MET)
+    
+    def items(self):
+        return ((key, self[key]) for key in self.MET)
+
+    def query(self, specimen_ids = None, formats = None, exclude_formats = None, platforms = None, classes = None):
+        specimen_ids = (self["specimen_id"] if specimen_ids is None else specimen_ids)
+        platforms = (np.char.strip(np.unique(self["platform"])) if platforms is None else platforms)
+        classes = (np.char.strip(np.unique(self["class"])) if classes is None else classes)
+        valid = np.isin(np.char.strip(self["specimen_id"]), np.char.strip(specimen_ids))
+        valid = valid & np.isin(np.char.strip(self["platform"]), platforms)
+        valid = valid & np.isin(np.char.strip(self["class"]), classes)
+        if formats is not None:
+            format_mask = np.full_like(valid, False)
+            for form_tuple in formats:
+                tupl_mask = np.full_like(valid, True)
+                for form in form_tuple:
+                    data = np.squeeze(self[form])
+                    tupl_mask = tupl_mask & ~np.isnan(data).reshape([data.shape[0], -1]).all(1)
+                format_mask = format_mask | tupl_mask
+            valid = valid & format_mask
+        if exclude_formats is not None:
+            exclude_mask = np.full_like(valid, True)
+            for form in exclude_formats:
+                data = np.squeeze(self[form])
+                exclude_mask = exclude_mask & np.isnan(data).reshape([data.shape[0], -1]).all(1)
+            valid = valid & exclude_mask
+        valid_specimens = self["specimen_id"][valid]
+        data_dict = self.get_specimens(valid_specimens)
+        return data_dict
+
+    def get_specimens(self, specimen_ids):
+        stripped = [string.strip() for string in specimen_ids]
+        data_dict = {}
+        for (key, value) in self.items():
+            cleaned = [np.squeeze(value)[None, self.id_map[spec]] for spec in stripped]
+            data_dict[key] = np.concatenate(cleaned) if cleaned else value[:0]
+        return data_dict
+    
+    def get_stratified_split(self, test_frac, seed = 42):
+        strat_cats = ["platform", "class", "cluster_label"]
+        labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
+        (values, counts) = np.unique(labels, return_counts = True)
+        singleton_labels = values[counts == 1]
+        if singleton_labels.size > 1:
+            labels[np.isin(labels, singleton_labels)] = "_singleton"
+        else:
+            labels[np.isin(labels, singleton_labels)] = values[np.argmax(counts)]
+        (train_ids, test_ids) = train_test_split(self["specimen_id"], test_size = test_frac, random_state = seed, stratify = labels)
+        return (train_ids, test_ids)
+    
+    def get_stratified_KFold(self, folds, seed = 42):
+        strat_cats = ["platform", "class", "cluster_label"]
+        labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
+        splitter = StratifiedKFold(folds, shuffle = True, random_state = seed)
+        for (train_ids, test_ids) in splitter.split(self["specimen_id"], labels):
+            (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
+            yield (train_spec, test_spec)
+
 class DeterministicDataset(IterableDataset):
-    def __init__(self, met_data, batch_size, modal_formats, transformations, allowed_specimen_ids = None):
+    def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, allowed_specimen_ids = None):
         self.MET = met_data
         self.allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)
         if transformations:
@@ -136,9 +253,20 @@ class DeterministicDataset(IterableDataset):
         else:
             self.transform = {}
         (self.data, self.modal_masks) = self.get_data(modal_formats, self.transform)
-        indices = np.arange(self.allowed_specimen_ids.size)
+        indices = self.filter_by_modal(modal_frac, self.modal_masks)
         num_batches = max(indices.size // batch_size, 1)
         self.batch_indices = [indices[i::num_batches] for i in range(num_batches)]
+
+    def filter_by_modal(self, modal_frac, modal_masks):
+        indices = np.arange(self.allowed_specimen_ids.size)
+        cuml_mask = np.full_like(indices, False, "bool")
+        for (modal_string, frac) in modal_frac.items():
+            if frac == "native" or frac > 0:
+                masks = [modal_masks[modal] for modal in modal_string]
+                combined_mask = functools.reduce(np.logical_and, masks, np.full_like(cuml_mask, True))
+                cuml_mask = cuml_mask | combined_mask
+        filtered_indices = indices[cuml_mask]
+        return filtered_indices
 
     def get_data(self, modal_formats, transform):
         (data, masks) = ({}, {})
@@ -312,5 +440,28 @@ transform_functions = {
 }
 
 if __name__ == "__main__":
-    met_data = MET_Data("data/raw/MET_full_data.npz")
-    print(met_data.query(formats = [("ivscc",)], exclude_formats = ["soma_depth"])["specimen_id"].shape)
+
+    config = {
+        "seed": 42,
+        "latent_dim": 3,
+        "simulate": {
+            "counts": {
+                "logcpm": 20,
+                "arbors": 20,
+                "logcpm_arbors": 1
+            },
+            "num_clusters": 5,
+            "category_std": 1,
+            "cluster_std": 0.25,
+            "model_paths": {
+                "logcpm": "../archive/2-24/patchseq-mse/t_arm", 
+                "pca-ipfx": "../archive/2-24/patchseq-mse/e_arm", 
+                "arbors": "../archive/2-24/patchseq-mse/m_arm", 
+                "ivscc": "data/ivscc/m_arm_ivscc"}
+        }
+    }
+    met_data = MET_Simulated(config)
+    print((~np.isnan(met_data["logcpm"]).all(1), ~np.isnan(met_data["ivscc"]).all(1)))
+    print((~np.isnan(met_data["logcpm"]).all(1))[met_data["cluster_label"] == "1"].sum())
+    # met_data = MET_Data("data/raw/MET_full_data.npz")
+    # print(met_data.query(formats = [("ivscc",)], exclude_formats = ["soma_depth"])["specimen_id"].shape)
