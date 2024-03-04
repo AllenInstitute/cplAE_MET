@@ -27,18 +27,10 @@ def min_var_loss(zi, zj):
 
     batch_size = zj.shape[0]
     zj_centered = zj - torch.mean(zj, 0, True)
-    try: # If SVD fails, do not scale L2 distance
-        min_eig = torch.min(torch.linalg.svdvals(zj_centered))
-    except torch._C._LinAlgError:
-        print("SVD failed.")
-        min_eig = torch.as_tensor((batch_size - 1)**0.5).to(zj)
+    min_eig = torch.min(torch.linalg.svdvals(zj_centered))
     min_var_zj = torch.square(min_eig)/(batch_size-1)
     zi_centered = zi - torch.mean(zi, 0, True)
-    try: # If SVD fails, do not scale L2 distance
-        min_eig = torch.min(torch.linalg.svdvals(zi_centered))
-    except torch._C._LinAlgError:
-        print("SVD failed.")
-        min_eig = torch.as_tensor((batch_size - 1)**0.5).to(zi)
+    min_eig = torch.min(torch.linalg.svdvals(zi_centered))
     min_var_zi = torch.square(min_eig)/(batch_size-1)
     zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
