@@ -164,18 +164,21 @@ class Enc_arbors(nn.Module):
             conv_layer = torch.nn.Conv1d(input_dim, output_dim, kernel_size = kernel, stride = stride)
             setattr(self, f"conv_{i}", conv_layer)
             self.conv_names.append(f"conv_{i}")
+        self.batch_names = []
         for (i, (input_dim, output_dim)) in enumerate(zip(dense_dims[:-1], dense_dims[1:])):
             bias = (False if i == len(hidden_dims) else True)
             name = ("fc_mu" if i == len(hidden_dims) else f"fc_{i}")
             setattr(self, name, torch.nn.Linear(input_dim, output_dim, bias = bias))
             self.dense_names.append(name)
+            setattr(self, f"bn_{i}", nn.BatchNorm1d(input_dim))
+            self.batch_names.append(f"bn_{i}")
         self.fc_sigma = nn.Linear(dense_dims[-2], latent_dim, bias = False)
 
-        self.bn = nn.BatchNorm1d(latent_dim, momentum = 0.05, affine = False)
+        self.output_bn = nn.BatchNorm1d(latent_dim, momentum = 0.05, affine = False)
         self.drop = torch.nn.Dropout(architecture["dropout"])
-        relu = nn.ReLU()
+        self.relu = nn.ReLU()
         (num_dense, num_conv) = (len(self.dense_names), len(self.conv_names))
-        actvs = [relu]*(num_dense + num_conv - 1) + [torch.nn.Identity()]
+        actvs = [self.relu]*(num_dense + num_conv - 1) + [torch.nn.Identity()]
         (self.conv_actvs, self.dense_actvs) = (actvs[:num_conv], actvs[num_conv:])
 
     def forward(self, x_forms):
@@ -186,10 +189,11 @@ class Enc_arbors(nn.Module):
             conv_layer = getattr(self, conv_name)
             x = actv(conv_layer(x))
         x = torch.flatten(x, 1)
-        for (dense_name, actv) in zip(self.dense_names, self.dense_actvs):
+        for (dense_name, actv, bn_name) in zip(self.dense_names, self.dense_actvs, self.batch_names):
             dense_layer = getattr(self, dense_name)
-            x = actv(dense_layer(x))
-        z = self.bn(x)
+            batch_norm = getattr(self, bn_name)
+            x = actv(dense_layer(batch_norm(x)))
+        z = self.output_bn(x)
         return z
 
 class Dec_arbors(nn.Module):
@@ -210,10 +214,10 @@ class Dec_arbors(nn.Module):
             setattr(self, f"fc_{i}", torch.nn.Linear(input_dim, output_dim))
             self.dense_names.append(f"fc_{i}")
 
-        relu = nn.ReLU()
+        self.elu = nn.ELU()
         output_activation = activations[architecture["out_activation"]]
         (num_dense, num_conv) = (len(self.dense_names), len(self.conv_names))
-        actvs = [relu]*(num_dense + num_conv - 1) + [output_activation]
+        actvs = [self.elu]*(num_dense + num_conv - 1) + [output_activation]
         (self.dense_actvs, self.conv_actvs) = (actvs[:num_dense], actvs[num_dense:])
 
     def forward(self, x):
@@ -386,29 +390,6 @@ class Dec_arbors_ivscc(nn.Module):
         ivscc_x = self.ivscc_out_actv(ivscc_x)
         return {"arbors": arbors_x, "ivscc": ivscc_x}
 
-modules = {
-    frozenset(["logcpm"]): {
-        "enc": Enc_logcpm,
-        "dec": Dec_logcpm
-        },
-    frozenset(["pca-ipfx"]): {
-        "enc": Enc_pca_ipfx,
-        "dec": Dec_pca_ipfx
-        },
-    frozenset(["arbors"]): {
-        "enc": Enc_arbors,
-        "dec": Dec_arbors
-        },
-    frozenset(["ivscc"]): {
-        "enc": Enc_ivscc,
-        "dec": Dec_ivscc
-    },
-    frozenset(["ivscc", "arbors"]): {
-        "enc": Enc_arbors_ivscc,
-        "dec": Dec_arbors_ivscc
-    }
-}
-
 class Enc_Dummy(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
@@ -481,3 +462,26 @@ def get_model(config, train_dataset):
             arm["dec"] = modules[forms]["dec"](architecture, config["latent_dim"], train_dataset)
         model[modal] = arm
     return model
+
+modules = {
+    frozenset(["logcpm"]): {
+        "enc": Enc_logcpm,
+        "dec": Dec_logcpm
+        },
+    frozenset(["pca-ipfx"]): {
+        "enc": Enc_pca_ipfx,
+        "dec": Dec_pca_ipfx
+        },
+    frozenset(["arbors"]): {
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
+        },
+    frozenset(["ivscc"]): {
+        "enc": Enc_ivscc,
+        "dec": Dec_ivscc
+    },
+    frozenset(["ivscc", "arbors"]): {
+        "enc": Enc_arbors_ivscc,
+        "dec": Dec_arbors_ivscc
+    }
+}
