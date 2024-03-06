@@ -438,6 +438,29 @@ class Dec_Dummy(nn.Module):
             x_forms[form] = xr
         return x_forms
 
+class Coupler(nn.Module):
+    def __init__(self, layer_dims, dataset):
+        super().__init__()
+        self.layer_names = add_dense_segment(self, layer_dims[1:], layer_dims[0], True, "fc")
+        relu = nn.ReLU()
+        self.actvs = [relu]*len(self.layer_names[:-1]) + [torch.nn.Identity()]
+
+    def forward(self, x):
+        for (layer_name, actv) in zip(self.layer_names, self.actvs):
+            layer = getattr(self, layer_name)
+            x = actv(layer(x))
+        return x
+    
+def get_coupler(config, train_dataset):
+    model = {}
+    for (in_modal, in_specs) in config["modal_specs"].items():
+        for (out_modal, out_specs) in config["modal_specs"].items():
+            if in_modal == out_modal:
+                continue
+            layer_dims = [in_specs["latent_dim"]] + config["hidden_dims"] + [out_specs["latent_dim"]]
+            model[f"{in_modal}-{out_modal}"] = Coupler(layer_dims, train_dataset)
+    return model
+
 def get_model(config, train_dataset):
     architectures = {frozenset(forms.split("_")): params for (forms, params) in config["architecture"].items()}
     model = {}

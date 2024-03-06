@@ -88,6 +88,8 @@ if __name__ == "__main__":
         python_file = "train.py"
     elif config["experiment"] == "pca-cca":
         python_file = "pca_cca.py"
+    elif config["experiment"] == "coupler":
+        python_file = "coupler.py"
     else:
         raise ValueError(f'''Experiment "{config['experiment']}" not recognized.''')
     
