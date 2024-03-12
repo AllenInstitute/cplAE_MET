@@ -8,9 +8,62 @@ from pca_cca import PCA_CCA
 
 project_dir = pathlib.Path("/Users/ian.convy/code/cplAE_MET")
 
+class VariationalWrapper(torch.nn.Module):
+    def __init__(self, model_dict, mappers):
+        super().__init__()
+        self.variational = True
+        self.mappers = mappers
+        self.model_dict = model_dict
+        for (modal, arm) in model_dict.items():
+            setattr(self, f"{modal}_enc", arm["enc"])
+            setattr(self, f"{modal}_dec", arm["dec"])
+
+    def forward(self, x_forms, in_modal, out_modals):
+        latent = self[in_modal]["enc"](x_forms)[0]
+        outputs = {}
+        for modal in out_modals:
+            outputs[modal] = self[modal]["dec"](latent)
+        return (latent, outputs)
+
+    def infer(self, x_forms, in_modal, out_modals):
+        (mean, transf) = self[in_modal]["enc"](x_forms)
+        outputs = {}
+        for modal in out_modals:
+            if modal == in_modal:
+                latent = self.z_sample(mean, transf)
+            else:
+                latent = self.cross_z_sample(in_modal, modal, mean, transf)
+            outputs[modal] = self[modal]["dec"](latent)
+        return (latent, outputs)
+
+    def z_sample(self, mean, transf):
+        noise = torch.einsum("nij,nj->ni", transf, torch.randn_like(mean))
+        z_sampled = mean + noise
+        return z_sampled
+    
+    def cross_z_sample(self, in_modal, out_modal, in_mean, in_transf):
+        mapper = self.mappers[f"{in_modal}-{out_modal}"]
+        direct_sample = self.z_sample(in_mean, in_transf)
+        (out_mean, out_transf) = mapper(direct_sample)
+        cross_sample = self.z_sample(out_mean, out_transf)
+        return (cross_sample, out_mean, out_transf)
+
+    def __getitem__(self, modal):
+        return self.model_dict[modal]
+    
+    def keys(self):
+        return self.model_dict.keys()
+    
+    def values(self):
+        return self.model_dict.values()
+    
+    def items(self):
+        return self.model_dict.items()
+
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model_dict):
         super().__init__()
+        self.variational = False
         self.model_dict = model_dict
         for (modal, arm) in model_dict.items():
             setattr(self, f"{modal}_enc", arm["enc"])
@@ -71,7 +124,7 @@ class CouplerWrapper(torch.nn.Module):
     def items(self):
         return self.model_dict.items()
 
-def assemble_jit(jit_path, wrap = True, device = "cpu"):
+def assemble_jit(jit_path, device = "cpu"):
     jit_path = pathlib.Path(jit_path)
     model = {}
     modalities = [path.stem for path in (jit_path / "encoder").iterdir()]
@@ -79,8 +132,9 @@ def assemble_jit(jit_path, wrap = True, device = "cpu"):
         model[modal] = {}
         model[modal]["enc"] = torch.jit.load(jit_path / "encoder" / f"{modal}.pt", map_location = device)
         model[modal]["dec"] = torch.jit.load(jit_path / "decoder" / f"{modal}.pt", map_location = device)
-    if wrap:
-        model = ModelWrapper(model)
+    mapper_path = jit_path / "mapper"
+    mappers = {path.stem: torch.jit.load(path, device) for path in mapper_path.iterdir()} if mapper_path.exists() else None
+    model = VariationalWrapper(model, mappers)
     return model
 
 def assemble_coupler(jit_path, wrap = True, device = "cpu"):
@@ -97,6 +151,9 @@ def save_trace(path, model, config, dataset):
     decoder_path = path / "decoder"
     encoder_path.mkdir(parents = True)
     decoder_path.mkdir(parents = True)
+    if model.variational and len(config["modalities"]) > 1:
+        mapper_path = path / "mapper"
+        mapper_path.mkdir(parents = True)
     was_training = model.training
     device = next(model.parameters()).device
     model.eval()
@@ -107,10 +164,15 @@ def save_trace(path, model, config, dataset):
                 raw_data = torch.from_numpy(dataset.MET[form][:1])
                 encoder_input[form] = torch.nan_to_num(raw_data).to(device, dtype = torch.float32)
             encoder_trace = torch.jit.trace(arm["enc"], encoder_input, strict = False)
-            decoder_input = encoder_trace(encoder_input)
+            decoder_input = encoder_trace(encoder_input)[0]
             decoder_trace = torch.jit.trace(arm["dec"], decoder_input, strict = False)
             encoder_trace.save(encoder_path /  f"{modal}.pt")
             decoder_trace.save(decoder_path / f"{modal}.pt")
+            if model.variational and len(config["modalities"]) > 1:
+                for (modal_string, mapper) in model.mappers.items():
+                    if modal_string[0] == modal:
+                        mapper_trace = torch.jit.trace(mapper, decoder_input, strict = False)
+                        mapper_trace.save(mapper_path / f"{modal_string}.pt")
     if was_training:
         model.train()
 
@@ -149,7 +211,7 @@ def load_coupler_folds(exp_path, folds = None, get_checkpoints = False):
         results["config"] = yaml.safe_load(target)
     autoencoder_paths = {modal: pathlib.Path(spec["model_path"]) / "fold_1" / "best"
                          for (modal, spec) in results["config"]["modal_specs"].items()}
-    autoencoders = {modal: assemble_jit(path, wrap = False)[modal] 
+    autoencoders = {modal: assemble_jit(path)[modal] 
                     for (modal, path) in autoencoder_paths.items()}
     fold_paths = list(exp_path.glob("fold_*"))
     fold_paths.sort(key = lambda path: int(path.stem.split("_")[-1]))

@@ -11,16 +11,29 @@ data_file: data/raw/MET_full_data.npz # Location of Numpy zipped archive (.npz) 
 # Set experiment/optimization properties:
 experiment: autoencoder # Type of experiment
 modalities: [T, E, M] # Which modalities to use in the experiment
-num_epochs: 5000 # Number of epochs to train
+num_epochs: 100 # Number of epochs to train
 latent_dim: 3 # Dimension of latent space
 batch_size: 1000 # Batch size used during training
 learning_rate: 0.001 # Learning rate for the ADAM optimizer
-check_step: 100 # How often to save model checkpoints
-encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder 
+check_step: 10 # How often to save model checkpoints
+encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder
+inference: True
+
+variational:
+  mapper:
+    init: [32]
+    mean: [32]
+    transf: [32]
+  T=E: 1.0
+  T=M: 1.0
+  E=T: 1.0
+  E=M: 1.0
+  M=T: 1.0
+  M=E: 1.0
 
 # Set validation parameters:
-folds: 2 # Number of folds to use for cross-validation
-fold_list: [1] # Which folds to run in this experiment (empty list is short for all folds)
+folds: 10 # Number of folds to use for cross-validation
+fold_list: [1, 2] # Which folds to run in this experiment (empty list is short for all folds)
 val_split: 0.25 # Fraction of data to use for validation (ignored if folds > 0)
 seed: 42 # Random seed to use for validation splits
 
@@ -50,23 +63,23 @@ transform:
 # Set criteria for cell specimen inclusion in experiment
 # Note that these are applied after the stratified test-validation split
 select:
-  platforms: [simulated]
+  platforms: [patchseq]
 
-simulate:
-  counts:
-    logcpm: 10000
-    pca-ipfx: 10000
-    # arbors: 1000
-    ivscc: 10000
-    logcpm_pca-ipfx_ivscc: 1000
-  num_clusters: 5
-  category_std: 1
-  cluster_std: 0.25
-  model_paths: 
-    logcpm: data/simulator/t_arm
-    pca-ipfx: data/simulator/e_arm
-    arbors: data/simulator/m_arm_arbors
-    ivscc: data/simulator/m_arm_ivscc 
+# simulate:
+#   counts:
+#     logcpm: 10000
+#     pca-ipfx: 10000
+#     # arbors: 1000
+#     ivscc: 10000
+#     logcpm_pca-ipfx_ivscc: 1000
+#   num_clusters: 5
+#   category_std: 1
+#   cluster_std: 0.25
+#   model_paths: 
+#     logcpm: data/simulator/t_arm
+#     pca-ipfx: data/simulator/e_arm
+#     arbors: data/simulator/m_arm_arbors
+#     ivscc: data/simulator/m_arm_ivscc 
 
 # Set modality-type sample fraction for each batch ("native" uses frequency found in data)
 # Note that these fractions are computed after the filtering criteria in the "select" field above
@@ -80,12 +93,12 @@ modal_frac:
   TM: native
   EM: native
 # -- Trimodal --
-  MET: 0.1
+  MET: native
 
 # Specify metric to use for reconstruction losses
 losses:
-  logcpm: sample_r2
-  pca-ipfx: sample_r2
+  logcpm: feature_r2
+  pca-ipfx: feature_r2
   arbors: sample_r2
   ivscc: sample_r2
 
@@ -94,32 +107,42 @@ architecture:
   logcpm:
     data_size: [1252]
     out_activation: relu
-    hidden: [256, 128]
+    init: [256]
+    mean: [128]
+    cov: [128]
     dropout: 0.5
   pca-ipfx:
     data_size: [82]
     out_activation: linear
-    hidden: [128, 64]
+    init: [128]
+    mean: [64]
+    cov: [64]
     dropout: 0.1
     std_frac: 0.05
   arbors:
     data_size: [120, 4, 4]
     out_activation: relu
     conv_params: [[6, 2, 10], [6, 2, 10]] # [(kernel length, stride, channels), ...]
-    hidden: [10]
+    init: [10]
+    mean: [10]
+    cov: [10]
     dropout: 0.0
   ivscc:
     data_size: [75]
     out_activation: linear
-    hidden: [64, 64]
+    init: [64]
+    mean: [64]
+    cov: [64]
     dropout: 0.1
     std_frac: 0.05
   ivscc_arbors:
     arbors_size: [120, 4, 4]
     ivscc_size: [75]
     conv_params: [[6, 2, 10], [6, 2, 10]] # [(kernel length, stride, channels), ...]
-    ivscc_hidden: [64]
-    final_hidden: [256, 128]
+    ivscc: [64]
+    shared: [256]
+    mean: [128]
+    cov: [128]
     arbors_activation: relu
     ivscc_activation: linear
     arbors_dropout: 0.0

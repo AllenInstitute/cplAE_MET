@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 from data import MET_Data, MET_Simulated, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
-from losses import ReconstructionLoss, min_var_loss
+from losses import ReconstructionLoss, VariationalLoss
 import utils
 import subnetworks
 
@@ -98,20 +98,17 @@ def combine_losses(total_loss, cuml_losses, new_losses):
     new_cuml = {**cuml_losses, **incremented, "total": cuml_total}
     return new_cuml
 
-def compute_weighted_loss(config, loss_dict):
-    # This function takes a set of component losses and combines them into a 
-    # a single scalar loss value using weighrs specified in the config YAML file.
-
-    weighted = sum([config["weights"][key]*loss_value for (key, loss_value) in loss_dict.items()])
-    return weighted
-
 def build_model(config, train_dataset):
     # This function builds the model specified in the config YAML file. It completes
     # the specification by computing the baseline variances of the morphological and
     # electro-physiological data.
-
+    
     model_dict = subnetworks.get_model(config, train_dataset)
-    model = utils.ModelWrapper(model_dict)
+    if config["inference"]:
+        mappers = subnetworks.get_mapper(config, train_dataset)
+        model = utils.VariationalWrapper(model_dict, mappers)
+    else:
+        model = utils.ModelWrapper(model_dict)
     return model
 
 def train_setup(exp_dir, config, train_dataset, val_dataset):
@@ -123,8 +120,9 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     collate = get_collator(config["device"], torch.float32) # Converts tensors to desired device and type
     train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
-    loss_func = ReconstructionLoss(config, train_dataset.MET, train_dataset.allowed_specimen_ids)
-    return (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_func)
+    loss_class = VariationalLoss if config["inference"] else ReconstructionLoss
+    loss_handler = loss_class(config, train_dataset.MET, train_dataset.allowed_specimen_ids)
+    return (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_handler)
 
 def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
     # This function takes the training/validation losses and logs them
@@ -146,35 +144,6 @@ def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
         {key:value for (key, value) in val_loss.items() if "-" in key}, epoch)
     print(f"Epoch {epoch} -- Train: {train_loss['total']:.4e} | Val: {val_loss['total']:.4e}")
 
-def process_batch(model, X_dict, mask_dict, config, loss_func):
-    # This function processes a single batch during model optimization. It takes as
-    # argument the target model, a dictionary of data from different modalities, a
-    # dictionary of masks specifying which samples hold valid data for each modality,
-    # and the experiment configuration dictionary. For each modality, the latent space
-    # and reconstruction are calculated, along with the the self-modal R2 loss. The function
-    # then iterates through any previous modalities and computes the latent space coupling loss
-    # and the cross-modal R2 loss. The modality masks are combined in order to select data for
-    # pairs of modalities.
-
-    (latent_dict, recon_dict, loss_dict) = ({}, {}, {})
-    for modal in config["modalities"]:
-        (arm, x_forms, mask) = (model[modal], X_dict[modal], mask_dict[modal])
-        x_masked = apply_mask(x_forms, mask)
-        z = arm["enc"](x_masked)
-        xr_forms = arm["dec"](z)
-        (latent_dict[modal], recon_dict[modal]) = (z, xr_forms)
-        loss_dict[modal] = loss_func.loss(x_masked, xr_forms)
-        for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
-            (prev_x_forms, prev_mask) = (X_dict[prev_modal], mask_dict[prev_modal])
-            if torch.any(prev_mask[mask]):
-                (z_masked, prev_z_masked) = (z[prev_mask[mask]], prev_z[mask[prev_mask]])
-                (x_dbl_masked, prev_x_masked) = (apply_mask(x_forms, mask & prev_mask), apply_mask(prev_x_forms, mask & prev_mask))
-                loss_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_z_masked.detach())
-                loss_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_z_masked)
-                loss_dict[f"{modal}={prev_modal}"] = loss_func.cross(model, prev_x_masked, z_masked, prev_modal)
-                loss_dict[f"{prev_modal}={modal}"] = loss_func.cross(model, x_dbl_masked, prev_z_masked, modal)
-    return (latent_dict, recon_dict, loss_dict)
-
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     # This function takes trains a model as specified in the passed configuration
     # dictionary (loaded from a config YAML file), using the provided training and
@@ -182,10 +151,9 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     # instance, and also saves the model at regular intervals. At the end of each
     # epoch the training and validation losses are logged in Tensorboard.
     
-    (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_func) = train_setup(
+    (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_handler) = train_setup(
         exp_dir, config, train_dataset, val_dataset)
     model.to(config["device"])
-    # input(model)
     for epoch in range(config["num_epochs"]):
         # Training -----------
         cuml_losses = {}
@@ -194,8 +162,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             utils.save_trace(exp_dir / "checkpoints" / f"model_{epoch}", model, config, train_dataset)
         for (X_dict, mask_dict, specimen_ids) in train_loader:
             optimizer.zero_grad()
-            (latent_dict, recon_dict, loss_dict) = process_batch(model, X_dict, mask_dict, config, loss_func)
-            loss = compute_weighted_loss(config, loss_dict)
+            (loss_dict, loss) = loss_handler.process_batch(model, X_dict, mask_dict)
             loss.backward()
             optimizer.step()
             cuml_losses = combine_losses(loss, cuml_losses, loss_dict)
@@ -205,8 +172,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             cuml_val_losses = {}
             for (X_val, mask_val, _) in val_loader:
                 model.eval()
-                (latent_val, recon_val, val_loss_dict) = process_batch(model, X_val, mask_val, config, loss_func)
-                val_loss = compute_weighted_loss(config, val_loss_dict)
+                (val_loss_dict, val_loss) = loss_handler.process_batch(model, X_val, mask_val)
                 cuml_val_losses = combine_losses(val_loss, cuml_val_losses, val_loss_dict)
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
         log_tensorboard(tb_writer, avg_losses, avg_val_losses, epoch + 1)
