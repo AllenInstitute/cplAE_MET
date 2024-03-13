@@ -18,23 +18,19 @@ class VariationalWrapper(torch.nn.Module):
             setattr(self, f"{modal}_enc", arm["enc"])
             setattr(self, f"{modal}_dec", arm["dec"])
 
-    def forward(self, x_forms, in_modal, out_modals):
-        latent = self[in_modal]["enc"](x_forms)[0]
-        outputs = {}
-        for modal in out_modals:
-            outputs[modal] = self[modal]["dec"](latent)
-        return (latent, outputs)
-
-    def infer(self, x_forms, in_modal, out_modals):
+    def infer(self, x_forms, in_modal, out_modals, sample = True):
         (mean, transf) = self[in_modal]["enc"](x_forms)
         outputs = {}
         for modal in out_modals:
-            if modal == in_modal:
-                latent = self.z_sample(mean, transf)
-            else:
-                latent = self.cross_z_sample(in_modal, modal, mean, transf)
-            outputs[modal] = self[modal]["dec"](latent)
-        return (latent, outputs)
+            out_mean = out_transf = None
+            latent = self.z_sample(mean, transf) if sample else mean
+            orig_sample = latent
+            if modal != in_modal:
+                (out_mean, out_transf) = self.mappers[f"{in_modal}-{modal}"](orig_sample)
+                latent = self.z_sample(out_mean, out_transf) if sample else out_mean
+            recon = self[modal]["dec"](latent)
+            outputs[modal] = (latent, recon, mean, transf, out_mean, out_transf, orig_sample)
+        return outputs
 
     def z_sample(self, mean, transf):
         noise = torch.einsum("nij,nj->ni", transf, torch.randn_like(mean))
@@ -46,7 +42,7 @@ class VariationalWrapper(torch.nn.Module):
         direct_sample = self.z_sample(in_mean, in_transf)
         (out_mean, out_transf) = mapper(direct_sample)
         cross_sample = self.z_sample(out_mean, out_transf)
-        return (cross_sample, out_mean, out_transf)
+        return (direct_sample, cross_sample, out_mean, out_transf)
 
     def __getitem__(self, modal):
         return self.model_dict[modal]
@@ -176,7 +172,7 @@ def save_trace(path, model, config, dataset):
     if was_training:
         model.train()
 
-def load_jit_folds(exp_path, folds = None, get_checkpoints = False):
+def load_jit_folds(exp_path, folds = None, get_checkpoints = False, check_step = 1):
     exp_path = pathlib.Path(exp_path)
     results = {}
     with open(exp_path / "config.yaml", "r") as target:
@@ -197,7 +193,7 @@ def load_jit_folds(exp_path, folds = None, get_checkpoints = False):
             info_dict["checkpoints"] = {}
             paths = list((fold_path / "checkpoints").iterdir())
             paths.sort(key = lambda path: int(path.stem.split("_")[-1]))
-            for path in paths:
+            for path in paths[::check_step]:
                 epoch = int(path.stem.split("_")[-1])
                 state = assemble_jit(path)
                 info_dict["checkpoints"][epoch] = state

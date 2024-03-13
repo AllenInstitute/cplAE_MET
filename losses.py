@@ -55,8 +55,8 @@ class VariationalLoss():
             latent_dict[modal] = (z_mean, z_transf)
             loss_dict[modal] = self.get_within_loss(model, modal, x_masked, z_mean, z_transf)
             for (prev_modal, (prev_mean, prev_transf)) in list(latent_dict.items())[:-1]:
-                (cross_sample, cross_mean, cross_transf) = model.cross_z_sample(modal, prev_modal, z_mean, z_transf)
-                (prev_cross_sample, prev_cross_mean, prev_cross_transf) = model.cross_z_sample(prev_modal, modal, prev_mean, prev_transf)
+                (_, cross_sample, cross_mean, cross_transf) = model.cross_z_sample(modal, prev_modal, z_mean, z_transf)
+                (_, prev_cross_sample, prev_cross_mean, prev_cross_transf) = model.cross_z_sample(prev_modal, modal, prev_mean, prev_transf)
                 mapper_dict[f"{prev_modal}={modal}"] = (prev_cross_mean, prev_cross_transf)
                 mapper_dict[f"{modal}={prev_modal}"] = (cross_mean, cross_transf)
                 (prev_x_forms, prev_mask) = (X_dict[prev_modal], mask_dict[prev_modal])

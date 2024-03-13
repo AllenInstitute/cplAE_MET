@@ -421,8 +421,9 @@ class Enc_Dummy(nn.Module):
     
     def forward(self, x_forms):
         x_exc = next(iter(x_forms.values()))
-        z = 0*self.dummy_latent + torch.randn_like(self.dummy_latent.tile((x_exc.shape[0], 1)))
-        return z
+        mean = 0*self.dummy_latent + torch.ones_like(self.dummy_latent.tile((x_exc.shape[0], 1)))
+        transf = torch.diag_embed(torch.ones_like(mean))
+        return (mean, transf)
 
 class Dec_Dummy(nn.Module):
     def __init__(self, forms, dataset, trans_funcs):
@@ -455,14 +456,15 @@ class Coupler(nn.Module):
         return x
     
 class Mapper(nn.Module):
-    def __init__(self, init_hidden, mean_hidden, transf_hidden, latent_dim):
+    def __init__(self, init_hidden, mean_hidden, transf_hidden, latent_dim, fixed_mean):
         super().__init__()
         init_out = init_hidden[-1] if init_hidden else latent_dim
         initial_layers = get_dense(latent_dim, init_out, init_hidden[:-1], nn.ReLU) if init_hidden else []
         mean_actvs = [nn.ReLU]*len(mean_hidden) + [None]
+        mean_layers = get_dense(init_out, latent_dim, mean_hidden, mean_actvs) if not fixed_mean else []
         transf_actvs = [nn.ReLU]*len(transf_hidden) + [None]
         self.initial_segment = nn.Sequential(*initial_layers)
-        self.mean_layer = nn.Sequential(*get_dense(init_out, latent_dim, mean_hidden, mean_actvs))
+        self.mean_layer = nn.Sequential(*mean_layers)
         self.transf_layer = nn.Sequential(*get_dense(init_out, latent_dim**2, transf_hidden, transf_actvs))
         self.softplus = nn.Softplus()
         self.latent_dim = latent_dim
@@ -491,7 +493,7 @@ def get_mapper(config, train_dataset):
     for in_modal in config["modalities"]:
         for out_modal in config["modalities"]:
             if in_modal != out_modal:
-                mapper = Mapper(specs["init"], specs["mean"], specs["transf"], config["latent_dim"])
+                mapper = Mapper(specs["init"], specs["mean"], specs["transf"], config["latent_dim"], specs["fixed_mean"])
                 model[f"{in_modal}-{out_modal}"] = mapper
     return model
 
