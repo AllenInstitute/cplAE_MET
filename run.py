@@ -6,6 +6,8 @@ import shutil
 import pathlib
 import sys
 
+remote_path = pathlib.Path("/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Ian/code/cplAE_MET")
+
 def recursive_unlink(path):
     if path.is_dir():
         for child_path in path.iterdir():
@@ -71,9 +73,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("exp_path", help = "Name of experiment.")
     parser.add_argument("config_file", help = "Path to configuration YAML file.")
-    parser.add_argument("--local", action = "store_true")
+    parser.add_argument("device", help = "Device on which to run experiment.")
     parser.add_argument("--terminal", action = "store_true")
     args = parser.parse_args()
+
+    # Running remotely involves recursive execution (over SSH) of run.py, so the program terminates early here.
+    if args.device == "remote-hpc":
+        subprocess.run(["scp", args.config_file, f"ian.convy@hpc-login:{remote_path / args.config_file}"])
+        subprocess.run(["ssh", "ian.convy@hpc-login", "cd", f"{remote_path};", "conda", "activate", "cplae;",
+                        "python", "-u", "run.py", args.exp_path, args.config_file, "hpc"])
+        sys.exit()
 
     # Config YAML file contains the specific parameters for the experiment.
     with open(args.config_file, "r") as target:
@@ -108,12 +117,14 @@ if __name__ == "__main__":
     # The parameters are recorded in the experiment directory, and the Python file is run on SLURM (if not local).
     print(f'\nRunning experiment "{exp_dir.name}":\n')
     record_settings(exp_dir, args.config_file)
-    if not args.local:
-        create_sbatch_script(python_file, exp_dir, exp_dir / "config.yaml", config)
-        subprocess.run(["sbatch", exp_dir / "script.sh"])
-    else:
+    if args.device == "local":
         if args.terminal:
             subprocess.run(["python", "-u", python_file, exp_dir, exp_dir / "config.yaml"])
         else:
             with open(exp_dir / "terminal.out", "w") as target:
                 subprocess.run(["python", "-u", python_file, exp_dir, exp_dir / "config.yaml"], stdout = target)
+    elif args.device == "hpc":
+        create_sbatch_script(python_file, exp_dir, exp_dir / "config.yaml", config)
+        subprocess.run(["sbatch", exp_dir / "script.sh"])
+    else:
+        raise ValueError(f'Device "{args.device}" not recognized.')
