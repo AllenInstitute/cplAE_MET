@@ -104,11 +104,8 @@ def build_model(config, train_dataset):
     # electro-physiological data.
     
     model_dict = subnetworks.get_model(config, train_dataset)
-    if config["inference"]:
-        mappers = subnetworks.get_mapper(config, train_dataset)
-        model = utils.VariationalWrapper(model_dict, mappers)
-    else:
-        model = utils.ModelWrapper(model_dict)
+    mappers = subnetworks.get_mapper(config, train_dataset) if config["inference"] else None
+    model = utils.VariationalWrapper(model_dict, mappers)
     return model
 
 def train_setup(exp_dir, config, train_dataset, val_dataset):
