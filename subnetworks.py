@@ -7,7 +7,8 @@ from data import get_transformation_function
 activations = {
     "linear": nn.Identity,
     "relu": nn.ReLU,
-    "sigmoid": nn.Sigmoid
+    "sigmoid": nn.Sigmoid,
+    "softplus": nn.Softplus
 }
 
 def get_conv_out_size(conv_params, initial_length):
