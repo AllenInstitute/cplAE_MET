@@ -122,6 +122,7 @@ architecture:
   arbors:
     data_size: [120, 4, 4]
     out_activation: relu
+    int_activation: relu
     conv_params: [[6, 2, 10], [6, 2, 10]] # [(kernel length, stride, channels), ...]
     init: [10]
     mean: [10]

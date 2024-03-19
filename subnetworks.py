@@ -185,15 +185,16 @@ class Enc_arbors(nn.Module):
         (height, radius, process) = architecture["data_size"]
         (conv_params, init_dims) = (architecture["conv_params"], architecture["init"])
         (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
+        int_actv = activations[architecture["int_activation"]]
         conv_out = get_conv_out_size(conv_params, height)*(conv_params[-1][2] if conv_params else radius*process)
         init_out = init_dims[-1] if init_dims else conv_out
-        conv_layers = get_conv(conv_params, radius*process, nn.ReLU, False) if conv_params else []
-        initial_layers = get_dense(conv_out, init_out, init_dims[:-1], nn.ReLU) if init_dims else []
+        conv_layers = get_conv(conv_params, radius*process, int_actv, False) if conv_params else []
+        initial_layers = get_dense(conv_out, init_out, init_dims[:-1], int_actv) if init_dims else []
         if initial_layers or conv_layers:
             initial_layers.append(nn.BatchNorm1d(init_out, momentum=0.05))
         initial_layers.insert(0, nn.Flatten())
-        mean_actvs = [nn.ReLU]*len(mean_dims) + [None]
-        transf_actvs = [nn.ReLU]*len(transf_dims) + [None]
+        mean_actvs = [int_actv]*len(mean_dims) + [None]
+        transf_actvs = [int_actv]*len(transf_dims) + [None]
 
         self.conv_segment = nn.Sequential(*conv_layers)
         self.initial_segment = nn.Sequential(*initial_layers)
@@ -229,8 +230,9 @@ class Dec_arbors(nn.Module):
         hidden_dims = (architecture["init"] + architecture["mean"])[::-1]
         conv_params = architecture["conv_params"][::-1]
         output_actv = activations[architecture["out_activation"]]
-        dense_actvs = [nn.ReLU]*len(hidden_dims) + [None]
-        conv_actvs = [nn.ReLU]*len(conv_params[:-1]) + [output_actv]
+        int_actv = activations[architecture["int_activation"]]
+        dense_actvs = [int_actv]*len(hidden_dims) + [None]
+        conv_actvs = [int_actv]*len(conv_params[:-1]) + [output_actv]
         conv_T_layers = get_conv(conv_params, radius*process, conv_actvs, True) if conv_params else []
         unflat_length = get_conv_out_size(conv_params[::-1], height)
         unflat_channels = conv_params[0][2] if conv_params else radius*process
