@@ -83,7 +83,12 @@ if __name__ == "__main__":
         subprocess.run(["ssh", "ian.convy@hpc-login", "cd", f"{remote_path};", "conda", "activate", "cplae;",
                         "python", "-u", "run.py", args.exp_path, args.config_file, "hpc"])
         sys.exit()
-
+    elif args.device == "desktop":
+        subprocess.run(["scp", args.config_file, f"ian.convy@svend-ux1:{remote_path / args.config_file}"])
+        subprocess.run(["ssh", "ian.convy@svend-ux1", "cd", f"{remote_path};", "conda", "activate", "cplae;",
+                        "python", "-u", "run.py", args.exp_path, args.config_file, "local"], start_new_session = True)
+                        #stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+        sys.exit()
     # Config YAML file contains the specific parameters for the experiment.
     with open(args.config_file, "r") as target:
         config = yaml.safe_load(target)
