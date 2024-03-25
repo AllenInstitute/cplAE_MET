@@ -13,7 +13,8 @@ def get_experiment(exp_dir, dest_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("exp_dir")
     parser.add_argument("dest_dir")
+    parser.add_argument("exp_dirs", nargs = "+")
     args = parser.parse_args()
-    get_experiment(args.exp_dir, args.dest_dir)
+    for exp_dir in args.exp_dirs:
+        get_experiment(exp_dir, args.dest_dir)
