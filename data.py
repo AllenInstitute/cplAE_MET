@@ -243,6 +243,107 @@ class MET_Simulated():
             (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
             yield (train_spec, test_spec)
 
+class MET_Decoupled():
+    def __init__(self, npz_path, config):
+        orig_MET = MET_Data(npz_path)
+        self.MET = self.get_decoupled_met(config, orig_MET)
+        self.id_map = {spec_id.strip():i for (i, spec_id) in enumerate(self["specimen_id"])}
+
+    def get_decoupled_met(self, config, met):
+        num_cells = met["specimen_id"].size
+        rng = np.random.default_rng(config["seed"])
+        masks = {form: np.any(~np.isnan(met[form]).reshape(num_cells, -1), 1)
+                      for form in ["logcpm", "pca-ipfx", "arbors", "ivscc"]}
+        used_specimens = met["specimen_id"][:0]
+        data = {form: [] for form in masks}
+        form_counts = list(config["decouple"]["counts"].items())
+        form_counts.sort(key = lambda tupl: len(tupl[0].split("_")), reverse = True)
+        for (comp_form, count) in form_counts:
+            mask_list = [masks[form] for form in comp_form.split("_")]
+            comp_mask = functools.reduce(np.logical_and, mask_list, True)
+            comp_mask = comp_mask & (met["platform"] == "patchseq")
+            comp_mask = comp_mask & ~np.isin(met["specimen_id"], used_specimens)
+            valid_specimens = met["specimen_id"][comp_mask]
+            if valid_specimens.size < count:
+                raise RuntimeError(f"Not enough cells to generate decoupled forms.")
+            specimens = rng.choice(valid_specimens, count, replace = False)
+            used_specimens = np.concatenate([used_specimens, specimens])
+            for (form, data_list) in data.items():
+                raw = met.get_specimens(specimens)[form]
+                if form not in comp_form:
+                    raw = np.full_like(raw, np.nan)
+                data_list.append(raw)
+        data_arrays = {form: np.concatenate(data_list) for (form, data_list) in data.items()}
+        all_data = {**met.get_specimens(used_specimens), **data_arrays, "specimen_id": used_specimens}
+        return all_data
+
+    def __getitem__(self, id_str):
+        data = self.MET[id_str]
+        return data
+    
+    def keys(self):
+        return (key for key in self.MET.keys() if key not in self.meta)
+    
+    def values(self):
+        return (self[key] for key in self.MET if key not in self.meta)
+    
+    def items(self):
+        return ((key, self[key]) for key in self.MET if key not in self.meta)
+
+    def query(self, specimen_ids = None, formats = None, exclude_formats = None, platforms = None, classes = None):
+        specimen_ids = (self["specimen_id"] if specimen_ids is None else specimen_ids)
+        platforms = (np.char.strip(np.unique(self["platform"])) if platforms is None else platforms)
+        classes = (np.char.strip(np.unique(self["class"])) if classes is None else classes)
+        valid = np.isin(np.char.strip(self["specimen_id"]), np.char.strip(specimen_ids))
+        valid = valid & np.isin(np.char.strip(self["platform"]), platforms)
+        valid = valid & np.isin(np.char.strip(self["class"]), classes)
+        if formats is not None:
+            format_mask = np.full_like(valid, False)
+            for form_tuple in formats:
+                tupl_mask = np.full_like(valid, True)
+                for form in form_tuple:
+                    data = np.squeeze(self[form])
+                    tupl_mask = tupl_mask & ~np.isnan(data).reshape([data.shape[0], -1]).all(1)
+                format_mask = format_mask | tupl_mask
+            valid = valid & format_mask
+        if exclude_formats is not None:
+            exclude_mask = np.full_like(valid, True)
+            for form in exclude_formats:
+                data = np.squeeze(self[form])
+                exclude_mask = exclude_mask & np.isnan(data).reshape([data.shape[0], -1]).all(1)
+            valid = valid & exclude_mask
+        valid_specimens = self["specimen_id"][valid]
+        data_dict = self.get_specimens(valid_specimens)
+        return data_dict
+
+    def get_specimens(self, specimen_ids):
+        stripped = [string.strip() for string in specimen_ids]
+        data_dict = {}
+        for (key, value) in self.items():
+            cleaned = [np.squeeze(value)[None, self.id_map[spec]] for spec in stripped]
+            data_dict[key] = np.concatenate(cleaned) if cleaned else value[:0]
+        return data_dict
+    
+    def get_stratified_split(self, test_frac, seed = 42):
+        strat_cats = ["platform", "class", "cluster_label"]
+        labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
+        (values, counts) = np.unique(labels, return_counts = True)
+        singleton_labels = values[counts == 1]
+        if singleton_labels.size > 1:
+            labels[np.isin(labels, singleton_labels)] = "_singleton"
+        else:
+            labels[np.isin(labels, singleton_labels)] = values[np.argmax(counts)]
+        (train_ids, test_ids) = train_test_split(self["specimen_id"], test_size = test_frac, random_state = seed, stratify = labels)
+        return (train_ids, test_ids)
+    
+    def get_stratified_KFold(self, folds, seed = 42):
+        strat_cats = ["platform", "class", "cluster_label"]
+        labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
+        splitter = StratifiedKFold(folds, shuffle = True, random_state = seed)
+        for (train_ids, test_ids) in splitter.split(self["specimen_id"], labels):
+            (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
+            yield (train_spec, test_spec)
+
 class DeterministicDataset(IterableDataset):
     def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, allowed_specimen_ids = None):
         self.MET = met_data
@@ -443,25 +544,14 @@ if __name__ == "__main__":
 
     config = {
         "seed": 42,
-        "latent_dim": 3,
-        "simulate": {
+        "decouple": {
             "counts": {
-                "logcpm": 20,
-                "arbors": 20,
-                "logcpm_arbors": 1
-            },
-            "num_clusters": 5,
-            "category_std": 1,
-            "cluster_std": 0.25,
-            "model_paths": {
-                "logcpm": "../archive/2-24/patchseq-mse/t_arm", 
-                "pca-ipfx": "../archive/2-24/patchseq-mse/e_arm", 
-                "arbors": "../archive/2-24/patchseq-mse/m_arm", 
-                "ivscc": "data/ivscc/m_arm_ivscc"}
+                "logcpm": 611,
+                "logcpm_arbors": 163,
+                "logcpm_pca-ipfx": 4384,
+                "logcpm_pca-ipfx_arbors": 1394
+            }
         }
     }
-    met_data = MET_Simulated(config)
-    print((~np.isnan(met_data["logcpm"]).all(1), ~np.isnan(met_data["ivscc"]).all(1)))
-    print((~np.isnan(met_data["logcpm"]).all(1))[met_data["cluster_label"] == "1"].sum())
-    # met_data = MET_Data("data/raw/MET_full_data.npz")
-    # print(met_data.query(formats = [("ivscc",)], exclude_formats = ["soma_depth"])["specimen_id"].shape)
+    met_data = MET_Decoupled("data/raw/MET_full_data.npz", config)
+    print(met_data.MET)

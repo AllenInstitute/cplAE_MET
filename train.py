@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 import numpy as np
 
-from data import MET_Data, MET_Simulated, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
+from data import MET_Data, MET_Simulated, MET_Decoupled, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
 from losses import ReconstructionLoss, VariationalLoss
 import utils
 import subnetworks
@@ -183,7 +183,12 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     return model
 
 def train_model(config, exp_dir):
-    met_data = MET_Data(config["data_file"]) if "simulate" not in config else MET_Simulated(config)
+    if "simulate" in config:
+        met_data = MET_Simulated(config)
+    elif "decoupled" in config:
+        met_data = MET_Decoupled(config["data_file"], config)
+    else:
+        met_data = MET_Data(config["data_file"])
     num_folds = config["folds"]
     if num_folds > 0:
         indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
