@@ -185,7 +185,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
 def train_model(config, exp_dir):
     if "simulate" in config:
         met_data = MET_Simulated(config)
-    elif "decoupled" in config:
+    elif "decouple" in config:
         met_data = MET_Decoupled(config["data_file"], config)
     else:
         met_data = MET_Data(config["data_file"])

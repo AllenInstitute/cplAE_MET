@@ -248,6 +248,7 @@ class MET_Decoupled():
         orig_MET = MET_Data(npz_path)
         self.MET = self.get_decoupled_met(config, orig_MET)
         self.id_map = {spec_id.strip():i for (i, spec_id) in enumerate(self["specimen_id"])}
+        self.meta = orig_MET.meta
 
     def get_decoupled_met(self, config, met):
         num_cells = met["specimen_id"].size
