@@ -341,7 +341,13 @@ class MET_Decoupled():
         strat_cats = ["platform", "class", "cluster_label"]
         labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
         splitter = StratifiedKFold(folds, shuffle = True, random_state = seed)
-        for (train_ids, test_ids) in splitter.split(self["specimen_id"], labels):
+        try:
+            next(splitter.split(self["specimen_id"], labels))
+            fold_iter = splitter.split(self["specimen_id"], labels)
+        except ValueError:
+            print("Stratification failed. Using un-stratified folds.")
+            fold_iter = splitter.split(self["specimen_id"], np.ones_like(labels))
+        for (train_ids, test_ids) in fold_iter:
             (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
             yield (train_spec, test_spec)
 
