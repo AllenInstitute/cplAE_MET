@@ -78,6 +78,82 @@ class VariationalLoss():
             mask = ~torch.isnan(x)
             x = torch.nan_to_num(x)
             squared_diff = torch.square(x - xr_forms[form])
+            mse = torch.masked_select(squared_diff, mask).sum() / x.shape[0]
+            loss = loss + mse
+        return loss
+    
+    def get_within_loss(self, model, modal, x_forms, z_mean, z_transf):
+        z_sample = model.z_sample(z_mean, z_transf)
+        xr_forms = model[modal]["dec"](z_sample)
+        loss = self.reconstruction_loss(x_forms, xr_forms)
+        return loss
+    
+    def get_cross_loss(self, model, out_modal, x_forms, cross_sample):
+        xr_forms = model[out_modal]["dec"](cross_sample)
+        loss = self.reconstruction_loss(x_forms, xr_forms)
+        return loss
+
+    def combine_losses(self, loss_dict, latent_dict, mapper_dict, coupling_dict):
+        var_config = self.config["var_weights"]
+        total_loss = 0
+        for (i, modal_1) in enumerate(self.config["modalities"]):
+            (mean_1, transf_1) = latent_dict[modal_1]
+            losses = {
+                "within": var_config["recon_scale"]*var_config["duplicate"]*loss_dict[modal_1],
+                "mean_reg": var_config["duplicate"]*torch.square(mean_1).sum(1).mean(),
+                "trace_reg": transf_1.square().mean(0).sum(),
+                "det_reg": var_config["duplicate"]*-2*torch.log(torch.det(transf_1)).mean()}
+            total_loss += sum([var_config[modal_1][key]*loss 
+                               for (key, loss) in losses.items()])
+            for modal_2 in self.config["modalities"][i + 1:]:
+                for (first, second) in [(modal_1, modal_2), (modal_2, modal_1)]:
+                    (map_mean, map_transf) = mapper_dict[f"{first}={second}"]
+                    orig_mean = latent_dict[first][0]
+                    losses = {
+                        "cross": var_config["recon_scale"]*loss_dict[f"{first}={second}"],
+                        "mean_diff_reg": torch.square(map_mean - orig_mean).sum(1).mean(),
+                        "map_trace_reg": map_transf.square().mean(0).sum(),
+                        "map_det_reg": -2*torch.log(torch.det(map_transf)).mean(),
+                        "coupling": coupling_dict[f"{first}={second}"]}
+                    total_loss += sum([var_config[first][second][key]*loss for (key, loss) in losses.items()])
+        return total_loss
+
+class VariationalLoss2():
+    def __init__(self, config, met_data, specimens):
+        self.config = config
+    
+    def process_batch(self, model, X_dict, mask_dict):
+        (latent_dict, mapper_dict, loss_dict, coupling_dict) = ({}, {}, {}, {})
+        for modal in self.config["modalities"]:
+            (arm, x_forms, mask) = (model[modal], X_dict[modal], mask_dict[modal])
+            x_masked = apply_mask(x_forms, mask)
+            (z_mean, z_transf) = arm["enc"](x_masked)
+            latent_dict[modal] = (z_mean, z_transf)
+            loss_dict[modal] = self.get_within_loss(model, modal, x_masked, z_mean, z_transf)
+            for (prev_modal, (prev_mean, prev_transf)) in list(latent_dict.items())[:-1]:
+                (_, cross_sample, cross_mean, cross_transf) = model.cross_z_sample(modal, prev_modal, z_mean, z_transf)
+                (_, prev_cross_sample, prev_cross_mean, prev_cross_transf) = model.cross_z_sample(prev_modal, modal, prev_mean, prev_transf)
+                mapper_dict[f"{prev_modal}={modal}"] = (prev_cross_mean, prev_cross_transf)
+                mapper_dict[f"{modal}={prev_modal}"] = (cross_mean, cross_transf)
+                (prev_x_forms, prev_mask) = (X_dict[prev_modal], mask_dict[prev_modal])
+                if torch.any(prev_mask[mask]):
+                    (cross_masked, prev_cross_masked) = (cross_sample[prev_mask[mask]], prev_cross_sample[mask[prev_mask]])
+                    (x_dbl_masked, prev_x_masked) = (apply_mask(x_forms, mask & prev_mask), apply_mask(prev_x_forms, mask & prev_mask))
+                    cross_loss = self.get_cross_loss(model, prev_modal, prev_x_masked, cross_masked)
+                    prev_cross_loss = self.get_cross_loss(model, modal, x_dbl_masked, prev_cross_masked)
+                    loss_dict[f"{modal}={prev_modal}"] = cross_loss
+                    loss_dict[f"{prev_modal}={modal}"] = prev_cross_loss
+                    coupling = torch.square(z_mean[prev_mask[mask]] - prev_mean[mask[prev_mask]]).mean(0).sum()
+                    coupling_dict[f"{modal}={prev_modal}"] = coupling_dict[f"{prev_modal}={modal}"] = coupling
+        total_loss = self.combine_losses(loss_dict, latent_dict, mapper_dict, coupling_dict)
+        return (loss_dict, total_loss)
+
+    def reconstruction_loss(self, x_forms, xr_forms):
+        loss = 0
+        for (form, x) in x_forms.items():
+            mask = ~torch.isnan(x)
+            x = torch.nan_to_num(x)
+            squared_diff = torch.square(x - xr_forms[form])
             mse = torch.masked_select(squared_diff, mask).mean()
             loss = loss + mse
         return loss
