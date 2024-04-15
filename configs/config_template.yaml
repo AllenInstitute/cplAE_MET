@@ -18,6 +18,7 @@ learning_rate: 0.001 # Learning rate for the ADAM optimizer
 check_step: 50 # How often to save model checkpoints
 encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder
 inference: True
+samples: 10
 
 variational:
   mapper:
@@ -25,13 +26,6 @@ variational:
     init: []
     mean: [32]
     transf: [32]
-  T=E: 100.0
-  T=M: 100.0
-  E=T: 100.0
-  E=M: 100.0
-  M=T: 100.0
-  M=E: 100.0
-  coupling: 100.0
 
 # Set validation parameters:
 folds: 10 # Number of folds to use for cross-validation
@@ -161,61 +155,61 @@ architecture:
 # Set loss weights (used when computing the combined loss scalar)
 var_weights:
   duplicate: 2
-  recon_scale: 1
+  recon_scale: 100
   T:
-    within: 0.0004
+    within: 0.0008
     mean_reg: 0.25
     trace_reg: 25
     det_reg: 0.25
 
     E: 
-      cross: 0.09
+      cross: 0.012
       map_det_reg: 0.25
       map_trace_reg: 25
-      mean_diff_reg: 0.25
-      coupling: 1
+      mean_diff_reg: 0
+      coupling: 0.5
     M: 
-      cross: 0.0028
+      cross: 0.00052
       map_det_reg: 0.25
       map_trace_reg: 25
-      mean_diff_reg: 0.25
-      coupling: 1
+      mean_diff_reg: 0
+      coupling: 0.5
   E:
-    within: 0.09
+    within: 0.012
     mean_reg: 0.25
     trace_reg: 25
     det_reg: 0.25
 
     T: 
-      cross: 0.0004
+      cross: 0.0008
       map_det_reg: 0.25
       map_trace_reg: 25
-      mean_diff_reg: 0.25
-      coupling: 1
+      mean_diff_reg: 0
+      coupling: 0.5
     M: 
-      cross: 0.0028
+      cross: 0.00052
       map_det_reg: 0.25
       map_trace_reg: 25
-      mean_diff_reg: 0.25
-      coupling: 1
+      mean_diff_reg: 0
+      coupling: 0.5
   M:
-    within: 0.0028
+    within: 0.00052
     mean_reg: 0.25
     trace_reg: 25
     det_reg: 0.25
 
     T:
-      cross: 0.0004
+      cross: 0.0008
       map_det_reg: 0.25
       map_trace_reg: 25
-      mean_diff_reg: 0.25
-      coupling: 1
+      mean_diff_reg: 0
+      coupling: 0.5
     E:
-      cross: 0.09
+      cross: 0.012
       map_det_reg: 0.25
       map_trace_reg: 25
-      mean_diff_reg: 0.25
-      coupling: 1
+      mean_diff_reg: 0
+      coupling: 0.5
 
 weights:
   # Single letters indicates within-modality reconstruction loss:

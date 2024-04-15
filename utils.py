@@ -1,7 +1,9 @@
 import pathlib
 import yaml
+import pickle as pk
 
 import numpy as np
+import pandas as pd
 import torch
 
 from pca_cca import PCA_CCA
@@ -35,23 +37,24 @@ class VariationalWrapper(torch.nn.Module):
             out_mean = out_transf = None
             latent = self.z_sample(mean, transf) if sample else mean
             orig_sample = latent
-            if modal != in_modal:
+            if self.mappers and modal != in_modal:
                 (out_mean, out_transf) = self.mappers[f"{in_modal}-{modal}"](orig_sample)
                 latent = self.z_sample(out_mean, out_transf) if sample else out_mean
             recon = self[modal]["dec"](latent)
             outputs[modal] = (latent, recon, mean, transf, out_mean, out_transf, orig_sample)
         return outputs
 
-    def z_sample(self, mean, transf):
-        noise = torch.einsum("nij,nj->ni", transf, torch.randn_like(mean))
-        z_sampled = mean + noise
+    def z_sample(self, mean, transf, num_samples):
+        expanded_mean = mean[:, None].expand(-1, num_samples, -1)
+        noise = torch.einsum("nij,nsj->nsi", transf, torch.randn_like(expanded_mean))
+        z_sampled = expanded_mean + noise
         return z_sampled
     
-    def cross_z_sample(self, in_modal, out_modal, in_mean, in_transf):
+    def cross_z_sample(self, in_modal, out_modal, in_mean, in_transf, num_samples):
         mapper = self.mappers[f"{in_modal}-{out_modal}"]
-        direct_sample = self.z_sample(in_mean, in_transf)
+        direct_sample = self.z_sample(in_mean, in_transf, 1)[:, 0]
         (out_mean, out_transf) = mapper(direct_sample)
-        cross_sample = self.z_sample(out_mean, out_transf)
+        cross_sample = self.z_sample(out_mean, out_transf, num_samples)
         return (direct_sample, cross_sample, out_mean, out_transf)
 
     def __getitem__(self, modal):
@@ -235,8 +238,75 @@ def load_pca_cca(exp_dir):
         results["folds"].append(info_dict)
     return results
 
+def get_tree_merge_map(tree_csv_path, top_node):
+    data = pd.read_csv(tree_csv_path)
+    children = {}
+    for (node, parent) in data[["label", "parent"]].itertuples(False):
+        children.setdefault(parent, []).append(node)
+    valid_nodes = {top_node}
+    while True:
+        new_valid_nodes = valid_nodes.union({node for (node, parent) in data[["label", "parent"]].itertuples(False) 
+                           if parent in valid_nodes})
+        if len(new_valid_nodes) == len(valid_nodes):
+            break
+        else:
+            valid_nodes = new_valid_nodes
+    data = data[data["label"].isin(valid_nodes)]
+    nodes_with_children = data[data["y"] > 0].sort_values("y")
+    cuml_map = {label: [label] for label in data["label"]}
+    for label in nodes_with_children["label"]:
+        children = data[data["parent"] == label]["label"].to_list()
+        for map_outs in cuml_map.values():
+            curr_out = map_outs[-1]
+            map_outs.append(label if curr_out in children else curr_out)
+    cuml_map = {label.strip(): [out.strip() for out in map_outs]
+                for (label, map_outs) in cuml_map.items()}
+    return cuml_map
+
+def get_forest_AE(base_dir, exp_path, exp_name, merge):
+    exp_dict = {
+        "config": {},
+        "folds": {}}
+    base_dir = pathlib.Path("../data/forest_baselines")
+    encoder_dict = load_jit_folds(exp_path, get_checkpoints = False) if exp_path else None
+    modalities = encoder_dict["config"]["modalities"] if exp_path else ["T", "E", "M"]
+    formats = encoder_dict["config"]["formats"] if exp_path else {"T": ["logcpm"], "E": ["pca-ipfx"], "M": ["arbors"]}
+    tree_path = base_dir / "models" / "latent_encoders" / exp_name if exp_path else base_dir / "models" / "raw_encoders"
+    for dec_fold_path in (base_dir / "models" / "decoders").iterdir():
+        fold = int(dec_fold_path.name)
+        if exp_path:
+            encoders = {modal: encoder_dict["folds"][fold]["best"][modal]["enc"] for modal in modalities}
+        else:
+            encoders = {modal: lambda form_dict: (torch.flatten(next(iter(form_dict.values())), start_dim = 1),) for modal in modalities}
+        trees = {}
+        for modal in modalities:
+            with open(tree_path / str(fold) / str(merge) / f"{modal}.pk", "rb") as target:
+                trees[modal] = pk.load(target)
+        means_dict = {}
+        for form_path in dec_fold_path.glob("*.pk"):
+            with open(form_path, "rb") as target:
+                means_dict[form_path.stem] = pk.load(target)
+        decoders = {form: lambda labels,means=means: np.asarray([means[label] for label in labels]) 
+                    for (form, means) in means_dict.items()}
+        def model(form_dict, in_modal, out_modals):
+            latent = encoders[in_modal](form_dict)[0].numpy(force = True)
+            labels = trees[in_modal].predict(latent)
+            recons = {}
+            for out_modal in out_modals:
+                recons[out_modal] = {form: torch.from_numpy(decoders[form](labels)).float() for form in formats[out_modal]}
+            return recons
+        exp_dict["folds"].setdefault(int(fold), {})["best"] = model
+        specimen_ids = np.load(dec_fold_path / "train_test_ids.npz")
+        exp_dict["folds"][int(fold)]["train_ids"] = np.char.strip(specimen_ids["train"])
+        exp_dict["folds"][int(fold)]["test_ids"] = np.char.strip(specimen_ids["test"])
+    exp_dict["config"]["modalities"] = modalities
+    exp_dict["config"]["formats"] = formats
+    return exp_dict
+
+if __name__ == "__main__":
+    x = get_tree_merge_map("data/raw/dend_RData_Tree_20181220.csv", "n4")
+    # pd.DataFrame(x).to_csv("test2.csv")
 # # Retracing operation
-# if __name__ == "__main__":
 #     class EncWrapper(torch.nn.Module):
 #         def __init__(self, trace, form):
 #             super().__init__()
