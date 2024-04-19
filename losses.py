@@ -153,8 +153,10 @@ class ReconstructionLoss():
                 if torch.any(prev_mask[mask]):
                     (z_masked, prev_z_masked) = (z[prev_mask[mask]], prev_z[mask[prev_mask]])
                     (x_dbl_masked, prev_x_masked) = (apply_mask(x_forms, mask & prev_mask), apply_mask(prev_x_forms, mask & prev_mask))
-                    loss_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_z_masked.detach())
-                    loss_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_z_masked)
+                    if self.config["weights"][f"{prev_modal}-{modal}"] > 0:
+                        loss_dict[f"{prev_modal}-{modal}"] = min_var_loss(z_masked, prev_z_masked.detach())
+                    if self.config["weights"][f"{modal}-{prev_modal}"] > 0:
+                        loss_dict[f"{modal}-{prev_modal}"] = min_var_loss(z_masked.detach(), prev_z_masked)
                     loss_dict[f"{modal}={prev_modal}"] = self.cross(model, prev_x_masked, z_masked, prev_modal)
                     loss_dict[f"{prev_modal}={modal}"] = self.cross(model, x_dbl_masked, prev_z_masked, modal)
         weighted = sum([self.config["weights"][key]*loss_value for (key, loss_value) in loss_dict.items()])
