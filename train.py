@@ -121,26 +121,6 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     loss_handler = loss_class(config, train_dataset.MET, train_dataset.allowed_specimen_ids)
     return (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_handler)
 
-def log_tensorboard(tb_writer, train_loss, val_loss, epoch):
-    # This function takes the training/validation losses and logs them
-    # in Tensoboard. The component losses are reported without any scaling,
-    # alongside the weighted sum of the losses.
-
-    tb_writer.add_scalars("Weighted Loss", {"Train": train_loss["total"], "Validation": val_loss["total"]}, epoch)
-    tb_writer.add_scalars("R2/Train", 
-        {key: 1 - value for (key, value) in train_loss.items() if key in {"T", "E", "M"}}, epoch)
-    tb_writer.add_scalars("R2/Validation", 
-        {key: 1 - value for (key, value) in val_loss.items() if key in {"T", "E", "M"}}, epoch)
-    tb_writer.add_scalars("Cross-R2/Train", 
-        {key: 1 - value for (key, value) in train_loss.items() if "=" in key}, epoch)
-    tb_writer.add_scalars("Cross-R2/Validation", 
-        {key: 1 - value for (key, value) in val_loss.items() if "=" in key}, epoch)
-    tb_writer.add_scalars("Coupling/Train", 
-        {key: value for (key, value) in train_loss.items() if "-" in key}, epoch)
-    tb_writer.add_scalars("Coupling/Validation",
-        {key:value for (key, value) in val_loss.items() if "-" in key}, epoch)
-    print(f"Epoch {epoch} -- Train: {train_loss['total']:.4e} | Val: {val_loss['total']:.4e}")
-
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     # This function takes trains a model as specified in the passed configuration
     # dictionary (loaded from a config YAML file), using the provided training and
@@ -172,7 +152,8 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
                 (val_loss_dict, val_loss) = loss_handler.process_batch(model, X_val, mask_val)
                 cuml_val_losses = combine_losses(val_loss, cuml_val_losses, val_loss_dict)
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
-        log_tensorboard(tb_writer, avg_losses, avg_val_losses, epoch + 1)
+        loss_handler.log(tb_writer, avg_losses, avg_val_losses, epoch + 1)
+        print(f"Epoch {epoch} -- Train: {avg_losses['total']:.4e} | Val: {avg_val_losses['total']:.4e}")
         grad_freezer.freeze_check(avg_val_losses, epoch)
         if stopper.stop_check(avg_val_losses["total"], model, epoch):
             break
