@@ -105,7 +105,8 @@ def build_model(config, train_dataset):
     
     model_dict = subnetworks.get_model(config, train_dataset)
     mappers = subnetworks.get_mapper(config, train_dataset) if config["inference"] else None
-    decoder_cov = subnetworks.Decoder_Cov(len(config["modalities"]), config["latent_dim"])
+    (fixed_cov, marg_var, skew_frac) = (config["elbo_cov"]["fixed"], config["elbo_cov"]["marg_var"], config["elbo_cov"]["skew_frac"])
+    decoder_cov = subnetworks.Decoder_Cov(len(config["modalities"]), config["latent_dim"], marg_var, skew_frac, fixed_cov)
     model = utils.VariationalWrapper(model_dict, mappers, decoder_cov)
     return model
 
