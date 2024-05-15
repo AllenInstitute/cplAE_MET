@@ -1,8 +1,15 @@
 import math
+import itertools
+import functools
 
 import torch
 import numpy as np
 from data import get_transformation_function
+
+def powerset(iterable, min_size = 0):
+    elements = list(iterable)
+    comb_gen = (itertools.combinations(elements, r) for r in range(min_size, len(elements) + 1))
+    return itertools.chain.from_iterable(comb_gen)
 
 def apply_mask(dct, mask):
     masked = {key: value[mask] for (key, value) in dct.items()}
@@ -41,6 +48,13 @@ def min_var_loss(zi, zj):
     zi_zj_mse = torch.mean(torch.sum(torch.square(zi-zj), 1))
     loss_ij = zi_zj_mse/torch.squeeze(torch.minimum(min_var_zi, min_var_zj))
     return loss_ij
+
+def get_indices(modalities):
+        modal_sets = list(powerset(modalities, min_size = 2))
+        modal_indices = {modal: i for (i, modal) in enumerate(modalities)}
+        set_indices = {frozenset(modal_set): [modal_indices[modal] for modal in modal_set]
+                       for modal_set in modal_sets}
+        return (modal_indices, set_indices)
 
 class VariationalLoss():
     def __init__(self, config, met_data, specimens):
@@ -148,6 +162,144 @@ class VariationalLoss():
             {key: loss for (key, loss) in train_loss.items() if not ("cross" in key) and not ("within" in key) and not ("total" in key)}, epoch)
         tb_writer.add_scalars("Within-Reg/Validation",
             {key: loss for (key, loss) in val_loss.items() if not ("cross" in key) and not ("within" in key) and not ("total" in key)}, epoch)
+
+class ELBO_Loss():
+    def __init__(self, config, met_data, specimens):
+        self.config = config
+        (self.modal_indices, self.set_indices) = get_indices(config["modalities"])
+
+    # def get_operators(self):
+    #     num_modalities = len(self.joint_cov)
+    #     mean_diff = torch.zeros([len(self.indices), num_modalities, num_modalities])
+    #     cond_prec = torch.zeros([len(self.indices), num_modalities])
+    #     cuml_log_var = 0
+    #     for (in_indices, out_indices, dest_indices) in self.indices.values():
+    #         inv_cov = torch.linalg.inv(self.joint_cov[in_indices][:, in_indices])
+    #         off_block = self.joint_cov[out_indices][:, in_indices]
+    #         transf = off_block @ inv_cov
+    #         cond_var = self.joint_cov[out_indices, out_indices] - transf @ off_block.T
+    #         mean_diff[dest_indices, out_indices, in_indices] = transf / cond_var**0.5
+    #         cond_prec[dest_indices, out_indices] = 1 / cond_prec
+    #         cuml_log_var = cuml_log_var + torch.log(cond_var).sum()
+    #     return (mean_diff, cond_prec, cuml_log_var)
+
+    def process_batch(self, model, X_dict, mask_dict):
+        (recon_dict, entropy_dict, reg_dict, alignment_dict) = ({}, {}, {}, {})
+        num_samples = len(next(iter(mask_dict.values())))
+        num_modalities = len(self.config["modalities"])
+        latent_dim = self.config["latent_dim"]
+        latent_tensor = torch.zeros([num_samples, num_modalities, latent_dim])
+        cov_tensor = torch.zeros([num_samples, num_modalities, latent_dim, latent_dim])
+        joint_cov = model.decoder_cov()
+        for (modal, modal_index) in self.modal_indices.items():
+            (arm, x_forms, mask) = (model[modal], X_dict[modal], mask_dict[modal])
+            x_masked = apply_mask(x_forms, mask)
+            (z_mean, z_transf) = arm["enc"](x_masked)
+            recon_dict[f"{modal}_recon"] = self.get_within_loss(model, modal, x_masked, z_mean, z_transf, self.config["samples"])
+            (sign, logdet) = torch.linalg.slogdet(z_transf)
+            entropy_dict[f"{modal}_entropy"] = torch.mean(sign*logdet)
+            z_covs = torch.einsum("nij,nkj->nik", z_transf, z_transf)
+            reg_dict[f"{modal}_reg"] = self.compute_unimodal_reg(z_mean, z_covs, joint_cov[modal_index, :, modal_index])
+            latent_tensor[mask, modal_index] = z_mean
+            cov_tensor[mask, modal_index] = z_covs
+        for (modal_set, set_indices) in self.set_indices.items():
+            joint_mask = functools.reduce(torch.logical_and, (mask_dict[modal] for modal in modal_set))
+            latent_masked = latent_tensor[joint_mask]
+            latent_cov_masked = cov_tensor[joint_mask]
+            cuml = 0
+            alignment = 0
+            for out_index in set_indices:
+                in_indices  = torch.as_tensor([i for i in set_indices if i != out_index])
+                (mean_transf, off_diag) = self.get_mean_transform(joint_cov, in_indices, out_index)
+                inv_cond_cov = self.get_inv_conditional_cov(joint_cov[out_index, :, out_index], mean_transf, off_diag)
+                (new_cuml, new_alignment) = self.compute_multimodal_reg(latent_masked[:, out_index], latent_masked[:, in_indices], 
+                                                                        latent_cov_masked[:, out_index], mean_transf, inv_cond_cov)
+                cuml = cuml + new_cuml
+                alignment = alignment + torch.linalg.norm(new_alignment, dim = 1).mean()
+            set_size = len(set_indices)
+            reg_dict["-".join(modal_set) + "_reg"] = math.factorial(num_modalities  - set_size)*math.factorial(set_size - 1)*cuml
+            alignment_dict["-".join(modal_set) + "_align"] = alignment
+        comb_loss = self.combine_losses(num_modalities, recon_dict, entropy_dict, reg_dict)
+        loss_dict = {**recon_dict, **entropy_dict, **reg_dict, **alignment_dict}
+        return (loss_dict, comb_loss)
+        
+    def compute_unimodal_reg(self, z_means, z_cov, marg_cov):
+        inv_marg_cov = torch.linalg.inv(marg_cov)
+        (sign, logdet) = torch.linalg.slogdet(marg_cov)
+        trace = torch.einsum("ij,nji", inv_marg_cov, z_cov)
+        mean_norm = torch.einsum("ni,ij,nj->n", z_means, inv_marg_cov, z_means)
+        reg_loss = 0.5*(sign*logdet + trace + mean_norm).mean()
+        return reg_loss
+    
+    def compute_multimodal_reg(self, z_out_means, z_in_means, z_cov, mean_transf, inv_cond_cov):
+        (sign, logdet) = torch.linalg.slogdet(inv_cond_cov)
+        trace = torch.einsum("ij,nji->n", inv_cond_cov, z_cov)
+        mean_diff = z_out_means - torch.einsum("ijk,njk->ni", mean_transf, z_in_means)
+        coupling = torch.einsum("ni,ij,nj->n", mean_diff, inv_cond_cov, mean_diff)
+        reg_loss = 0.5*(-sign*logdet + trace + coupling).mean()
+        return (reg_loss, mean_diff)
+    
+    def get_inv_conditional_cov(self, out_marg, mean_transf, off_diag):
+        cond = out_marg - torch.einsum("ijk,ojk->io", mean_transf, off_diag)
+        inv_cond = torch.linalg.inv(cond)
+        return inv_cond
+    
+    def get_mean_transform(self, joint_cov, in_indices, out_index):
+        z_size = len(in_indices)*joint_cov.shape[1]
+        in_marg = joint_cov[in_indices][:, :, in_indices]
+        inv_in_marg = torch.linalg.inv(in_marg.reshape((z_size, z_size))).reshape(in_marg.shape)
+        off_diag = joint_cov[out_index, :, in_indices]
+        mean_transf = torch.einsum("ijk,jklm->ilm", off_diag, inv_in_marg)
+        return (mean_transf, off_diag)
+
+    def reconstruction_loss(self, x_forms, xr_forms):
+        loss = 0
+        for (form, x) in x_forms.items():
+            mask = ~torch.isnan(x)
+            x = torch.nan_to_num(x)
+            x_recon = xr_forms[form]
+            squared_diff = torch.square(x[:, None] - x_recon)
+            mse = torch.masked_select(squared_diff, mask[:, None]).sum() / (x_recon.shape[0]*x_recon.shape[1])
+            loss = loss + mse
+        return loss
+    
+    def get_within_loss(self, model, modal, x_forms, z_mean, z_transf, num_samples):
+        z_sample = model.z_sample(z_mean, z_transf, num_samples)
+        xr_forms_flat = model[modal]["dec"](z_sample.flatten(0, 1))
+        xr_forms = {form: tensor.unflatten(0, z_sample.shape[:2]) 
+                    for (form, tensor) in xr_forms_flat.items()}
+        loss = self.reconstruction_loss(x_forms, xr_forms)
+        return loss
+    
+    def combine_losses(self, num_modalities, recon_dict, entropy_dict, reg_dict):
+        weights = self.config["elbo_weights"]
+        recon_sum = sum([weights[key]*loss for (key, loss) in recon_dict.items()])
+        comb_loss = weights["recon_scale"]*recon_sum #- sum(entropy_dict.values()) + sum(reg_dict.values()) / math.factorial(num_modalities)
+        return comb_loss
+
+    def log(self, tb_writer, train_loss, val_loss, epoch):
+        # This function takes the training/validation losses and logs them
+        # in Tensoboard. The component losses are reported without any scaling,
+        # alongside the weighted sum of the losses.
+
+        weights = self.config["elbo_weights"]
+        tb_writer.add_scalars("Alignment/Train", 
+            {key: alignment for (key, alignment) in train_loss.items() if "align" in key}, epoch)
+        tb_writer.add_scalars("Alignment/Validation", 
+            {key: alignment for (key, alignment) in val_loss.items() if "align" in key}, epoch)
+        tb_writer.add_scalars("Weighted Loss", {"Train": train_loss["total"], "Validation": val_loss["total"]}, epoch)
+        tb_writer.add_scalars("Reconstruction/Train", 
+            {key: loss*weights[key] for (key, loss) in train_loss.items() if "recon" in key}, epoch)
+        tb_writer.add_scalars("Reconstruction/Validation", 
+            {key: loss*weights[key] for (key, loss) in val_loss.items() if "recon" in key}, epoch)
+        tb_writer.add_scalars("Entropy/Train", 
+            {key: loss for (key, loss) in train_loss.items() if "entropy" in key}, epoch)
+        tb_writer.add_scalars("Entropy/Validation",
+            {key: loss for (key, loss) in val_loss.items() if "entropy" in key}, epoch)
+        tb_writer.add_scalars("Reg/Train", 
+            {key: loss for (key, loss) in train_loss.items() if "reg" in key}, epoch)
+        tb_writer.add_scalars("Reg/Validation",
+            {key: loss for (key, loss) in val_loss.items() if "reg" in key}, epoch)
 
 class ReconstructionLoss():
     def __init__(self, config, met_data, specimens):

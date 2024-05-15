@@ -480,6 +480,43 @@ class Mapper(nn.Module):
         transf = torch.diag_embed(diagonals) + torch.tril(transf_raw, -1)
         return (mean, transf)
 
+class Decoder_Cov(torch.nn.Module):
+    def __init__(self, num_modalities, latent_dim, fixed):
+        super().__init__()
+        self.fixed = fixed
+        if not fixed:
+            init_params = torch.randn([num_modalities, num_modalities])
+            self.params = torch.nn.Parameter(init_params.float())
+            self.softplus = torch.nn.Softplus()
+            self.num_modalities = num_modalities
+            self.latent_dim = latent_dim
+        else:
+            self.cov = torch.nn.Parameter(get_skewed_cov(num_modalities, latent_dim, 1, 0.99).float(), False)
+
+    def forward(self):
+        if not self.fixed:
+            diagonals = self.softplus(torch.diagonal(self.params, 0, -2, -1)) + 1e-4
+            chol = torch.diag_embed(diagonals) + torch.tril(self.params, -1)
+            chol = chol / torch.linalg.norm(chol, dim = 1, keepdim = True)
+            cov = chol @ chol.T
+            high_d_cov = torch.einsum("ij,kl->ikjl", cov, torch.eye(self.latent_dim))
+        else:
+            high_d_cov = self.cov + 0
+        return high_d_cov
+
+def get_skewed_cov(num_modalities, latent_dim, marg_var, sym_frac):
+    # Implements a Householder reflection to generate a cov with principal component along
+    # vector [1, 1, ...., 1].
+
+    pivot_vec = torch.ones([num_modalities]) / num_modalities**0.5
+    pivot_vec[0] = pivot_vec[0] + torch.sign(pivot_vec[0])
+    unitary = torch.eye(num_modalities) - 2*pivot_vec[:, None]*pivot_vec[None]/torch.square(pivot_vec).sum()
+    diag = marg_var*torch.full([num_modalities], (1 - sym_frac)/(num_modalities - 1))
+    diag[0] = marg_var
+    cov = (diag[:, None]*unitary).T @ unitary
+    high_d_cov = torch.einsum("ij,kl->ikjl", cov, torch.eye(latent_dim))
+    return high_d_cov
+
 def get_coupler(config, train_dataset):
     model = {}
     for (in_modal, in_specs) in config["modal_specs"].items():
@@ -544,3 +581,8 @@ modules = {
         "dec": Dec_arbors_ivscc
     }
 }
+
+if __name__ == "__main__":
+    # cov = get_skewed_cov(3, 2, 10, 0.99)
+    cov = Decoder_Cov(3, 2)()
+    print(cov)

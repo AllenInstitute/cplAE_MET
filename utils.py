@@ -11,13 +11,14 @@ from pca_cca import PCA_CCA
 project_dir = pathlib.Path("/Users/ian.convy/code/cplAE_MET")
 
 class VariationalWrapper(torch.nn.Module):
-    def __init__(self, model_dict, mappers):
+    def __init__(self, model_dict, mappers, decoder_cov):
         super().__init__()
         self.mappers = mappers
         self.model_dict = model_dict
         for (modal, arm) in model_dict.items():
             setattr(self, f"{modal}_enc", arm["enc"])
             setattr(self, f"{modal}_dec", arm["dec"])
+        self.decoder_cov = decoder_cov
 
     def forward(self, x_forms, in_modal, out_modals):
         orig_latent = self[in_modal]["enc"](x_forms)[0]
@@ -115,7 +116,7 @@ def assemble_jit(jit_path, device = "cpu"):
         model[modal]["dec"] = torch.jit.load(jit_path / "decoder" / f"{modal}.pt", map_location = device)
     mapper_path = jit_path / "mapper"
     mappers = {path.stem: torch.jit.load(path, device) for path in mapper_path.iterdir()} if mapper_path.exists() else None
-    model = VariationalWrapper(model, mappers)
+    model = VariationalWrapper(model, mappers, None)
     return model
 
 def assemble_coupler(jit_path, wrap = True, device = "cpu"):
@@ -154,6 +155,9 @@ def save_trace(path, model, config, dataset):
                     if modal_string[0] == modal:
                         mapper_trace = torch.jit.trace(mapper, decoder_input, strict = False)
                         mapper_trace.save(mapper_path / f"{modal_string}.pt")
+            if model.decoder_cov:
+                cov_trace = torch.jit.trace(model.decoder_cov, tuple())
+                cov_trace.save(path / f"decoder_cov.pt")
     if was_training:
         model.train()
 

@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 from data import MET_Data, MET_Simulated, MET_Decoupled, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
-from losses import ReconstructionLoss, VariationalLoss
+from losses import ReconstructionLoss, VariationalLoss, ELBO_Loss
 import utils
 import subnetworks
 
@@ -105,7 +105,8 @@ def build_model(config, train_dataset):
     
     model_dict = subnetworks.get_model(config, train_dataset)
     mappers = subnetworks.get_mapper(config, train_dataset) if config["inference"] else None
-    model = utils.VariationalWrapper(model_dict, mappers)
+    decoder_cov = subnetworks.Decoder_Cov(len(config["modalities"]), config["latent_dim"])
+    model = utils.VariationalWrapper(model_dict, mappers, decoder_cov)
     return model
 
 def train_setup(exp_dir, config, train_dataset, val_dataset):
@@ -117,7 +118,10 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     collate = get_collator(config["device"], torch.float32) # Converts tensors to desired device and type
     train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
-    loss_class = VariationalLoss if config["inference"] else ReconstructionLoss
+    if config["inference"]:
+        loss_class = ELBO_Loss if config["ELBO"] else VariationalLoss
+    else:
+        loss_class = ReconstructionLoss
     loss_handler = loss_class(config, train_dataset.MET, train_dataset.allowed_specimen_ids)
     return (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_handler)
 
