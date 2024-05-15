@@ -188,8 +188,8 @@ class ELBO_Loss():
         num_samples = len(next(iter(mask_dict.values())))
         num_modalities = len(self.config["modalities"])
         latent_dim = self.config["latent_dim"]
-        latent_tensor = torch.zeros([num_samples, num_modalities, latent_dim])
-        cov_tensor = torch.zeros([num_samples, num_modalities, latent_dim, latent_dim])
+        latent_tensor = torch.zeros([num_samples, num_modalities, latent_dim], device = self.config["device"])
+        cov_tensor = torch.zeros([num_samples, num_modalities, latent_dim, latent_dim], device = self.config["device"])
         joint_cov = model.decoder_cov()
         for (modal, modal_index) in self.modal_indices.items():
             (arm, x_forms, mask) = (model[modal], X_dict[modal], mask_dict[modal])
