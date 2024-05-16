@@ -274,7 +274,7 @@ class ELBO_Loss():
     def combine_losses(self, num_modalities, recon_dict, entropy_dict, reg_dict):
         weights = self.config["elbo_weights"]
         recon_sum = sum([weights[key]*loss for (key, loss) in recon_dict.items()])
-        comb_loss = weights["recon_scale"]*recon_sum #- sum(entropy_dict.values()) + sum(reg_dict.values()) / math.factorial(num_modalities)
+        comb_loss = weights["recon_scale"]*recon_sum - sum(entropy_dict.values()) + sum(reg_dict.values()) / math.factorial(num_modalities)
         return comb_loss
 
     def log(self, tb_writer, train_loss, val_loss, epoch):

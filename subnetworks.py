@@ -490,7 +490,7 @@ class Decoder_Cov(torch.nn.Module):
             self.params = torch.nn.Parameter(init_params.float())
             self.softplus = torch.nn.Softplus()
             self.num_modalities = num_modalities
-            self.latent_dim = latent_dim
+            self.eye = torch.nn.Parameter(torch.eye(latent_dim), False)
         else:
             self.cov = torch.nn.Parameter(get_skewed_cov(num_modalities, latent_dim, marg_var, skew_frac).float(), False)
 
@@ -500,7 +500,7 @@ class Decoder_Cov(torch.nn.Module):
             chol = torch.diag_embed(diagonals) + torch.tril(self.params, -1)
             chol = chol / torch.linalg.norm(chol, dim = 1, keepdim = True)
             cov = self.marg_var*chol @ chol.T
-            high_d_cov = torch.einsum("ij,kl->ikjl", cov, torch.eye(self.latent_dim))
+            high_d_cov = torch.einsum("ij,kl->ikjl", cov, self.eye)
         else:
             high_d_cov = self.cov + 0 # + 0 is necessary for proper TorchScript tracing
         return high_d_cov
