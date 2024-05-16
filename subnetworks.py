@@ -512,9 +512,10 @@ def get_skewed_cov(num_modalities, latent_dim, marg_var, sym_frac):
     pivot_vec = torch.ones([num_modalities]) / num_modalities**0.5
     pivot_vec[0] = pivot_vec[0] + torch.sign(pivot_vec[0])
     unitary = torch.eye(num_modalities) - 2*pivot_vec[:, None]*pivot_vec[None]/torch.square(pivot_vec).sum()
-    diag = marg_var*torch.full([num_modalities], (1 - sym_frac)/max(1, (num_modalities - 1)))
-    diag[0] = marg_var
+    diag = torch.full([num_modalities], (1 - sym_frac)/max(1, (num_modalities - 1)))
+    diag[0] = 1
     cov = (diag[:, None]*unitary).T @ unitary
+    cov = marg_var*cov / torch.diag(cov)[None]
     high_d_cov = torch.einsum("ij,kl->ikjl", cov, torch.eye(latent_dim))
     return high_d_cov
 
