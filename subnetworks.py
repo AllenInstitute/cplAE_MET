@@ -11,11 +11,13 @@ activations = {
     "softplus": nn.Softplus
 }
 
-def get_conv_out_size(conv_params, initial_length):
+def get_conv_out_size(conv_params, initial_length, initial_width):
     output_length = initial_length
-    for (kernel, stride, _) in conv_params:
-        output_length = 1 + (output_length - kernel) / stride
-    return int(output_length)
+    output_width = initial_width
+    for ((kernel_l, kernel_w), (stride_l, stride_w), _) in conv_params:
+        output_length = 1 + (output_length - kernel_l) / stride_l
+        output_width = 1 + (output_width - kernel_w) / stride_w
+    return (int(output_length), int(output_width))
 
 def get_gauss_baselines(dataset, form):
     data = dataset.MET.query(dataset.allowed_specimen_ids)[form]
@@ -48,7 +50,7 @@ def add_dense_segment2(model, hidden_dims, input_size, final_bias, prefix):
     return layer_names
 
 def get_conv(conv_params, input_channels, actvs, transpose):
-    layer_class = torch.nn.ConvTranspose1d if transpose else torch.nn.Conv1d
+    layer_class = torch.nn.ConvTranspose2d if transpose else torch.nn.Conv2d
     if transpose:
         channel_dims = [tupl[-1] for tupl in conv_params] + [input_channels]
     else:
@@ -187,9 +189,10 @@ class Enc_arbors(nn.Module):
         (conv_params, init_dims) = (architecture["conv_params"], architecture["init"])
         (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
         int_actv = activations[architecture["int_activation"]]
-        conv_out = get_conv_out_size(conv_params, height)*(conv_params[-1][2] if conv_params else radius*process)
+        (out_length, out_width) = get_conv_out_size(conv_params, height, radius)
+        conv_out = (out_length*out_width)*(conv_params[-1][2] if conv_params else process)
         init_out = init_dims[-1] if init_dims else conv_out
-        conv_layers = get_conv(conv_params, radius*process, int_actv, False) if conv_params else []
+        conv_layers = get_conv(conv_params, process, int_actv, False) if conv_params else []
         initial_layers = get_dense(conv_out, init_out, init_dims[:-1], int_actv) if init_dims else []
         if initial_layers or conv_layers:
             initial_layers.append(nn.BatchNorm1d(init_out, momentum=0.05))
@@ -211,7 +214,7 @@ class Enc_arbors(nn.Module):
 
     def forward(self, x_forms):
         x = x_forms["arbors"]
-        x = torch.flatten(x, 2).transpose(1, 2)
+        x = torch.permute(x, (0, 3, 1, 2))
         x = self.drop(x)
         x = self.conv_segment(x)
         x = self.initial_segment(x)
@@ -234,22 +237,21 @@ class Dec_arbors(nn.Module):
         int_actv = activations[architecture["int_activation"]]
         dense_actvs = [int_actv]*len(hidden_dims) + [None]
         conv_actvs = [int_actv]*len(conv_params[:-1]) + [output_actv]
-        conv_T_layers = get_conv(conv_params, radius*process, conv_actvs, True) if conv_params else []
-        unflat_length = get_conv_out_size(conv_params[::-1], height)
-        unflat_channels = conv_params[0][2] if conv_params else radius*process
-        dense_layers = get_dense(latent_dim, unflat_length*unflat_channels, hidden_dims, dense_actvs)
-        dense_layers.append(nn.Unflatten(1, (unflat_channels, unflat_length)))
+        conv_T_layers = get_conv(conv_params, process, conv_actvs, True) if conv_params else []
+        (unflat_length, unflat_width) = get_conv_out_size(conv_params[::-1], height, radius)
+        unflat_channels = conv_params[0][2] if conv_params else process
+        dense_layers = get_dense(latent_dim, unflat_length*unflat_width*unflat_channels, hidden_dims, dense_actvs)
+        dense_layers.append(nn.Unflatten(1, (unflat_channels, unflat_length, unflat_width)))
         if not conv_T_layers:
             dense_layers.append(output_actv())
 
         self.dense_segment = nn.Sequential(*dense_layers)
         self.conv_T_segment = nn.Sequential(*conv_T_layers)
-        self.reshape_to_arbors = nn.Unflatten(2, (radius, process))
 
     def forward(self, x):
         x = self.dense_segment(x)
         x = self.conv_T_segment(x)
-        x = self.reshape_to_arbors(x.transpose(1, 2))
+        x = torch.permute(x, (0, 2, 3, 1))
         x_forms = {"arbors": x}
         return x_forms
 
