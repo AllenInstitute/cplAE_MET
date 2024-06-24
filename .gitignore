@@ -3,6 +3,8 @@
 requirements.txt
 *.mat
 data/*
+data_old/*
+results/*
 *.out
 *.sh
 !*template.sh
@@ -10,3 +12,5 @@ data/*
 !*template.yaml
 /**/.ipynb_checkpoints
 .DS_Store
+vae_datasets.py
+.vscode
