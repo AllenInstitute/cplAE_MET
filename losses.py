@@ -20,7 +20,7 @@ def get_variances(met_data, specimens, formats, transformations, device, dtype):
     variances = {}
     for modal_forms in formats.values():
         for form in modal_forms:
-            data = met_data.query(specimens, formats = [(form,)])[form]
+            data = met_data.query(specimens, formats = [(form,)], outputs = [form])[form]
             if len(data):
                 if form in transformations:
                     transf_func = get_transformation_function(transformations[form])
