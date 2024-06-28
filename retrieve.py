@@ -2,8 +2,8 @@ import subprocess
 import pathlib
 import argparse
 
-remote_path = pathlib.Path("/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Ian/code/cplAE_MET/data")
-local_path = pathlib.Path("/Users/ian.convy/code/cplAE_MET/data")
+remote_path = pathlib.Path("/allen/programs/celltypes/workgroups/mousecelltypes/MachineLearning/Ian/code/cplAE_MET/results")
+local_path = pathlib.Path("/Users/ian.convy/code/cplAE_MET/results")
 
 def get_experiment(exp_dir, dest_dir):
     target_path = remote_path / exp_dir
