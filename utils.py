@@ -271,7 +271,7 @@ def get_forest_AE(base_dir, exp_path, exp_name, merge):
     exp_dict = {
         "config": {},
         "folds": {}}
-    base_dir = pathlib.Path("../data/forest_baselines")
+    base_dir = pathlib.Path(base_dir)
     encoder_dict = load_jit_folds(exp_path, get_checkpoints = False) if exp_path else None
     modalities = encoder_dict["config"]["modalities"] if exp_path else ["T", "E", "M"]
     formats = encoder_dict["config"]["formats"] if exp_path else {"T": ["logcpm"], "E": ["pca-ipfx"], "M": ["arbors"]}
@@ -292,7 +292,7 @@ def get_forest_AE(base_dir, exp_path, exp_name, merge):
                 means_dict[form_path.stem] = pk.load(target)
         decoders = {form: lambda labels,means=means: np.asarray([means[label] for label in labels]) 
                     for (form, means) in means_dict.items()}
-        def model(form_dict, in_modal, out_modals):
+        def model(form_dict, in_modal, out_modals, encoders = encoders, decoders = decoders, trees = trees):
             latent = encoders[in_modal](form_dict)[0].numpy(force = True)
             labels = trees[in_modal].predict(latent)
             recons = {}
