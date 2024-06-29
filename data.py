@@ -31,7 +31,8 @@ def get_collator(device, dtype):
 
 def filter_specimens(met_data, specimen_ids, config):
     platforms = config["select"]["platforms"]
-    specimens = met_data.query(specimen_ids, platforms = platforms, outputs = ["specimen_id"])["specimen_id"]
+    formats = config["select"]["formats"]
+    specimens = met_data.query(specimen_ids, formats = formats, platforms = platforms, outputs = ["specimen_id"])["specimen_id"]
     return specimens
 
 def get_transformation_function(transform_dict):
