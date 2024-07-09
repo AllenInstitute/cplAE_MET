@@ -191,7 +191,7 @@ def train_model(config, exp_dir):
         (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
         filtered_train_ids = filter_specimens(met_data, train_ids, config)
         filtered_test_ids = filter_specimens(met_data, test_ids, config)
-        for form in ["logcpm", "pca-ipfx", "arbors"]:
+        for form in ["logcpm", "pca-ipfx"]: #["logcpm", "pca-ipfx", "arbors"]:
             met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = False)
         train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], filtered_train_ids)
         test_dataset = DeterministicDataset(met_data, 10000, config["formats"], config["modal_frac"], config["transform"], filtered_test_ids)
