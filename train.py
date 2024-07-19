@@ -174,7 +174,9 @@ def train_model(config, exp_dir):
     elif "decouple" in config:
         met_data = MET_Decoupled(config["data_file"], config)
     else:
-        met_data = MET_Data(**config["data_config"])
+        specimens_path = config["data_config"]["specimens_path"]
+        data_paths = {form: data_config["path"] for (form, data_config) in config["data_config"]["formats"].items()}
+        met_data = MET_Data(specimens_path, **data_paths)
     num_folds = config["folds"]
     if num_folds > 0:
         indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
@@ -191,8 +193,9 @@ def train_model(config, exp_dir):
         (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
         filtered_train_ids = filter_specimens(met_data, train_ids, config)
         filtered_test_ids = filter_specimens(met_data, test_ids, config)
-        for form in ["logcpm", "pca-ipfx", "arbors"]:
-            met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = False)
+        for (form, data_config) in config["data_config"]["formats"].items():
+            if data_config["cache"]:
+                met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = False)
         train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], filtered_train_ids)
         test_dataset = DeterministicDataset(met_data, 10000, config["formats"], config["modal_frac"], config["transform"], filtered_test_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
