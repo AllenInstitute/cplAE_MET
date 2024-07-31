@@ -18,19 +18,23 @@ conv_classes = {
 }
 
 def get_conv_out_size(conv_params, *initial_dims):
+    output_padding = []
     outputs = initial_dims
     for (kernels, strides, _) in conv_params:
+        padding = [int((out_len - kernel_len) % stride_len)
+                   for (kernel_len, stride_len, out_len) in zip(kernels, strides, outputs)]
         outputs = [1 + (out_len - kernel_len) / stride_len
                    for (kernel_len, stride_len, out_len) in zip(kernels, strides, outputs)]
+        output_padding.append(tuple(padding))
     outputs = [int(out_len) for out_len in outputs]
-    return outputs
+    return (outputs, output_padding)
 
 def get_gauss_baselines(dataset, form):
     data = dataset.MET.query(dataset.allowed_specimen_ids)[form]
     std = np.nanstd(data, 0, keepdims = True)
     return std
 
-def get_conv(conv_params, input_channels, actvs, transpose):
+def get_conv(conv_params, input_channels, actvs, transpose, output_padding = None):
     dim = len(conv_params[0][0])
     layer_class = conv_classes[dim][1 if transpose else 0]
     if transpose:
@@ -42,7 +46,10 @@ def get_conv(conv_params, input_channels, actvs, transpose):
     layers = []
     for (i, ((kernel, stride, _), actv)) in enumerate(zip(conv_params, actvs)):
         (input_dim, output_dim) = channel_dims[i:i + 2]
-        conv_layer = layer_class(input_dim, output_dim, kernel_size = kernel, stride = stride)
+        if transpose:
+            conv_layer = layer_class(input_dim, output_dim, kernel_size = kernel, stride = stride, output_padding = output_padding[i])
+        else:
+            conv_layer = layer_class(input_dim, output_dim, kernel_size = kernel, stride = stride)
         layers.append(conv_layer)
         if actv is not None:
             layers.append(actv())
@@ -171,7 +178,7 @@ class Enc_arbors(nn.Module):
         (conv_params, init_dims) = (architecture["conv_params"], architecture["init"])
         (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
         int_actv = activations[architecture["int_activation"]]
-        output_dims = get_conv_out_size(conv_params, *data_dims)
+        output_dims = get_conv_out_size(conv_params, *data_dims)[0]
         conv_out = np.prod(output_dims)*(conv_params[-1][2] if conv_params else process)
         init_out = init_dims[-1] if init_dims else conv_out
         conv_layers = get_conv(conv_params, process, int_actv, False) if conv_params else []
@@ -221,8 +228,8 @@ class Dec_arbors(nn.Module):
         int_actv = activations[architecture["int_activation"]]
         dense_actvs = [int_actv]*len(hidden_dims) + [None]
         conv_actvs = [int_actv]*len(conv_params[:-1]) + [output_actv]
-        conv_T_layers = get_conv(conv_params, process, conv_actvs, True) if conv_params else []
-        unflat_dims = get_conv_out_size(conv_params[::-1], *data_dims)
+        (unflat_dims, out_padding) = get_conv_out_size(conv_params[::-1], *data_dims)
+        conv_T_layers = get_conv(conv_params, process, conv_actvs, True, out_padding[::-1]) if conv_params else []
         unflat_channels = conv_params[0][2] if conv_params else process
         dense_layers = get_dense(latent_dim, np.prod(unflat_dims)*unflat_channels, hidden_dims, dense_actvs)
         dense_layers.append(nn.Unflatten(1, (unflat_channels, *unflat_dims)))
@@ -405,6 +412,85 @@ class Dec_arbors_ivscc(nn.Module):
         ivscc_x = self.ivscc_segment(ivscc_x)
         return {"arbors": arbors_x, "ivscc": ivscc_x}
 
+class Enc_MNIST(nn.Module):
+    def __init__(self, architecture, latent_dim, dataset, variational):
+        super().__init__()
+        self.form = architecture["form"]
+        (data_dims, process) = (architecture["data_size"][:-1], architecture["data_size"][-1])
+        (conv_params, init_dims) = (architecture["conv_params"], architecture["init"])
+        (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
+        int_actv = activations[architecture["int_activation"]]
+        output_dims = get_conv_out_size(conv_params, *data_dims)[0]
+        conv_out = np.prod(output_dims)*(conv_params[-1][2] if conv_params else process)
+        init_out = init_dims[-1] if init_dims else conv_out
+        conv_layers = get_conv(conv_params, process, int_actv, False) if conv_params else []
+        initial_layers = get_dense(conv_out, init_out, init_dims[:-1], int_actv) if init_dims else []
+        if initial_layers or conv_layers:
+            initial_layers.append(nn.BatchNorm1d(init_out, momentum=0.05))
+        initial_layers.insert(0, nn.Flatten())
+        mean_actvs = [int_actv]*len(mean_dims) + [None]
+        transf_actvs = [int_actv]*len(transf_dims) + [None]
+
+        dim = len(data_dims)
+        self.permutation = (0, dim + 1, *range(1, dim + 1))
+        self.conv_segment = nn.Sequential(*conv_layers)
+        self.initial_segment = nn.Sequential(*initial_layers)
+        self.mean_layer = nn.Sequential(*get_dense(init_out, latent_dim, mean_dims, mean_actvs, False))
+        if variational:
+            self.transf_layer = nn.Sequential(*get_dense(init_out, latent_dim**2, transf_dims, transf_actvs))
+        
+        self.softplus = nn.Softplus()
+        self.drop = nn.Dropout(architecture["dropout"])
+        self.bn = nn.BatchNorm1d(latent_dim, momentum = 0.05, affine = False)
+        self.latent_dim = latent_dim
+        self.variational = variational
+
+    def forward(self, x_forms):
+        x = x_forms[self.form]
+        x = torch.permute(x, self.permutation)
+        x = self.drop(x)
+        x = self.conv_segment(x)
+        x = self.initial_segment(x)
+        mean = self.bn(self.mean_layer(x))
+        if self.variational:
+            transf_raw = self.transf_layer(x).reshape(-1, self.latent_dim, self.latent_dim)
+            diagonals = self.softplus(torch.diagonal(transf_raw, 0, -2, -1))
+            transf = torch.diag_embed(diagonals) + torch.tril(transf_raw, -1)
+        else:
+            transf = mean[:, None] * torch.zeros_like(mean)[..., None]
+        return (mean, transf)
+
+class Dec_MNIST(nn.Module):
+    def __init__(self, architecture, latent_dim, dataset):
+        super().__init__()
+        self.form = architecture["form"]
+        (data_dims, process) = (architecture["data_size"][:-1], architecture["data_size"][-1])
+        hidden_dims = (architecture["init"] + architecture["mean"])[::-1]
+        conv_params = architecture["conv_params"][::-1]
+        output_actv = activations[architecture["out_activation"]]
+        int_actv = activations[architecture["int_activation"]]
+        dense_actvs = [int_actv]*len(hidden_dims) + [None]
+        conv_actvs = [int_actv]*len(conv_params[:-1]) + [output_actv]
+        (unflat_dims, out_padding) = get_conv_out_size(conv_params[::-1], *data_dims)
+        conv_T_layers = get_conv(conv_params, process, conv_actvs, True, out_padding[::-1]) if conv_params else []
+        unflat_channels = conv_params[0][2] if conv_params else process
+        dense_layers = get_dense(latent_dim, np.prod(unflat_dims)*unflat_channels, hidden_dims, dense_actvs)
+        dense_layers.append(nn.Unflatten(1, (unflat_channels, *unflat_dims)))
+        if not conv_T_layers:
+            dense_layers.append(output_actv())
+
+        dim = len(data_dims)
+        self.permutation = (0, *range(2, dim + 2), 1)
+        self.dense_segment = nn.Sequential(*dense_layers)
+        self.conv_T_segment = nn.Sequential(*conv_T_layers)
+
+    def forward(self, x):
+        x = self.dense_segment(x)
+        x = self.conv_T_segment(x)
+        x = torch.permute(x, self.permutation)
+        x_forms = {self.form: x}
+        return x_forms
+
 class Enc_Dummy(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
@@ -569,6 +655,26 @@ modules = {
     frozenset(["ivscc", "arbors"]): {
         "enc": Enc_arbors_ivscc,
         "dec": Dec_arbors_ivscc
+    },
+    frozenset(["m0"]): {
+        "enc": Enc_MNIST,
+        "dec": Dec_MNIST
+    },
+    frozenset(["m1"]): {
+        "enc": Enc_MNIST,
+        "dec": Dec_MNIST
+    },
+    frozenset(["m2"]): {
+        "enc": Enc_MNIST,
+        "dec": Dec_MNIST
+    },
+    frozenset(["m3"]): {
+        "enc": Enc_MNIST,
+        "dec": Dec_MNIST
+    },
+    frozenset(["m4"]): {
+        "enc": Enc_MNIST,
+        "dec": Dec_MNIST
     }
 }
 

@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from torch.utils.data import IterableDataset
 from sklearn.model_selection import train_test_split, StratifiedKFold
+import h5py
 
 import utils
 
@@ -60,42 +61,150 @@ class Yielder():
     def __call__(self, sp_indices):
         sp_indices = np.atleast_1d(sp_indices)
         cached_indices = self.met._cached_indices[self.name][sp_indices]
-        cached_data = self.met._cached_data[self.name]
-        index_bound = self.met["specimen_id"].size
-        if np.all(cached_indices < index_bound):
-            return cached_data[cached_indices]
-        else:
-            samples = []
-            for (index, cache_index) in zip(sp_indices, cached_indices):
-                if cache_index < index_bound:
-                    samples.append(cached_data[cache_index])
-                else:
-                    samples.append(self.met._load_or_nan(self.name, index))
-            return np.stack(samples, 0)
+        is_cached = cached_indices < self.met.specimens.size
+        samples = np.zeros(sp_indices.shape + self.met.data[self.name].shape[1:])
+        samples[is_cached] = self.met._cached_data[self.name][cached_indices[is_cached]]
+        if np.any(~is_cached):
+            samples[~is_cached] = np.stack([self.met.data[self.name][index]
+                                            for index in sp_indices[~is_cached]], 0)
+        return samples
     
     def __getitem__(self, indices):
         return self(indices)        
 
+# class MET_Data():
+#     def __init__(self, specimens_path, **dataset_folders):
+#         dataset_folders = {name: pathlib.Path(path) for (name, path) in dataset_folders.items()}
+#         spec_data = np.loadtxt(specimens_path, str, delimiter = ",")
+#         sp_ids = spec_data[:, 0]
+#         self.id_map = {sp_id.strip():i for (i, sp_id) in enumerate(sp_ids)}
+#         self.data_paths = dataset_folders
+#         self.data_shapes = {name: self._get_data_shape(folder)
+#                             for (name, folder) in dataset_folders.items()}
+#         self.valid = {name: self._get_valid(sp_ids, folder)
+#                       for (name, folder) in dataset_folders.items()}
+#         self._meta = {
+#             "specimen_id": sp_ids,
+#             "platform": spec_data[:, 1],
+#             "class": spec_data[:, 2],
+#             "cluster_label": spec_data[:, 3],
+#         }
+#         self._data_funcs = {name: Yielder(name, self) for name in dataset_folders}
+#         self._cached_indices = {name: np.full(self["specimen_id"].size, self["specimen_id"].size) for name in dataset_folders}
+#         self._cached_data = {name: np.zeros((0, ) + self.data_shapes[name]) for name in dataset_folders}
+
+#     def __getitem__(self, id_str):
+#         if id_str in self._meta:
+#             value = self._meta[id_str]
+#         elif id_str in self._data_funcs:
+#             value = self._data_funcs[id_str]
+#         else:
+#             raise KeyError(f'Key "{id_str}" not found.')
+#         return value
+
+#     def keys(self):
+#         return itertools.chain(self._meta.keys(), self._data_funcs.keys())
+    
+#     def values(self):
+#         return itertools.chain(self._meta.values(), self._data_funcs.values())
+    
+#     def items(self):
+#         return itertools.chain(self._meta.items(), self._data_funcs.items())
+
+#     def query(self, specimen_ids = None, formats = None, exclude_formats = None, platforms = None, classes = None, outputs = None):
+#         specimen_ids = (self["specimen_id"] if specimen_ids is None else specimen_ids)
+#         platforms = (np.char.strip(np.unique(self["platform"])) if platforms is None else platforms)
+#         classes = (np.char.strip(np.unique(self["class"])) if classes is None else classes)
+#         valid = np.isin(np.char.strip(self["specimen_id"]), np.char.strip(specimen_ids))
+#         valid = valid & np.isin(np.char.strip(self["platform"]), platforms)
+#         valid = valid & np.isin(np.char.strip(self["class"]), classes)
+#         if formats is not None:
+#             format_mask = np.full_like(valid, False)
+#             for form_tuple in formats:
+#                 tupl_mask = np.full_like(valid, True)
+#                 for form in form_tuple:
+#                     tupl_mask = tupl_mask & self.valid[form]
+#                 format_mask = format_mask | tupl_mask
+#             valid = valid & format_mask
+#         if exclude_formats is not None:
+#             exclude_mask = np.full_like(valid, True)
+#             for form in exclude_formats:
+#                 exclude_mask = exclude_mask & ~self.valid[form]
+#             valid = valid & exclude_mask
+#         valid_specimens = self["specimen_id"][valid]
+#         outputs = self.keys() if outputs is None else outputs
+#         data_dict = self.get_specimens(valid_specimens, outputs)
+#         return data_dict
+    
+#     def get_specimens(self, specimen_ids, outputs = None):
+#         outputs = self.keys() if outputs is None else outputs
+#         indices = [self.id_map[sp_id.strip()] for sp_id in specimen_ids]
+#         data_dict = {key: value[indices] for (key, value) in self.items()
+#                      if key in outputs}
+#         return data_dict
+    
+#     def get_stratified_split(self, test_frac, seed = 42):
+#         strat_cats = ["platform", "class", "cluster_label"]
+#         labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
+#         (values, counts) = np.unique(labels, return_counts = True)
+#         singleton_labels = values[counts == 1]
+#         if singleton_labels.size > 1:
+#             labels[np.isin(labels, singleton_labels)] = "_singleton"
+#         else:
+#             labels[np.isin(labels, singleton_labels)] = values[np.argmax(counts)]
+#         (train_ids, test_ids) = train_test_split(self["specimen_id"], test_size = test_frac, random_state = seed, stratify = labels)
+#         return (train_ids, test_ids)
+
+#     def get_stratified_KFold(self, folds, seed = 42):
+#         strat_cats = ["platform", "class", "cluster_label"]
+#         labels = functools.reduce(np.char.add, [np.char.strip(self[cat]) for cat in strat_cats])
+#         splitter = StratifiedKFold(folds, shuffle = True, random_state = seed)
+#         for (train_ids, test_ids) in splitter.split(self["specimen_id"], labels):
+#             (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
+#             yield (train_spec, test_spec)
+
+#     def cache_data(self, dataset_name, specimen_ids = None, verbose = True):
+#         specimen_ids = self["specimen_id"] if specimen_ids is None else specimen_ids
+#         sp_indices = np.asarray([self.id_map[sp_id.strip()] for sp_id in specimen_ids])
+#         dataset_shape = sp_indices.shape + self.data_shapes[dataset_name]
+#         data_array = np.zeros(dataset_shape)
+#         print(f"Caching {dataset_name}...")
+#         for (i, sp_index) in enumerate(tqdm(sp_indices, miniters = 1, disable = not verbose)):
+#             data_array[i] = self._load_or_nan(dataset_name, sp_index)
+#         self._cached_data[dataset_name] = data_array
+#         self._cached_indices[dataset_name] = np.full(self["specimen_id"].size, self["specimen_id"].size)
+#         self._cached_indices[dataset_name][sp_indices] = np.arange(specimen_ids.size) 
+
+#     def _get_valid(self, sp_ids, data_path):
+#         valid = np.array([path.stem for path in data_path.iterdir()])
+#         sp_ids_valid = np.isin(sp_ids, valid)
+#         return sp_ids_valid
+    
+#     def _get_data_shape(self, data_path):
+#         example = np.load(next(data_path.iterdir()))
+#         return example.shape
+
+#     def _load_or_nan(self, dataset_name, index):
+#         data_shape = self.data_shapes[dataset_name]
+#         if self.valid[dataset_name][index]:
+#             sp_id = self["specimen_id"][index]
+#             path = self.data_paths[dataset_name] / f"{sp_id}.npy"
+#             data = np.load(path)
+#         else:
+#             data = np.full(data_shape, np.nan)
+#         return data
+
 class MET_Data():
-    def __init__(self, specimens_path, **dataset_folders):
-        dataset_folders = {name: pathlib.Path(path) for (name, path) in dataset_folders.items()}
-        spec_data = np.loadtxt(specimens_path, str, delimiter = ",")
-        sp_ids = spec_data[:, 0]
-        self.id_map = {sp_id.strip():i for (i, sp_id) in enumerate(sp_ids)}
-        self.data_paths = dataset_folders
-        self.data_shapes = {name: self._get_data_shape(folder)
-                            for (name, folder) in dataset_folders.items()}
-        self.valid = {name: self._get_valid(sp_ids, folder)
-                      for (name, folder) in dataset_folders.items()}
-        self._meta = {
-            "specimen_id": sp_ids,
-            "platform": spec_data[:, 1],
-            "class": spec_data[:, 2],
-            "cluster_label": spec_data[:, 3],
-        }
-        self._data_funcs = {name: Yielder(name, self) for name in dataset_folders}
-        self._cached_indices = {name: np.full(self["specimen_id"].size, self["specimen_id"].size) for name in dataset_folders}
-        self._cached_data = {name: np.zeros((0, ) + self.data_shapes[name]) for name in dataset_folders}
+    def __init__(self, hdf5_path, **data_keys):
+        hdf5 = h5py.File(hdf5_path)
+        self.specimens = np.char.decode(hdf5["specimens"][:])
+        self.id_map = {sp_id.strip():i for (i, sp_id) in enumerate(self.specimens)}
+        self.data = {form: hdf5["modalities"][key] for (form, key) in data_keys.items()}
+        self.valid = {form: hdf5["valid"][key] for (form, key) in data_keys.items()}
+        self._meta = {key: np.char.decode(value) for (key, value) in hdf5["meta"].items()}
+        self._data_funcs = {name: Yielder(name, self) for name in self.data}
+        self._cached_indices = {name: np.full(self.specimens.size, self.specimens.size) for name in self.data}
+        self._cached_data = {name: np.zeros((0, ) + array.shape[1:]) for (name, array) in self.data.items()}
 
     def __getitem__(self, id_str):
         if id_str in self._meta:
@@ -168,36 +277,15 @@ class MET_Data():
             yield (train_spec, test_spec)
 
     def cache_data(self, dataset_name, specimen_ids = None, verbose = True):
-        specimen_ids = self["specimen_id"] if specimen_ids is None else specimen_ids
+        specimen_ids = self.specimens if specimen_ids is None else specimen_ids
         sp_indices = np.asarray([self.id_map[sp_id.strip()] for sp_id in specimen_ids])
-        dataset_shape = sp_indices.shape + self.data_shapes[dataset_name]
-        data_array = np.zeros(dataset_shape)
         print(f"Caching {dataset_name}...")
-        for (i, sp_index) in enumerate(tqdm(sp_indices, miniters = 1, disable = not verbose)):
-            data_array[i] = self._load_or_nan(dataset_name, sp_index)
+        sorted_indices = np.sort(sp_indices)
+        data_array = self.data[dataset_name][sorted_indices]
         self._cached_data[dataset_name] = data_array
-        self._cached_indices[dataset_name] = np.full(self["specimen_id"].size, self["specimen_id"].size)
-        self._cached_indices[dataset_name][sp_indices] = np.arange(specimen_ids.size) 
+        self._cached_indices[dataset_name] = np.full(self.specimens.size, self.specimens.size)
+        self._cached_indices[dataset_name][sorted_indices] = np.arange(specimen_ids.size)
 
-    def _get_valid(self, sp_ids, data_path):
-        valid = np.array([path.stem for path in data_path.iterdir()])
-        sp_ids_valid = np.isin(sp_ids, valid)
-        return sp_ids_valid
-    
-    def _get_data_shape(self, data_path):
-        example = np.load(next(data_path.iterdir()))
-        return example.shape
-
-    def _load_or_nan(self, dataset_name, index):
-        data_shape = self.data_shapes[dataset_name]
-        if self.valid[dataset_name][index]:
-            sp_id = self["specimen_id"][index]
-            path = self.data_paths[dataset_name] / f"{sp_id}.npy"
-            data = np.load(path)
-        else:
-            data = np.full(data_shape, np.nan)
-        return data
-    
 class MET_Simulated():
     def __init__(self, config):
         (latent_samples, simulated_data, labels) = self.simulate_data(config)

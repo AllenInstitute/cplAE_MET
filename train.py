@@ -108,6 +108,9 @@ def build_model(config, train_dataset):
     (fixed_cov, marg_var, skew_frac) = (config["elbo_cov"]["fixed"], config["elbo_cov"]["marg_var"], config["elbo_cov"]["skew_frac"])
     decoder_cov = subnetworks.Decoder_Cov(len(config["modalities"]), config["latent_dim"], marg_var, skew_frac, fixed_cov)
     model = utils.VariationalWrapper(model_dict, mappers, decoder_cov)
+    # from torchinfo import summary
+    # summary(model, input_data = [{"m0": torch.zeros([2, 28, 28, 3])}], in_modal = "A", out_modals = ["A"])
+    # input()
     return model
 
 def train_setup(exp_dir, config, train_dataset, val_dataset):
@@ -174,9 +177,9 @@ def train_model(config, exp_dir):
     elif "decouple" in config:
         met_data = MET_Decoupled(config["data_file"], config)
     else:
-        specimens_path = config["data_config"]["specimens_path"]
-        data_paths = {form: data_config["path"] for (form, data_config) in config["data_config"]["formats"].items()}
-        met_data = MET_Data(specimens_path, **data_paths)
+        data_keys = {form: data_config["key"] for (form, data_config) in config["data_config"]["formats"].items()}
+        hdf5_path = config["data_config"]["data_path"]
+        met_data = MET_Data(hdf5_path, **data_keys)
     num_folds = config["folds"]
     if num_folds > 0:
         indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
@@ -197,7 +200,7 @@ def train_model(config, exp_dir):
             if data_config["cache"]:
                 met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = False)
         train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], filtered_train_ids)
-        test_dataset = DeterministicDataset(met_data, 10000, config["formats"], config["modal_frac"], config["transform"], filtered_test_ids)
+        test_dataset = DeterministicDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], filtered_test_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
         train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
 
