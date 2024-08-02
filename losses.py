@@ -60,6 +60,8 @@ def get_indices(modalities):
 class VariationalLoss():
     def __init__(self, config, met_data, specimens):
         self.config = config
+        self.recon_loss_funcs = {form: loss_classes[loss](config, met_data, specimens) 
+                                 for (form, loss) in config["losses"].items()}
     
     def process_batch(self, model, X_dict, mask_dict):
         (latent_dict, mapper_dict, loss_dict, coupling_dict) = ({}, {}, {}, {})
@@ -90,12 +92,10 @@ class VariationalLoss():
     def reconstruction_loss(self, x_forms, xr_forms):
         loss = 0
         for (form, x) in x_forms.items():
-            mask = ~torch.isnan(x)
-            x = torch.nan_to_num(x)
             x_recon = xr_forms[form]
-            squared_diff = torch.square(x[:, None] - x_recon)
-            mse = torch.masked_select(squared_diff, mask[:, None]).sum() / (x_recon.shape[0]*x_recon.shape[1])
-            loss = loss + mse
+            x = x[:, None].expand(x.shape[:1] + (-1,) + x.shape[1:])
+            loss_func = self.recon_loss_funcs[form]
+            loss = loss + loss_func(x.flatten(0, 1), x_recon.flatten(0, 1), form)
         return loss
     
     def get_within_loss(self, model, modal, x_forms, z_mean, z_transf, num_samples):
@@ -378,9 +378,10 @@ class MSE():
 
     def __call__(self, x, xr, form):
         mask = ~torch.isnan(x)
-        (x_flat, xr_flat) = (torch.masked_select(x, mask), torch.masked_select(xr, mask))
-        loss = torch.nn.functional.mse_loss(x_flat, xr_flat)
-        return loss
+        x = torch.nan_to_num(x)
+        squared_diff = torch.square(x[:, None] - xr)
+        mse = torch.masked_select(squared_diff, mask[:, None]).sum() / xr.shape[0]
+        return mse
 
 class SampleR2():
     def __init__(self, config, met_data, specimens):
