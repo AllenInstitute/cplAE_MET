@@ -510,7 +510,7 @@ class MET_Decoupled():
             yield (train_spec, test_spec)
 
 class DeterministicDataset(IterableDataset):
-    def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, allowed_specimen_ids = None):
+    def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, unpack, allowed_specimen_ids = None):
         self.MET = met_data
         self.allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)
         self.allowed_specimen_indices = np.asarray([self.MET.id_map[sp_id.strip()] for sp_id in self.allowed_specimen_ids])
@@ -523,6 +523,9 @@ class DeterministicDataset(IterableDataset):
         indices = self.filter_by_modal(modal_frac, self.modal_masks)
         num_batches = max(indices.size // batch_size, 1)
         self.batch_indices = [indices[i::num_batches] for i in range(num_batches)]
+        unpack_counts = [(form, met_data.data[form].shape[1]) for (form, is_packed) in unpack.items() if is_packed]
+        self.unpack_forms = [form for (form, _) in unpack_counts]
+        self.unpack_indices = list(itertools.product(*[range(count) for (_, count) in unpack_counts]))
 
     def filter_by_modal(self, modal_frac, modal_masks):
         cuml_mask = np.full_like(self.MET["specimen_id"], False, "bool")
@@ -552,8 +555,19 @@ class DeterministicDataset(IterableDataset):
             masks[modal] = mask
         return (data_funcs, masks)
     
+    def unpack_output(self, data):
+        if not self.unpack_forms:
+            yield data
+        else:
+            for indices in self.unpack_indices:
+                unpacked_data = {modal: {form: data[modal][form][:, index] for (form, index) in zip(self.unpack_forms, indices)
+                                         if form in modal_forms}
+                                 for (modal, modal_forms) in data.items()}
+                unpacked_data = {modal: {**data[modal], **unpack_dict} for (modal, unpack_dict) in unpacked_data.items()}     
+                yield unpacked_data
+
     def __len__(self):
-        return len(self.batch_indices)
+        return len(self.batch_indices) * len(self.unpack_indices)
 
     def __iter__(self):
         for indices in self.batch_indices:
@@ -561,11 +575,11 @@ class DeterministicDataset(IterableDataset):
             data = {modal: {form: func(indices) for (form, func) in formats.items()}
                     for (modal, formats) in self.data_funcs.items()}
             masks = {modal: mask[indices] for (modal, mask) in self.modal_masks.items()}
-            outputs = (data, masks, specimen_ids)
-            yield outputs
+            for unpacked_data in self.unpack_output(data):
+                yield (unpacked_data, masks, specimen_ids)
 
 class RandomizedDataset(IterableDataset):
-    def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, allowed_specimen_ids = None):
+    def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, unpack, allowed_specimen_ids = None):
         self.MET = met_data
         self.allowed_specimen_ids = (self.MET["specimen_id"] if allowed_specimen_ids is None else allowed_specimen_ids)
         if transformations:
@@ -577,6 +591,9 @@ class RandomizedDataset(IterableDataset):
         (self.modal_indices, self.modal_masks) = self.get_modal_indices(modal_formats, self.allowed_specimen_ids)
         (self.repeaters, self.counts) = self.get_repeaters(batch_size, modal_frac)
         self.num_batches = self.get_num_batches()
+        unpack_counts = [(form, met_data.data[form].shape[1]) for (form, is_packed) in unpack.items() if is_packed]
+        self.unpack_forms = [form for (form, _) in unpack_counts]
+        self.unpack_indices = list(itertools.product(*[range(count) for (_, count) in unpack_counts]))
 
     def get_data_funcs(self, modal_formats, transform):
         data_funcs = {}
@@ -642,8 +659,19 @@ class RandomizedDataset(IterableDataset):
         process_frac = {**given_frac, **scaled_frac}
         return process_frac
     
+    def unpack_output(self, data):
+        if not self.unpack_forms:
+            yield data
+        else:
+            for indices in self.unpack_indices:
+                unpacked_data = {modal: {form: data[modal][form][:, index] for (form, index) in zip(self.unpack_forms, indices)
+                                         if form in modal_forms}
+                                 for (modal, modal_forms) in data.items()}
+                unpacked_data = {modal: {**data[modal], **unpack_dict} for (modal, unpack_dict) in unpacked_data.items()}     
+                yield unpacked_data
+
     def __len__(self):
-        return self.num_batches
+        return self.num_batches * len(self.unpack_indices)
 
     def __iter__(self):
         for _ in range(self.num_batches):
@@ -654,8 +682,8 @@ class RandomizedDataset(IterableDataset):
             data = {modal: {form: func(indices) for (form, func) in formats.items()} 
                     for (modal, formats) in self.data_funcs.items()}
             masks = {modal: mask[indices] for (modal, mask) in self.modal_masks.items()}
-            outputs = (data, masks, specimen_ids)
-            yield outputs
+            for unpacked_data in self.unpack_output(data):
+                yield (unpacked_data, masks, specimen_ids)
 
 class RepeatingRandomIndex():
     def __init__(self, indices):

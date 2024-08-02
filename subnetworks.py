@@ -68,8 +68,9 @@ def get_dense(input_size, output_size, hidden_dims, actvs = None, final_bias = T
     return layers
 
 class Enc_logcpm(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset, variational):
+    def __init__(self, forms, architecture, latent_dim, dataset, variational):
         super().__init__()
+        self.form = next(iter(forms))
         input_dim = architecture["data_size"][0]
         (init_dims, mean_dims, transf_dims) = (architecture["init"], architecture["mean"], architecture["cov"])
         init_out = init_dims[-1] if init_dims else input_dim
@@ -89,7 +90,7 @@ class Enc_logcpm(nn.Module):
         self.variational = variational
     
     def forward(self, x_forms):
-        x = x_forms["logcpm"]
+        x = x_forms[self.form]
         x = self.drp(x)
         x = self.initial_segment(x)
         mean = self.bn(self.mean_layer(x))
@@ -102,8 +103,9 @@ class Enc_logcpm(nn.Module):
         return (mean, transf)
     
 class Dec_logcpm(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset):
+    def __init__(self, forms, architecture, latent_dim, dataset):
         super().__init__()
+        self.form = next(iter(forms))
         output_dim = architecture["data_size"][0]
         hidden_dims = (architecture["init"] + architecture["mean"])[::-1]
         actvs = [nn.ReLU]*len(hidden_dims) + [activations[architecture["out_activation"]]]
@@ -111,12 +113,13 @@ class Dec_logcpm(nn.Module):
 
     def forward(self, x):
         x = self.network(x)
-        x_forms = {"logcpm": x}
+        x_forms = {self.form: x}
         return x_forms
 
 class Enc_pca_ipfx(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset, variational):
+    def __init__(self, forms, architecture, latent_dim, dataset, variational):
         super().__init__()
+        self.form = next(iter(forms))
         gauss_frac = architecture["std_frac"]
         gauss_std = get_gauss_baselines(dataset, "pca-ipfx").astype("float32")
         self.gauss_std = torch.nn.Parameter(torch.from_numpy(gauss_std*gauss_frac), False)
@@ -145,7 +148,7 @@ class Enc_pca_ipfx(nn.Module):
         return x
 
     def forward(self, x_forms):
-        x = x_forms["pca-ipfx"]
+        x = x_forms[self.form]
         x = self.add_gnoise(x)
         x = self.drop(x)
         x = self.initial_segment(x)
@@ -159,8 +162,9 @@ class Enc_pca_ipfx(nn.Module):
         return (mean, transf)
 
 class Dec_pca_ipfx(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset):
+    def __init__(self, forms, architecture, latent_dim, dataset):
         super().__init__()
+        self.form = next(iter(forms))
         output_dim = architecture["data_size"][0]
         hidden_dims = (architecture["init"] + architecture["mean"])[::-1]
         actvs = [nn.ReLU]*len(hidden_dims) + [activations[architecture["out_activation"]]]
@@ -168,12 +172,13 @@ class Dec_pca_ipfx(nn.Module):
 
     def forward(self, x):
         x = self.network(x)
-        x_forms = {"pca-ipfx": x}
+        x_forms = {self.form: x}
         return x_forms
 
 class Enc_arbors(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset, variational):
+    def __init__(self, forms, architecture, latent_dim, dataset, variational):
         super().__init__()
+        self.form = next(iter(forms))
         (data_dims, process) = (architecture["data_size"][:-1], architecture["data_size"][-1])
         (conv_params, init_dims) = (architecture["conv_params"], architecture["init"])
         (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
@@ -204,7 +209,7 @@ class Enc_arbors(nn.Module):
         self.variational = variational
 
     def forward(self, x_forms):
-        x = x_forms["arbors"]
+        x = x_forms[self.form]
         x = torch.permute(x, self.permutation)
         x = self.drop(x)
         x = self.conv_segment(x)
@@ -219,8 +224,9 @@ class Enc_arbors(nn.Module):
         return (mean, transf)
 
 class Dec_arbors(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset):
+    def __init__(self, forms, architecture, latent_dim, dataset):
         super().__init__()
+        self.form = next(iter(forms))
         (data_dims, process) = (architecture["data_size"][:-1], architecture["data_size"][-1])
         hidden_dims = (architecture["init"] + architecture["mean"])[::-1]
         conv_params = architecture["conv_params"][::-1]
@@ -245,12 +251,13 @@ class Dec_arbors(nn.Module):
         x = self.dense_segment(x)
         x = self.conv_T_segment(x)
         x = torch.permute(x, self.permutation)
-        x_forms = {"arbors": x}
+        x_forms = {self.form: x}
         return x_forms
 
 class Enc_ivscc(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset, variational):
+    def __init__(self, forms, architecture, latent_dim, dataset, variational):
         super().__init__()
+        self.form = next(iter(forms))
         gauss_frac = architecture["std_frac"]
         gauss_std = get_gauss_baselines(dataset, "ivscc").astype("float32")
         self.gauss_std = torch.nn.Parameter(torch.from_numpy(gauss_std*gauss_frac), False)
@@ -279,7 +286,7 @@ class Enc_ivscc(nn.Module):
         return x
 
     def forward(self, x_forms):    
-        x = x_forms["ivscc"]
+        x = x_forms[self.form]
         x = self.add_gnoise(x)
         x = torch.nan_to_num(x)
         x = self.drp(x)
@@ -294,9 +301,9 @@ class Enc_ivscc(nn.Module):
         return (mean, transf)
 
 class Dec_ivscc(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset):
+    def __init__(self, forms, architecture, latent_dim, dataset):
         super().__init__()
-        super().__init__()
+        self.form = next(iter(forms))
         output_dim = architecture["data_size"][0]
         hidden_dims = (architecture["init"] + architecture["mean"])[::-1]
         actvs = [nn.ReLU]*len(hidden_dims) + [activations[architecture["out_activation"]]]
@@ -304,7 +311,7 @@ class Dec_ivscc(nn.Module):
 
     def forward(self, x):
         x = self.network(x)
-        x_forms = {"ivscc": x}
+        x_forms = {self.form: x}
         return x_forms
 
 class Enc_arbors_ivscc(nn.Module):
@@ -412,84 +419,34 @@ class Dec_arbors_ivscc(nn.Module):
         ivscc_x = self.ivscc_segment(ivscc_x)
         return {"arbors": arbors_x, "ivscc": ivscc_x}
 
-class Enc_MNIST(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset, variational):
+class Enc_captions(nn.Module):
+    def __init__(self, forms, architecture, latent_dim, dataset, variational):
         super().__init__()
-        self.form = architecture["form"]
-        (data_dims, process) = (architecture["data_size"][:-1], architecture["data_size"][-1])
-        (conv_params, init_dims) = (architecture["conv_params"], architecture["init"])
-        (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
-        int_actv = activations[architecture["int_activation"]]
-        output_dims = get_conv_out_size(conv_params, *data_dims)[0]
-        conv_out = np.prod(output_dims)*(conv_params[-1][2] if conv_params else process)
-        init_out = init_dims[-1] if init_dims else conv_out
-        conv_layers = get_conv(conv_params, process, int_actv, False) if conv_params else []
-        initial_layers = get_dense(conv_out, init_out, init_dims[:-1], int_actv) if init_dims else []
-        if initial_layers or conv_layers:
-            initial_layers.append(nn.BatchNorm1d(init_out, momentum=0.05))
-        initial_layers.insert(0, nn.Flatten())
-        mean_actvs = [int_actv]*len(mean_dims) + [None]
-        transf_actvs = [int_actv]*len(transf_dims) + [None]
-
-        dim = len(data_dims)
-        self.permutation = (0, dim + 1, *range(1, dim + 1))
-        self.conv_segment = nn.Sequential(*conv_layers)
-        self.initial_segment = nn.Sequential(*initial_layers)
-        self.mean_layer = nn.Sequential(*get_dense(init_out, latent_dim, mean_dims, mean_actvs, False))
-        if variational:
-            self.transf_layer = nn.Sequential(*get_dense(init_out, latent_dim**2, transf_dims, transf_actvs))
-        
-        self.softplus = nn.Softplus()
-        self.drop = nn.Dropout(architecture["dropout"])
-        self.bn = nn.BatchNorm1d(latent_dim, momentum = 0.05, affine = False)
-        self.latent_dim = latent_dim
-        self.variational = variational
+        self.form = next(iter(forms))
+        self.inner_module = Enc_arbors(forms, architecture, latent_dim, dataset, variational)
+        self.embedder = nn.Linear(architecture["vocab_size"], architecture["data_size"][1])
+        self.vocab_size = architecture["vocab_size"]
 
     def forward(self, x_forms):
-        x = x_forms[self.form]
-        x = torch.permute(x, self.permutation)
-        x = self.drop(x)
-        x = self.conv_segment(x)
-        x = self.initial_segment(x)
-        mean = self.bn(self.mean_layer(x))
-        if self.variational:
-            transf_raw = self.transf_layer(x).reshape(-1, self.latent_dim, self.latent_dim)
-            diagonals = self.softplus(torch.diagonal(transf_raw, 0, -2, -1))
-            transf = torch.diag_embed(diagonals) + torch.tril(transf_raw, -1)
-        else:
-            transf = mean[:, None] * torch.zeros_like(mean)[..., None]
-        return (mean, transf)
+        x = x_forms[self.form].long()
+        x = torch.nn.functional.one_hot(x, self.vocab_size).float()
+        x = self.embedder(x).unsqueeze(-1)
+        (means, transfs) = self.inner_module({self.form: x})
+        return (means, transfs)
 
-class Dec_MNIST(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset):
+class Dec_captions(nn.Module):
+    def __init__(self, forms, architecture, latent_dim, dataset):
         super().__init__()
-        self.form = architecture["form"]
-        (data_dims, process) = (architecture["data_size"][:-1], architecture["data_size"][-1])
-        hidden_dims = (architecture["init"] + architecture["mean"])[::-1]
-        conv_params = architecture["conv_params"][::-1]
-        output_actv = activations[architecture["out_activation"]]
-        int_actv = activations[architecture["int_activation"]]
-        dense_actvs = [int_actv]*len(hidden_dims) + [None]
-        conv_actvs = [int_actv]*len(conv_params[:-1]) + [output_actv]
-        (unflat_dims, out_padding) = get_conv_out_size(conv_params[::-1], *data_dims)
-        conv_T_layers = get_conv(conv_params, process, conv_actvs, True, out_padding[::-1]) if conv_params else []
-        unflat_channels = conv_params[0][2] if conv_params else process
-        dense_layers = get_dense(latent_dim, np.prod(unflat_dims)*unflat_channels, hidden_dims, dense_actvs)
-        dense_layers.append(nn.Unflatten(1, (unflat_channels, *unflat_dims)))
-        if not conv_T_layers:
-            dense_layers.append(output_actv())
-
-        dim = len(data_dims)
-        self.permutation = (0, *range(2, dim + 2), 1)
-        self.dense_segment = nn.Sequential(*dense_layers)
-        self.conv_T_segment = nn.Sequential(*conv_T_layers)
+        self.form = next(iter(forms))
+        self.inner_module = Dec_arbors(forms, architecture, latent_dim, dataset)
+        self.deembedder = nn.Linear(architecture["data_size"][1], architecture["vocab_size"])
+        self.softmax = nn.Softmax(-1)
 
     def forward(self, x):
-        x = self.dense_segment(x)
-        x = self.conv_T_segment(x)
-        x = torch.permute(x, self.permutation)
-        x_forms = {self.form: x}
-        return x_forms
+        x = self.inner_module(x)[self.form].squeeze(-1)
+        x = self.deembedder(x)
+        x = self.softmax(x)
+        return {self.form: x}
 
 class Enc_Dummy(nn.Module):
     def __init__(self, latent_dim):
@@ -630,8 +587,8 @@ def get_model(config, train_dataset):
             arm["enc"] = Enc_Dummy(config["latent_dim"])
             arm["dec"] = Dec_Dummy(forms, train_dataset, trans_funcs)
         else:
-            arm["enc"] = modules[forms]["enc"](architecture, config["latent_dim"], train_dataset, variational)
-            arm["dec"] = modules[forms]["dec"](architecture, config["latent_dim"], train_dataset)
+            arm["enc"] = modules[forms]["enc"](forms, architecture, config["latent_dim"], train_dataset, variational)
+            arm["dec"] = modules[forms]["dec"](forms, architecture, config["latent_dim"], train_dataset)
         model[modal] = arm
     return model
 
@@ -657,24 +614,32 @@ modules = {
         "dec": Dec_arbors_ivscc
     },
     frozenset(["m0"]): {
-        "enc": Enc_MNIST,
-        "dec": Dec_MNIST
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
     },
     frozenset(["m1"]): {
-        "enc": Enc_MNIST,
-        "dec": Dec_MNIST
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
     },
     frozenset(["m2"]): {
-        "enc": Enc_MNIST,
-        "dec": Dec_MNIST
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
     },
     frozenset(["m3"]): {
-        "enc": Enc_MNIST,
-        "dec": Dec_MNIST
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
     },
     frozenset(["m4"]): {
-        "enc": Enc_MNIST,
-        "dec": Dec_MNIST
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
+    },
+    frozenset(["images"]): {
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
+    },
+    frozenset(["captions"]): {
+        "enc": Enc_captions,
+        "dec": Dec_captions
     }
 }
 

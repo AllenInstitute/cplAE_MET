@@ -409,7 +409,7 @@ class FeatureR2():
         r2_error = torch.mean(mean_squares / self.variances[form][feature_mask])
         return r2_error
     
-class CrossEntropy():
+class BinaryCrossEntropy():
     def __init__(self, config, met_data, specimens):
         pass
 
@@ -419,4 +419,12 @@ class CrossEntropy():
         loss = torch.nn.functional.binary_cross_entropy_with_logits(xr_flat, x_flat)
         return loss
 
-loss_classes = {"mse": MSE, "feature_r2": FeatureR2, "sample_r2": SampleR2, "bce": CrossEntropy}
+class CrossEntropy():
+    def __init__(self, config, met_data, specimens):
+        pass
+
+    def __call__(self, x, xr, form):
+        loss = torch.nn.functional.cross_entropy(xr.flatten(0, -2), x.flatten(0, -1).long())
+        return loss
+
+loss_classes = {"mse": MSE, "feature_r2": FeatureR2, "sample_r2": SampleR2, "bce": BinaryCrossEntropy, "ce": CrossEntropy}

@@ -143,7 +143,8 @@ def save_trace(path, model, config, dataset):
         for (modal, arm) in model.items():
             encoder_input = {}
             for form in config["formats"][modal]:
-                raw_data = torch.from_numpy(dataset.MET[form][0])
+                unpack = config["data_config"]["formats"][form]["unpack"] 
+                raw_data = torch.from_numpy(dataset.MET[form][0][:, 0] if unpack else dataset.MET[form][0])
                 encoder_input[form] = torch.nan_to_num(raw_data).to(device, dtype = torch.float32)
             encoder_trace = torch.jit.trace(arm["enc"], encoder_input, strict = False)
             decoder_input = encoder_trace(encoder_input)[0]
