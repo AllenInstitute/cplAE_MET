@@ -379,7 +379,7 @@ class MSE():
     def __call__(self, x, xr, form):
         mask = ~torch.isnan(x)
         x = torch.nan_to_num(x)
-        squared_diff = torch.square(x[:, None] - xr)
+        squared_diff = torch.square(x - xr)
         mse = torch.masked_select(squared_diff, mask[:, None]).sum() / xr.shape[0]
         return mse
 
