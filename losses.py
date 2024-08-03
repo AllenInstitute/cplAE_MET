@@ -380,7 +380,7 @@ class MSE():
         mask = ~torch.isnan(x)
         x = torch.nan_to_num(x)
         squared_diff = torch.square(x - xr)
-        mse = torch.masked_select(squared_diff, mask[:, None]).sum() / xr.shape[0]
+        mse = torch.masked_select(squared_diff, mask).sum() / xr.shape[0]
         return mse
 
 class SampleR2():
