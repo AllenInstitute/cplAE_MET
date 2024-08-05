@@ -123,7 +123,7 @@ class VariationalLoss():
                 "within": var_config["recon_scale"]*var_config["duplicate"]*loss_dict[modal_1],
                 "mean_reg": var_config["duplicate"]*torch.square(mean_1).sum(1).mean(),
                 "trace_reg": transf_1.square().mean(0).sum(),
-                "det_reg": var_config["duplicate"]*-2*torch.log(torch.det(transf_1)).mean()}
+                "det_reg": var_config["duplicate"]*-2*torch.log(torch.diagonal(transf_1, 0, -2, -1)).sum(-1).mean()}
             total_loss += sum([var_config[modal_1][key]*loss 
                                for (key, loss) in losses.items()])
             weighted_loss_dict = {
@@ -137,7 +137,7 @@ class VariationalLoss():
                         "cross": var_config["recon_scale"]*loss_dict[f"{first}={second}"],
                         "mean_diff_reg": torch.square(map_mean - orig_mean).sum(1).mean(),
                         "map_trace_reg": map_transf.square().mean(0).sum(),
-                        "map_det_reg": -2*torch.log(torch.det(map_transf)).mean(),
+                        "map_det_reg": -2*torch.log(torch.diagonal(map_transf, 0, -2, -1)).sum(-1).mean(),
                         "coupling": coupling_dict[f"{first}={second}"]}
                     total_loss += sum([var_config[first][second][key]*loss for (key, loss) in losses.items()])
                     weighted_loss_dict = {
