@@ -445,7 +445,6 @@ class Dec_captions(nn.Module):
     def forward(self, x):
         x = self.inner_module(x)[self.form].squeeze(-1)
         x = self.deembedder(x)
-        x = self.softmax(x)
         return {self.form: x}
 
 class Enc_Dummy(nn.Module):
