@@ -202,6 +202,7 @@ class MET_Data():
         self.data = {form: hdf5["modalities"][key] for (form, key) in data_keys.items()}
         self.valid = {form: hdf5["valid"][key] for (form, key) in data_keys.items()}
         self._meta = {key: np.char.decode(value) for (key, value) in hdf5["meta"].items()}
+        self._other = {key: np.char.decode(value) for (key, value) in hdf5["other"].items()}
         self._data_funcs = {name: Yielder(name, self) for name in self.data}
         self._cached_indices = {name: np.full(self.specimens.size, self.specimens.size) for name in self.data}
         self._cached_data = {name: np.zeros((0, ) + array.shape[1:]) for (name, array) in self.data.items()}
@@ -211,6 +212,8 @@ class MET_Data():
             value = self._meta[id_str]
         elif id_str in self._data_funcs:
             value = self._data_funcs[id_str]
+        elif id_str in self._other:
+            value = self._other[id_str]
         else:
             raise KeyError(f'Key "{id_str}" not found.')
         return value
