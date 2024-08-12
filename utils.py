@@ -175,6 +175,8 @@ def save_trace(path, model, config, dataset):
     if model.mappers:
         mapper_path = path / "mapper"
         mapper_path.mkdir(parents = True)
+    aux_path = path / "aux"
+    aux_path.mkdir()
     was_training = model.training
     device = next(model.parameters()).device
     model.eval()
@@ -198,6 +200,9 @@ def save_trace(path, model, config, dataset):
             if model.decoder_cov:
                 cov_trace = torch.jit.trace(model.decoder_cov, tuple())
                 cov_trace.save(path / f"decoder_cov.pt")
+            for (modal, aux_model) in model.aux_covs.items():
+                aux_trace = torch.jit.trace(aux_model, tuple())
+                aux_trace.save(aux_path / f"{modal}.pt")
     if was_training:
         model.train()
 
