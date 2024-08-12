@@ -70,6 +70,45 @@ class VariationalWrapper(torch.nn.Module):
     def items(self):
         return self.model_dict.items()
     
+class MMVAEWrapper(torch.nn.Module):
+    def __init__(self, model_dict, mappers, aux_covs, private_dim):
+        super().__init__()
+        self.mappers = mappers
+        self.model_dict = model_dict
+        for (modal, arm) in model_dict.items():
+            setattr(self, f"{modal}_enc", arm["enc"])
+            setattr(self, f"{modal}_dec", arm["dec"])
+        self.aux_covs = aux_covs
+        self.private_dim = private_dim
+        self.decoder_cov = None
+
+    def z_sample(self, mean, transf, num_samples):
+        expanded_mean = mean[:, None].expand(-1, num_samples, -1)
+        noise = torch.einsum("nij,nsj->nsi", transf, torch.randn_like(expanded_mean))
+        z_sampled = expanded_mean + noise
+        return z_sampled
+    
+    def cross_z_sample(self, in_modal, out_modal, in_mean, in_transf, num_samples):
+        mapper = self.mappers[f"{in_modal}-{out_modal}"]
+        direct_sample = self.z_sample(in_mean, in_transf, 1)[:, 0]
+        (out_mean, out_transf) = mapper(direct_sample)
+        cross_sample = self.z_sample(out_mean, out_transf, num_samples)
+        aux_sample = self.aux_covs[out_modal].sample(num_samples)
+        cross_sample[:, :, cross_sample.size()[-1] - self.private_dim:] = aux_sample
+        return (direct_sample, cross_sample, out_mean, out_transf)
+
+    def __getitem__(self, modal):
+        return self.model_dict[modal]
+    
+    def keys(self):
+        return self.model_dict.keys()
+    
+    def values(self):
+        return self.model_dict.values()
+    
+    def items(self):
+        return self.model_dict.items()
+
 class CouplerWrapper(torch.nn.Module):
     def __init__(self, model_dict):
         super().__init__()

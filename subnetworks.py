@@ -534,6 +534,25 @@ class Decoder_Cov(torch.nn.Module):
         else:
             high_d_cov = self.cov + 0 # + 0 is necessary for proper TorchScript tracing
         return high_d_cov
+    
+class Aux_Cov(torch.nn.Module):
+    def __init__(self, private_dim):
+        super().__init__()
+        init_params = torch.randn([private_dim, private_dim])
+        self.params = torch.nn.Parameter(init_params.float())
+        self.softplus = torch.nn.Softplus()
+        self.private_dim = private_dim
+
+    def forward(self):
+        diagonals = self.softplus(torch.diagonal(self.params, 0, -2, -1)) + 1e-4
+        transf = torch.diag_embed(diagonals) + torch.tril(self.params, -1)
+        return transf
+    
+    def sample(self, num_samples):
+        mean = torch.zeros([num_samples, self.private_dim])
+        transf = self()
+        noise = torch.einsum("ij,sj->si", transf, torch.randn_like(mean))
+        return mean + noise
 
 def get_skewed_cov(num_modalities, latent_dim, marg_var, sym_frac):
     # Implements a Householder reflection to generate a cov with principal component along

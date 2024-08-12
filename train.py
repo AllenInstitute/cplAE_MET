@@ -107,7 +107,9 @@ def build_model(config, train_dataset):
     mappers = subnetworks.get_mapper(config, train_dataset) if config["inference"] else None
     (fixed_cov, marg_var, skew_frac) = (config["elbo_cov"]["fixed"], config["elbo_cov"]["marg_var"], config["elbo_cov"]["skew_frac"])
     decoder_cov = subnetworks.Decoder_Cov(len(config["modalities"]), config["latent_dim"], marg_var, skew_frac, fixed_cov)
-    model = utils.VariationalWrapper(model_dict, mappers, decoder_cov)
+    aux_dist = torch.nn.ModuleDict({modal: subnetworks.Aux_Cov(config["private_dim"]) for modal in config["modalities"]})
+    # model = utils.VariationalWrapper(model_dict, mappers, decoder_cov)
+    model = utils.MMVAEWrapper(model_dict, mappers, aux_dist, config["private_dim"])
     # from torchinfo import summary
     # summary(model, input_data = [{"m0": torch.zeros([2, 28, 28, 3])}], in_modal = "A", out_modals = ["A"])
     # input()
