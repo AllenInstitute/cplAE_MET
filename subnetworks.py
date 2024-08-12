@@ -549,8 +549,8 @@ class Aux_Cov(torch.nn.Module):
         return transf
     
     def sample(self, num_samples):
-        mean = torch.zeros([num_samples, self.private_dim])
         transf = self()
+        mean = torch.zeros([num_samples, self.private_dim], device = transf.device)
         noise = torch.einsum("ij,sj->si", transf, torch.randn_like(mean))
         return mean + noise
 
