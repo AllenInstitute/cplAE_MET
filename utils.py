@@ -82,6 +82,18 @@ class MMVAEWrapper(torch.nn.Module):
         self.private_dim = private_dim
         self.decoder_cov = None
 
+    def forward(self, x_forms, in_modal, out_modals):
+        orig_latent = self[in_modal]["enc"](x_forms)[0]
+        outputs = {}
+        for modal in out_modals:
+            if self.mappers and modal != in_modal:
+                latent = self.mappers[f"{in_modal}-{modal}"](orig_latent)[0]
+                latent[:, :, latent.size()[-1] - self.private_dim:] = 0
+            else:
+                latent = orig_latent
+            outputs[modal] = self[modal]["dec"](latent)
+        return outputs
+
     def z_sample(self, mean, transf, num_samples):
         expanded_mean = mean[:, None].expand(-1, num_samples, -1)
         noise = torch.einsum("nij,nsj->nsi", transf, torch.randn_like(expanded_mean))
