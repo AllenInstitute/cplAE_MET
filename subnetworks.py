@@ -547,12 +547,6 @@ class Aux_Cov(torch.nn.Module):
         diagonals = self.softplus(torch.diagonal(self.params, 0, -2, -1)) + 1e-4
         transf = torch.diag_embed(diagonals) + torch.tril(self.params, -1)
         return transf
-    
-    def sample(self, num_samples):
-        transf = self()
-        mean = torch.zeros([num_samples, self.private_dim], device = transf.device)
-        noise = torch.einsum("ij,sj->si", transf, torch.randn_like(mean))
-        return mean + noise
 
 def get_skewed_cov(num_modalities, latent_dim, marg_var, sym_frac):
     # Implements a Householder reflection to generate a cov with principal component along

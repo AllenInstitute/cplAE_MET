@@ -93,9 +93,15 @@ class MMVAEWrapper(torch.nn.Module):
         direct_sample = self.z_sample(in_mean, in_transf, 1)[:, 0]
         (out_mean, out_transf) = mapper(direct_sample)
         cross_sample = self.z_sample(out_mean, out_transf, num_samples)
-        aux_sample = self.aux_covs[out_modal].sample(num_samples)
+        aux_sample = self.aux_sample(out_modal, num_samples)
         cross_sample[:, :, cross_sample.size()[-1] - self.private_dim:] = aux_sample
         return (direct_sample, cross_sample, out_mean, out_transf)
+
+    def aux_sample(self, modal, num_samples):
+        transf = self.aux_covs[modal]()
+        mean = torch.zeros([num_samples, self.private_dim], device = transf.device)
+        noise = torch.einsum("ij,sj->si", transf, torch.randn_like(mean))
+        return mean + noise
 
     def __getitem__(self, modal):
         return self.model_dict[modal]
@@ -145,7 +151,7 @@ class CouplerWrapper(torch.nn.Module):
     def items(self):
         return self.model_dict.items()
 
-def assemble_jit(jit_path, device = "cpu"):
+def assemble_jit(jit_path, device = "cpu", config = None):
     jit_path = pathlib.Path(jit_path)
     model = {}
     modalities = [path.stem for path in (jit_path / "encoder").iterdir()]
@@ -154,8 +160,13 @@ def assemble_jit(jit_path, device = "cpu"):
         model[modal]["enc"] = torch.jit.load(jit_path / "encoder" / f"{modal}.pt", map_location = device)
         model[modal]["dec"] = torch.jit.load(jit_path / "decoder" / f"{modal}.pt", map_location = device)
     mapper_path = jit_path / "mapper"
+    aux_path = jit_path / "aux"
     mappers = {path.stem: torch.jit.load(path, device) for path in mapper_path.iterdir()} if mapper_path.exists() else None
-    model = VariationalWrapper(model, mappers, None)
+    aux = {path.stem: torch.jit.load(path, device) for path in aux_path.iterdir()} if aux_path.exists() else None
+    if aux:
+        model = MMVAEWrapper(model, mappers, aux, config["private_dim"])
+    else:
+        model = VariationalWrapper(model, mappers, None)
     return model
 
 def assemble_coupler(jit_path, wrap = True, device = "cpu"):
@@ -222,14 +233,14 @@ def load_jit_folds(exp_path, folds = None, get_checkpoints = False, check_step =
         specimen_ids = np.load(fold_path / "train_test_ids.npz")
         info_dict["train_ids"] = np.char.strip(specimen_ids["train"])
         info_dict["test_ids"] = np.char.strip(specimen_ids["test"])
-        info_dict["best"] = assemble_jit(fold_path / "best")
+        info_dict["best"] = assemble_jit(fold_path / "best", config = results["config"])
         if get_checkpoints:
             info_dict["checkpoints"] = {}
             paths = list((fold_path / "checkpoints").iterdir())
             paths.sort(key = lambda path: int(path.stem.split("_")[-1]))
             for path in paths[::check_step]:
                 epoch = int(path.stem.split("_")[-1])
-                state = assemble_jit(path)
+                state = assemble_jit(path, config = results["config"])
                 info_dict["checkpoints"][epoch] = state
         results["folds"][fold] = info_dict
     return results
