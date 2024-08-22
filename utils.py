@@ -88,7 +88,7 @@ class MMVAEWrapper(torch.nn.Module):
         for modal in out_modals:
             if self.mappers and modal != in_modal:
                 latent = self.mappers[f"{in_modal}-{modal}"](orig_latent)[0]
-                latent[:, :, latent.size()[-1] - self.private_dim:] = 0
+                latent[:, latent.size()[-1] - self.private_dim:] = 0
             else:
                 latent = orig_latent
             outputs[modal] = self[modal]["dec"](latent)
