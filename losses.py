@@ -57,6 +57,51 @@ def get_indices(modalities):
                        for modal_set in modal_sets}
         return (modal_indices, set_indices)
 
+class ContrastiveLoss():
+    def __init__(self, config, met_data, specimens):
+        self.config = config
+        self.temperature = config["contrastive"]["temperature"]
+        proj_head = {modal: torch.nn.Sequential(
+            torch.nn.Linear(config["latent_dim"], 64),
+            torch.nn.ReLU(),
+            torch.nn.Linear(64, config["contrastive"]["loss_dim"])
+        ) for modal in config["modalities"]}
+        self.proj_head = torch.nn.ModuleDict(proj_head)
+
+    def process_batch(self, model, X_dict, mask_dict):
+        (latent_dict, loss_dict) = ({}, {})
+        for modal in self.config["modalities"]:
+            (arm, x_forms, mask) = (model[modal], X_dict[modal], mask_dict[modal])
+            x_masked = apply_mask(x_forms, mask)
+            (x_rep, _) = arm["enc"](x_masked)
+            z = x_rep #self.proj_head[modal](x_rep)
+            latent_dict[modal] = z
+            z_mag = torch.linalg.norm(z, dim = 1)
+            # overlap = torch.einsum("ni,si->ns", z, z)
+            # sim = overlap / (z_mag[:, None]*z_mag[None])
+            # unpaired = torch.logsumexp(sim.fill_diagonal_(-1e20) / self.temperature, dim = 1).mean()
+            # loss_dict[f"{modal}-{modal}"] = unpaired
+            for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
+                prev_z_mag = torch.linalg.norm(prev_z, dim = 1)
+                overlap = torch.einsum("ni,si->ns", z, prev_z)
+                sim = overlap / (z_mag[:, None]*prev_z_mag[None])
+                paired = torch.mean(torch.diagonal(sim) / self.temperature)
+                unpaired = torch.logsumexp(sim.fill_diagonal_(-1e20) / self.temperature, dim = 1).mean()
+                loss_dict[f"{modal}-{prev_modal}"] = unpaired - paired
+        total_loss = sum([self.config["contrastive"][key]*loss_value for (key, loss_value) in loss_dict.items()])
+        return (loss_dict, total_loss)
+
+    def log(self, tb_writer, train_loss, val_loss, epoch):
+        # This function takes the training/validation losses and logs them
+        # in Tensoboard. The component losses are reported without any scaling,
+        # alongside the weighted sum of the losses.
+
+        tb_writer.add_scalars("Weighted Loss", {"Train": train_loss["total"], "Validation": val_loss["total"]}, epoch)
+        tb_writer.add_scalars("Contrast/Train", 
+            {key: loss for (key, loss) in train_loss.items()}, epoch)
+        tb_writer.add_scalars("Contrast/Validation", 
+            {key: loss for (key, loss) in val_loss.items()}, epoch)
+
 class VariationalLoss():
     def __init__(self, config, met_data, specimens):
         self.config = config

@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 
 from data import MET_Data, MET_Simulated, MET_Decoupled, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
-from losses import ReconstructionLoss, VariationalLoss, ELBO_Loss
+from losses import ReconstructionLoss, VariationalLoss, ELBO_Loss, ContrastiveLoss
 import utils
 import subnetworks
 
@@ -124,6 +124,8 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
     if config["inference"]:
         loss_class = ELBO_Loss if config["ELBO"] else VariationalLoss
+    elif config["contrastive"]["active"]:
+        loss_class = ContrastiveLoss
     else:
         loss_class = ReconstructionLoss
     loss_handler = loss_class(config, train_dataset.MET, train_dataset.allowed_specimen_ids)
