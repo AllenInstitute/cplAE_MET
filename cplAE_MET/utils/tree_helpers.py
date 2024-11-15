@@ -149,11 +149,11 @@ class HTree():
             p_ind = np.flatnonzero(self.child==parent)
             if p_ind.size==0: #Enters here for any root node
                 p_ind = np.flatnonzero(self.parent==parent)
-                xp = self.x[p_ind]
-                yp = 1.1*np.max(self.y)
+                xp = np.squeeze(self.x[p_ind])
+                yp = np.squeeze(1.1*np.max(self.y))
             else:    
-                xp = self.x[p_ind]
-                yp = self.y[p_ind]
+                xp = np.squeeze(self.x[p_ind])
+                yp = np.squeeze(self.y[p_ind])
 
             all_c_inds = np.flatnonzero(np.isin(self.parent,parent))
             for c_ind in all_c_inds:
@@ -409,3 +409,8 @@ def get_merged_ordered_classes(data_labels,
         list(set(zip(remain_class_names, remain_class_x))), key=lambda x: x[1])
     class_order = [n[0] for n in remain_class_names]
     return new_data_labels, class_order
+
+HTree(htree_file = "data/meta/tree_Mouse_ALM-VISp_2018.csv").get_subtree("n4").plot(skeletoncol = "#003057")
+plt.gca().axis("off")
+# plt.savefig("tree.png", dpi = 1000)
+plt.show()
