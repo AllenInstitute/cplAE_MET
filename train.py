@@ -174,13 +174,13 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     return model
 
 def train_model(config, exp_dir):
+    data_keys = {form: data_config["key"] for (form, data_config) in config["data_config"]["formats"].items()}
+    hdf5_path = config["data_config"]["data_path"]
     if "simulate" in config:
         met_data = MET_Simulated(config)
     elif "decouple" in config:
-        met_data = MET_Decoupled(config["data_file"], config)
+        met_data = MET_Decoupled(hdf5_path, config["decouple"]["counts"], config["seed"], config["select"]["platforms"], **data_keys)
     else:
-        data_keys = {form: data_config["key"] for (form, data_config) in config["data_config"]["formats"].items()}
-        hdf5_path = config["data_config"]["data_path"]
         met_data = MET_Data(hdf5_path, **data_keys)
     num_folds = config["folds"]
     if num_folds > 0:
