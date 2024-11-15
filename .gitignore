@@ -15,3 +15,6 @@ results/*
 vae_datasets.py
 .vscode
 notebooks/figs
+notebooks/data
+notebooks/fashion
+notebooks/summary_figures
