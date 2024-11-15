@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 import torch
 
-from pca_cca import PCA_CCA
-
 project_dir = pathlib.Path("/Users/ian.convy/code/cplAE_MET")
 
 class VariationalWrapper(torch.nn.Module):
@@ -222,25 +220,6 @@ def load_coupler_folds(exp_path, folds = None, get_checkpoints = False):
                 state.load_autoencoder(autoencoders)
                 info_dict["checkpoints"][epoch] = state
         results["folds"][fold] = info_dict
-    return results
-
-def load_pca_cca(exp_dir):
-    exp_path = project_dir / "data" / exp_dir
-    results = {}
-    with open(exp_path / "config.yaml", "r") as target:
-        results["config"] = yaml.safe_load(target)
-    fold_paths = list(exp_path.glob("fold_*"))
-    fold_paths.sort()
-    results["folds"] = []
-    for fold_path in fold_paths:
-        info_dict = {}
-        pca_cca = PCA_CCA(results["config"])
-        pca_cca.load(fold_path)
-        info_dict["model"] = pca_cca
-        specimen_ids = np.load(fold_path / "train_test_ids.npz")
-        info_dict["train_ids"] = specimen_ids["train"]
-        info_dict["test_ids"] = specimen_ids["test"]
-        results["folds"].append(info_dict)
     return results
 
 def get_tree_merge_map(tree_csv_path, top_node):
