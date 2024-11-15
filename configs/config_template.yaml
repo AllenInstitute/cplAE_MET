@@ -1,24 +1,38 @@
 ---
 # Config file for training MET autoencoder (triple modality)
-# Modality abbreviations: T -> transcriptomic, E -> electro-physiological, M -> morphological
 
-# Set device:
+# Set device
 device: "cpu"
 
-# Set paths:
-data_file: data/raw/MET_full_data.npz # Location of Numpy zipped archive (.npz) file containing processed input data
+# Set paths
+data_config: 
+  data_path: data/neurons.hdf5
+  formats:
+    logcpm:
+      key: logcpm
+      cache: True
+      unpack: False
+    pca-ipfx:
+      key: pca-ipfx
+      cache: True
+      unpack: False
+    arbors:
+      key: arbors
+      cache: True
+      unpack: False
 
 # Set experiment/optimization properties:
 experiment: autoencoder # Type of experiment
-modalities: [T, E, M] # Which modalities to use in the experiment
+modalities: [T] # Which modalities to use in the experiment
 num_epochs: 5000 # Number of epochs to train
 latent_dim: 3 # Dimension of latent space
 batch_size: 1000 # Batch size used during training
 learning_rate: 0.001 # Learning rate for the ADAM optimizer
 check_step: 50 # How often to save model checkpoints
-encoder_cross_grad: False # Whether cross-reconstruction gradient should propagate back to encoder
+encoder_cross_grad: True # Whether cross-reconstruction gradient should propagate back to encoder
 inference: True
-samples: 10
+ELBO: False
+samples: 1
 
 variational:
   mapper:
@@ -27,6 +41,11 @@ variational:
     mean: [32]
     transf: [32]
 
+elbo_cov:
+  fixed: True
+  marg_var: 1.0
+  skew_frac: 0.99
+
 # Set validation parameters:
 folds: 10 # Number of folds to use for cross-validation
 fold_list: [] # Which folds to run in this experiment (empty list is short for all folds)
@@ -34,7 +53,7 @@ val_split: 0.25 # Fraction of data to use for validation (ignored if folds > 0)
 seed: 42 # Random seed to use for validation splits
 
 # Set parameters for early stopping:
-patience: .inf # How long to wait for improvement of loss
+patience: 1000 # How long to wait for improvement of loss
 improvement_frac: 0.01 # How much improvement needs to occur for stoppage to be delayed
 
 # Set parameters for gradient freezing:
@@ -59,7 +78,8 @@ transform:
 # Set criteria for cell specimen inclusion in experiment
 # Note that these are applied after the stratified test-validation split
 select:
-  platforms: [patchseq]
+  platforms: [patchseq, EM, smartseq]
+  formats: 
 
 # simulate:
 #   counts:
@@ -100,9 +120,9 @@ modal_frac:
 
 # Specify metric to use for reconstruction losses
 losses:
-  logcpm: feature_r2
-  pca-ipfx: feature_r2
-  arbors: sample_r2
+  logcpm: mse
+  pca-ipfx: mse
+  arbors: mse
   ivscc: sample_r2
 
 # Set auto-encoder architecture
@@ -126,7 +146,7 @@ architecture:
     data_size: [120, 4, 4]
     out_activation: relu
     int_activation: relu
-    conv_params: [[20, 1, 10]] # [(kernel length, stride, channels), ...]
+    conv_params: [[[20, 4], [1, 1], 10]] # [(kernel shape, stride, channels), ...]
     init: [64]
     mean: [64]
     cov: [10]
@@ -153,6 +173,12 @@ architecture:
     ivscc_dropout: 0.0
 
 # Set loss weights (used when computing the combined loss scalar)
+elbo_weights:
+  recon_scale: 10
+  T_recon: 0.0008
+  E_recon: 0.012
+  M_recon: 0.00052
+
 var_weights:
   duplicate: 2
   recon_scale: 100
@@ -213,23 +239,23 @@ var_weights:
 
 weights:
   # Single letters indicates within-modality reconstruction loss:
-  T: 1.0   
-  E: 1.0   
-  M: 1.0  
+  T: 0.0   
+  E: 0.0   
+  M: 0.0  
   # A-B is the coupling loss between latent spaces of modality A and B, with the gradient only propogated to B
-  E-T: 1.0  
-  E-M: 1.0
-  M-T: 1.0  
-  M-E: 1.0
-  T-E: 1.0  
-  T-M: 1.0 
+  E-T: 0.0  
+  E-M: 0.0
+  M-T: 0.0  
+  M-E: 0.0
+  T-E: 0.0  
+  T-M: 0.0 
   # A=B is cross reconstruction loss for modal A generating modality B
-  E=T: 1.0  
-  E=M: 1.0
-  M=T: 1.0  
+  E=T: 0.0  
+  E=M: 0.0
+  M=T: 0.0  
   M=E: 1.0
-  T=E: 1.0 
-  T=M: 1.0  
+  T=E: 0.0 
+  T=M: 0.0  
 
 # Set SLURM parameters:
 partition: 'celltypes'
