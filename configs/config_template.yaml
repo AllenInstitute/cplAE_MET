@@ -6,24 +6,27 @@ device: "cpu"
 
 # Set paths
 data_config: 
-  data_path: data/neurons.hdf5
+  data_paths: 
+    patchseq: data/patchseq.hdf5
+    EM: data/EM.hdf5
+    smartseq: data/smartseq.hdf5
   formats:
     logcpm:
-      key: logcpm
+      keys: [[patchseq, logcpm], [smartseq, logcpm_aligned]]
       cache: True
       unpack: False
     pca-ipfx:
-      key: pca-ipfx
+      keys: [[patchseq, pca-ipfx]]
       cache: True
       unpack: False
     arbors:
-      key: arbors
+      keys: [[patchseq, arbors], [EM, arbors]]
       cache: True
       unpack: False
 
 # Set experiment/optimization properties:
 experiment: autoencoder # Type of experiment
-modalities: [T] # Which modalities to use in the experiment
+modalities: [T, E, M] # Which modalities to use in the experiment
 num_epochs: 5000 # Number of epochs to train
 latent_dim: 3 # Dimension of latent space
 batch_size: 1000 # Batch size used during training

@@ -174,14 +174,14 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     return model
 
 def train_model(config, exp_dir):
-    data_keys = {form: data_config["key"] for (form, data_config) in config["data_config"]["formats"].items()}
-    hdf5_path = config["data_config"]["data_path"]
+    data_keys = {form: data_config["keys"] for (form, data_config) in config["data_config"]["formats"].items()}
+    hdf5_paths = config["data_config"]["data_paths"]
     if "simulate" in config:
         met_data = MET_Simulated(config)
     elif "decouple" in config:
-        met_data = MET_Decoupled(hdf5_path, config["decouple"]["counts"], config["seed"], config["select"]["platforms"], **data_keys)
+        met_data = MET_Decoupled(hdf5_paths, config["decouple"]["counts"], config["seed"], config["select"]["platforms"], **data_keys)
     else:
-        met_data = MET_Data(hdf5_path, **data_keys)
+        met_data = MET_Data(hdf5_paths, **data_keys)
     num_folds = config["folds"]
     if num_folds > 0:
         indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
@@ -200,7 +200,7 @@ def train_model(config, exp_dir):
         filtered_test_ids = filter_specimens(met_data, test_ids, config)
         for (form, data_config) in config["data_config"]["formats"].items():
             if data_config["cache"]:
-                met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = False)
+                met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = True)
         unpack = {form: data_config["unpack"] for (form, data_config) in config["data_config"]["formats"].items()}
         train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_train_ids)
         test_dataset = DeterministicDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_test_ids)

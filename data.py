@@ -53,45 +53,83 @@ def get_shapes_lazy(npz_path):
                 shapes[array_name[:-4]] = head_func(arr_file)[0]
     return shapes
 
-class Yielder():
-    def __init__(self, dataset_name, met_instance):
-        self.name = dataset_name
-        self.met = met_instance
+def get_specimens_data(hdf5_files, data_keys):
+    (specimens, sp_indices, data) = ({}, {}, {})
+    for (form_name, file_key_pairs) in data_keys.items():
+        form_specimens = []
+        for (file_name, key) in file_key_pairs:
+            data.setdefault(form_name, {})[file_name] = hdf5_files[file_name][key]["data"]
+            file_specimens = np.char.decode(hdf5_files[file_name][key]["specimens"][:])
+            form_specimens.append(file_specimens)
+            file_indices = {sp_id: (file_name, i) for (i, sp_id) in enumerate(file_specimens)}
+            sp_indices.setdefault(form_name, {}).update(file_indices)
+        specimens[form_name] = np.concatenate(form_specimens)
+    all_specimens = np.unique(np.concatenate(list(specimens.values())))
+    valid = {form: np.isin(all_specimens, form_sp) for (form, form_sp) in specimens.items()}
+    all_indices = {sp_id: i for (i, sp_id) in enumerate(all_specimens)}
+    ind_map = {form: {all_indices[sp_id]: val for (sp_id, val) in file_ind.items()}
+               for (form, file_ind) in sp_indices.items()}
+    return (all_specimens, all_indices, valid, ind_map, data)
 
-    def __call__(self, sp_indices):
-        sp_indices = np.atleast_1d(sp_indices)
-        cached_indices = self.met._cached_indices[self.name][sp_indices]
-        is_cached = cached_indices < self.met.specimens.size
-        samples = np.zeros(sp_indices.shape + self.met.data[self.name].shape[1:])
-        samples[is_cached] = self.met._cached_data[self.name][cached_indices[is_cached]]
+def get_meta(hdf5_files, all_specimens):
+    (all_meta_data, categories) = ({}, set())
+    for hdf5_file in hdf5_files:
+        file_data = {key: np.char.decode(array[:]) for (key, array) in hdf5_file.get("meta", {}).items()}
+        file_specimens = file_data.pop("specimens", [])
+        categories.update(file_data.keys())
+        for (i, sp_id) in enumerate(file_specimens):
+            all_meta_data.setdefault(sp_id, {}).update({key: arr[i] for (key, arr) in file_data.items()})
+    cat_meta_data = {cat: np.asarray([all_meta_data.get(sp_id, {}).get(cat, np.nan) 
+                                      for sp_id in all_specimens])
+                     for cat in categories}
+    cat_meta_data["specimen_id"] = all_specimens
+    return cat_meta_data
+
+class Yielder():
+    def __init__(self, data, id_maps, num_specimens):
+        self.data_shape = next(iter(data.values())).shape[1:]
+        self.cached_indices = np.full(num_specimens, num_specimens)
+        self.cached_data = np.zeros((0, ) + self.data_shape)
+        self.num_specimens = num_specimens
+        self.data = data
+        self.id_maps = id_maps
+
+    def __call__(self, specimen_idxs):
+        sp_indices = np.atleast_1d(specimen_idxs)
+        cached_indices = self.cached_indices[sp_indices]
+        is_cached = cached_indices < self.num_specimens
+        samples = np.zeros(sp_indices.shape + self.data_shape)
+        samples[is_cached] = self.cached_data[cached_indices[is_cached]]
         if np.any(~is_cached):
-            samples[~is_cached] = np.stack([self.met.data[self.name][index]
-                                            for index in sp_indices[~is_cached]], 0)
+            samples[~is_cached] = self._get_uncached(sp_indices[~is_cached])
         return samples
     
-    def __getitem__(self, indices):
-        return self(indices)        
+    def __getitem__(self, specimen_idxs):
+        return self(specimen_idxs)
+
+    def _get_uncached(self, specimen_idxs):
+        form_mapping = [self.id_maps.get(global_idx, (None, None)) for global_idx in specimen_idxs]
+        uncached_data = [self.data[file_name][idx] if file_name else np.full(self.data_shape, np.nan) 
+                         for (file_name, idx) in form_mapping]
+        return np.stack(uncached_data, 0)
+
+    def cache_data(self, specimen_idxs):
+        self.cached_data = self._get_uncached(specimen_idxs)
+        self.cached_indices = np.full(self.num_specimens, self.num_specimens)
+        self.cached_indices[specimen_idxs] = np.arange(specimen_idxs.size)           
 
 class MET_Data():
-    def __init__(self, hdf5_path, **data_keys):
-        hdf5 = h5py.File(hdf5_path)
-        self.specimens = np.char.decode(hdf5["specimens"][:])
-        self.id_map = {sp_id.strip():i for (i, sp_id) in enumerate(self.specimens)}
-        self.data = {form: hdf5["modalities"][key] for (form, key) in data_keys.items()}
-        self.valid = {form: hdf5["valid"][key] for (form, key) in data_keys.items()}
-        self._meta = {key: np.char.decode(value) for (key, value) in hdf5["meta"].items()}
-        self._other = {key: np.char.decode(value) for (key, value) in hdf5["other"].items()}
-        self._data_funcs = {name: Yielder(name, self) for name in self.data}
-        self._cached_indices = {name: np.full(self.specimens.size, self.specimens.size) for name in self.data}
-        self._cached_data = {name: np.zeros((0, ) + array.shape[1:]) for (name, array) in self.data.items()}
+    def __init__(self, hdf5_paths, **data_keys):
+        hdf5_files = {name: h5py.File(path, "r") for (name, path) in hdf5_paths.items()}
+        (self.specimens, self.id_map, self.valid, self.local_id_map, self.data) = get_specimens_data(hdf5_files, data_keys)
+        self._meta = get_meta(hdf5_files.values(), self.specimens)
+        self._data_funcs = {form: Yielder(self.data[form], self.local_id_map[form], len(self.specimens)) for form in data_keys}
 
     def __getitem__(self, id_str):
         if id_str in self._meta:
             value = self._meta[id_str]
         elif id_str in self._data_funcs:
             value = self._data_funcs[id_str]
-        elif id_str in self._other:
-            value = self._other[id_str]
         else:
             raise KeyError(f'Key "{id_str}" not found.')
         return value
@@ -157,15 +195,12 @@ class MET_Data():
             (train_spec, test_spec) = (self["specimen_id"][train_ids], self["specimen_id"][test_ids])
             yield (train_spec, test_spec)
 
-    def cache_data(self, dataset_name, specimen_ids = None, verbose = True):
+    def cache_data(self, form, specimen_ids = None, verbose = True):
         specimen_ids = self.specimens if specimen_ids is None else specimen_ids
-        sp_indices = np.asarray([self.id_map[sp_id.strip()] for sp_id in specimen_ids])
-        print(f"Caching {dataset_name}...")
-        sorted_indices = np.sort(sp_indices)
-        data_array = self.data[dataset_name][sorted_indices]
-        self._cached_data[dataset_name] = data_array
-        self._cached_indices[dataset_name] = np.full(self.specimens.size, self.specimens.size)
-        self._cached_indices[dataset_name][sorted_indices] = np.arange(specimen_ids.size)
+        specimen_idxs = np.asarray([self.id_map[sp_id.strip()] for sp_id in specimen_ids])
+        if verbose:
+            print(f"Caching {form}...")
+        self._data_funcs[form].cache_data(specimen_idxs)
 
 class MET_Simulated():
     def __init__(self, config):
@@ -650,26 +685,16 @@ if __name__ == "__main__":
     # met_data = MET_Decoupled("data/raw/MET_full_data.npz", config)
     # print(met_data.MET)
 
-    fracs = {
-        "T": "native",
-        "E": "native",
-        "M": "native",
-        "TE": "native",
-        "TM": "native",
-        "EM": "native",
-        "MET": "native"
-    }
+    import yaml
 
-    dataset_folders = {
-        "logcpm": "data/transcriptomics",
-        "pca-ipfx": "data/electrophysiology",
-        "arbors": "data/morphology/densities/120_4_4_old"
-    }
-    met = MET_Data("data/meta/specimens.csv", **dataset_folders)
+    with open("configs/config_template.yaml", "r") as target:
+        data_config = yaml.safe_load(target)["data_config"]
+
+    data_keys = {key: dct["keys"] for (key, dct) in data_config["formats"].items()}
+    met = MET_Data(data_config["data_paths"], **data_keys)
     for form in ["logcpm", "pca-ipfx", "arbors"]:
         met.cache_data(form)
-    input()
+    sp_ids = met["specimen_id"]
+
     specimens = met.query(platforms = ["patchseq"], outputs = ["specimen_id"])["specimen_id"]
-    data_iter = DeterministicDataset(met, 128, {"T": ["logcpm"], "E": ["pca-ipfx"], "M": ["arbors"]}, 
-                                  fracs, {}, specimens)
-    next(iter(data_iter))
+    
