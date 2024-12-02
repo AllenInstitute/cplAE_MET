@@ -21,6 +21,7 @@ def get_variances(met_data, specimens, formats, transformations, device, dtype):
     for modal_forms in formats.values():
         for form in modal_forms:
             spec_ids = met_data.query(specimens, formats = [(form,)], outputs = ["specimen_id"])["specimen_id"]
+            np.random.RandomState(42).shuffle(spec_ids)
             data = met_data.get_specimens(spec_ids[:1000], outputs = [form])[form]
             if len(data):
                 if form in transformations:

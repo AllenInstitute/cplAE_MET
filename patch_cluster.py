@@ -158,8 +158,17 @@ def get_model(model_path):
     return (encoders, decoders, mappers)
 
 def get_data():
-    data_keys = {"logcpm": "logcpm", "pca-ipfx": "pca-ipfx", "arbors": "arbors"}
-    met_data = MET_Data("data/neurons.hdf5", **data_keys)
+    data_paths = {
+        "patchseq": "data/patchseq.hdf5",
+        "EM": "data/EM.hdf5",
+        "smartseq": "data/smartseq.hdf5",
+        "10x": "data/10x.hdf5",
+        "trunc": "data/patch_smart_trunc.hdf5"}
+    data_keys = {
+        "logcpm": [["patchseq", "logcpm"], ["smartseq", "logcpm_aligned"]],
+        "pca-ipfx": [["patchseq", "pca-ipfx"]],
+        "arbors": [["patchseq", "arbors"], ["EM", "arbors"]]}
+    met_data = MET_Data(data_paths, **data_keys)
     for form in ["logcpm", "pca-ipfx", "arbors"]:
         met_data.cache_data(form)
     raw_data = met_data.query(formats = [("logcpm", "pca-ipfx", "arbors")], outputs = ["logcpm", "pca-ipfx", "arbors", "cluster_label"])
@@ -252,17 +261,17 @@ def plot(file_path, score_func, graph_text, score_label):
     plt.close()
 
 args = [
-    {"model_path": "results/baselines/met_10d_mse", 
-     "file_path": "data/clustering/cluster_t_summed.pk",
-     "title": "Summed",
+    {"model_path": "results/old_results/simple_loss/cross", 
+     "file_path": "data/clustering/cluster_vanilla.pk",
+     "title": "",
      "method_funcs": {
-        "cov": get_cov_distance, 
+        # "cov": get_cov_distance, 
         "jac": get_decoded_distance, 
         "hop": get_hop_distance, 
         "eucl": get_euclidean_distance, 
         "raw": None},
      "method_params": {
-         "cov": {"num_steps": 10, "cluster_alg": "tree", "distance": True, "batch_size": 128},
+        #  "cov": {"num_steps": 10, "cluster_alg": "tree", "distance": True, "batch_size": 128},
          "jac": {"num_steps": 10, "cluster_alg": "tree", "distance": True, "batch_size": 128},
          "hop": {"cluster_alg": "tree", "distance": True},
          "eucl": {"cluster_alg": "tree", "distance": True},
