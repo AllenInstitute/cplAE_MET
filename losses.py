@@ -18,7 +18,7 @@ def apply_mask(dct, mask):
 def get_variances(met_data, specimens, formats, transformations, device, dtype):
     transformations = {} if transformations is None else transformations
     variances = {}
-    for modal_forms in formats.values():
+    for modal_forms in formats:
         for form in modal_forms:
             spec_ids = met_data.query(specimens, formats = [(form,)], outputs = ["specimen_id"])["specimen_id"]
             np.random.RandomState(42).shuffle(spec_ids)
@@ -431,8 +431,9 @@ class MSE():
 
 class SampleR2():
     def __init__(self, config, met_data, specimens):
-        variances = get_variances(met_data, specimens, config["formats"], 
-                               config["transform"], config["device"], torch.float32)
+        active_forms = [config["formats"][modal] for modal in config["modalities"]]
+        variances = get_variances(met_data, specimens, active_forms, 
+                                  config["transform"], config["device"], torch.float32)
         self.var_means = {form: torch.nanmean(var) for (form, var) in variances.items()}
 
     def __call__(self, x, xr, form):
