@@ -6,7 +6,7 @@ import torch
 # use the align_query function to align the query dataset with a reference dataset using
 # Euclidean distances in the raw feature space.
 
-def get_mutual_neighbors(reference, query, neighborhood_size, batch_size = 128):
+def get_mutual_neighbors(reference, query, neighborhood_size, ref_batch_size = 128, query_batch_size = 128):
     # Calculate cross-dataset mutual nearest neighbors between reference and query datasets using
     # Euclidean distance. Reference and query must both have shape (samples, features), but the size of the
     # sample axis can differ. The neighborhood_size argument determines the number of neighbors within which
@@ -15,7 +15,9 @@ def get_mutual_neighbors(reference, query, neighborhood_size, batch_size = 128):
     # column.
 
     (neighbors_ref, neighbors_query) = ([], [])
-    for (data_1, data_2, results) in [(reference, query, neighbors_ref), (query, reference, neighbors_query)]:
+    params = [(reference, query, neighbors_ref, ref_batch_size), 
+              (query, reference, neighbors_query, query_batch_size)]
+    for (data_1, data_2, results, batch_size) in params:
         num_batches = math.ceil(len(data_1) / batch_size)
         for (start_i, end_i) in ((i*batch_size, (i+1)*batch_size) for i in range(num_batches)):
             print(f"Running {start_i+1}/{len(data_1)}            ", end = "\r")
@@ -56,14 +58,16 @@ def get_correction(reference, query, mutual_neighbors, num_anchors, kernel_scale
     (corrections, anchor_indices) = (torch.cat(corrections, 0), torch.cat(anchor_indices, 0))
     return (corrections, anchor_indices)
 
-def align_query(reference, query, neighborhood_size = 5, batch_size = 128, num_anchors = 100, kernel_scale = 1.0):
+def align_query(reference, query, neighborhood_size = 5, ref_batch_size = 128, query_batch_size = 128, 
+                num_anchors = 100, kernel_scale = 1.0):
     # Small convenience function to compute query correction. All arguments are directly passed to either the 
     # get_mutual_neighbors or get_correction functions. Returns the aligned query datatset.
 
     print("Determining neighborhood...")
-    mutual_neighbors = get_mutual_neighbors(reference, query, neighborhood_size, batch_size)
+    mutual_neighbors = get_mutual_neighbors(reference, query, neighborhood_size, ref_batch_size, query_batch_size)
     print("Computing correction...")
-    (correction, nearest_anchors) = get_correction(reference, query, mutual_neighbors, num_anchors, kernel_scale, batch_size)
+    (correction, nearest_anchors) = get_correction(reference, query, mutual_neighbors, num_anchors, kernel_scale, 
+                                                   query_batch_size)
     query_corr = query + correction
     print("Completed.                           ")
     return query_corr
