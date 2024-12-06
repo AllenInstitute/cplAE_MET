@@ -23,8 +23,9 @@ def get_mutual_neighbors(reference, query, neighborhood_size, batch_size = 128):
             neighbors = torch.argsort(dist, -1)[:, :neighborhood_size]
             results.append(neighbors)
     (neighbors_ref, neighbors_query) = (torch.cat(neighbors_ref), torch.cat(neighbors_query))
-    is_shared = (neighbors_query[neighbors_ref] == torch.arange(len(neighbors_ref))[:, None, None]).any(-1)
-    ref_indices = torch.repeat_interleave(torch.arange(len(neighbors_ref)), neighborhood_size)
+    neighbor_range = torch.arange(len(neighbors_ref), device = neighbors_ref.device)
+    is_shared = (neighbors_query[neighbors_ref] == neighbor_range[:, None, None]).any(-1)
+    ref_indices = torch.repeat_interleave(neighbor_range, neighborhood_size)
     paired = torch.stack([ref_indices, neighbors_ref.flatten()], -1)
     mutual_nn = paired[is_shared.flatten()]
     return mutual_nn
