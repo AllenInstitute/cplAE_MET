@@ -120,9 +120,9 @@ class Yielder():
 
 class MET_Data():
     def __init__(self, hdf5_paths, **data_keys):
-        hdf5_files = {name: h5py.File(path, "r") for (name, path) in hdf5_paths.items()}
-        (self.specimens, self.id_map, self.valid, self.local_id_map, self.data) = get_specimens_data(hdf5_files, data_keys)
-        self._meta = get_meta(hdf5_files.values(), self.specimens)
+        self.hdf5_files = {name: h5py.File(path, "r") for (name, path) in hdf5_paths.items()}
+        (self.specimens, self.id_map, self.valid, self.local_id_map, self.data) = get_specimens_data(self.hdf5_files, data_keys)
+        self._meta = get_meta(self.hdf5_files.values(), self.specimens)
         self._data_funcs = {form: Yielder(self.data[form], self.local_id_map[form], len(self.specimens)) for form in data_keys}
 
     def __getitem__(self, id_str):
@@ -201,6 +201,10 @@ class MET_Data():
         if verbose:
             print(f"Caching {form}...")
         self._data_funcs[form].cache_data(specimen_idxs)
+
+    def close(self):
+        for h5_file in self.hdf5_files.values():
+            h5_file.close()
 
 class MET_Simulated():
     def __init__(self, config):
