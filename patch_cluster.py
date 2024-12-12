@@ -153,28 +153,22 @@ def get_model(model_path):
     decoders = {fold: {modal: arms["dec"].to(device) for (modal, arms) in fold_dict["best"].model_dict.items()}
                 for (fold, fold_dict) in experiment["folds"].items()}
     mappers = {fold: {tuple(modal_str.split("-")): mapper.to(device) for (modal_str, mapper) in fold_dict["best"].mappers.items()}
-                     if fold_dict["best"].mappers else {}
+                     if fold_dict["best"].mappers else {
+                         (modal_1, modal_2): lambda z: (z, torch.diag_embed(torch.ones_like(z))) 
+                         for modal_1 in fold_dict["best"].model_dict for modal_2 in fold_dict["best"].model_dict}
                for (fold, fold_dict) in experiment["folds"].items()}
     return (encoders, decoders, mappers)
 
-def get_data():
-    data_paths = {
-        "patchseq": "data/patchseq.hdf5",
-        "EM": "data/EM.hdf5",
-        "smartseq": "data/smartseq.hdf5",
-        "10x": "data/10x.hdf5",
-        "trunc": "data/patch_smart_trunc.hdf5"}
+def get_data(sp_ids = None):
+    data_paths = {"patchseq": "data/patchseq.hdf5"}
     data_keys = {
-        "logcpm": [["patchseq", "logcpm"], ["smartseq", "logcpm_aligned"]],
+        "logcpm": [["patchseq", "logcpm"]],
         "pca-ipfx": [["patchseq", "pca-ipfx"]],
-        "arbors": [["patchseq", "arbors"], ["EM", "arbors"]]}
+        "arbors": [["patchseq", "arbors"]]}
     met_data = MET_Data(data_paths, **data_keys)
-    for form in ["logcpm", "pca-ipfx", "arbors"]:
-        met_data.cache_data(form)
-    raw_data = met_data.query(formats = [("logcpm", "pca-ipfx", "arbors")], outputs = ["logcpm", "pca-ipfx", "arbors", "cluster_label"])
-    cluster_labels = np.char.strip(raw_data["cluster_label"])
+    raw_data = met_data.query(sp_ids, formats = [("logcpm", "pca-ipfx", "arbors")])
     data = {form: torch.from_numpy(raw_data[form]).float().to(device) for form in ["logcpm", "pca-ipfx", "arbors"]}
-    return (data, cluster_labels)
+    return (data, raw_data["specimen_id"], raw_data["cluster_label"], raw_data["met_type"])
 
 def get_model_outputs(data, encoders, decoders, mappers, forms):
     with torch.no_grad():
@@ -209,7 +203,7 @@ def run(file_path, model_path, method_funcs, method_params, merge_list, dijkstra
     forms = {"T": "logcpm", "E": "pca-ipfx", "M": "arbors"}
     clustering_funcs = {"medoid": get_kmedoid_labels, "tree": get_agglomerative_labels}
     (encoders, decoders, mappers) = get_model(model_path)
-    (data, cluster_labels) = get_data()
+    (data, sp_id,  t_type, _) = get_data()
     (means, transfs, recons) = get_model_outputs(data, encoders, decoders, mappers, forms)
     
     results = {method: {} for method in method_funcs}
@@ -219,7 +213,7 @@ def run(file_path, model_path, method_funcs, method_params, merge_list, dijkstra
                 print(f"{modals[0]} -> {modals[1]} ({fold}/{len(recons)}) -- Computing {method} distances                       ", end = "\r")
                 if method == "raw":
                     raw_data = data[forms[modals[1]]].numpy(force = True)
-                    results[method] = get_raw_labels(results[method], modals, fold, cluster_labels, raw_data, merge_list)
+                    results[method] = get_raw_labels(results[method], modals, fold, t_type, raw_data, merge_list)
                 else:
                     clustering_func = clustering_funcs[method_params[method]["cluster_alg"]]
                     (modal_mean, modal_transf) = (means[fold][modals], transfs[fold][modals])
@@ -227,21 +221,28 @@ def run(file_path, model_path, method_funcs, method_params, merge_list, dijkstra
                     distances = get_distances(func, modal_mean, z_transf = modal_transf, decoder = decoders[fold][modals[1]], **method_params[method])
                     if dijkstra:
                         distances = get_nearest_neighbor_distances(distances, modal_mean, 10)
-                    results[method] = clustering_func(results[method], modals, fold, cluster_labels, distances.numpy(force = True), merge_list)
+                    results[method] = clustering_func(results[method], modals, fold, t_type, distances.numpy(force = True), merge_list)
         with open(file_path, "wb") as target:
-            pk.dump({"pred_labels": results, "true_labels": cluster_labels}, target)
+            pk.dump({"pred_labels": results, "specimen_ids": sp_id}, target)
 
-def plot(file_path, score_func, graph_text, score_label):
+def plot_supervised_score(file_path, label_type, score_func, graph_text, score_label):
     with open(file_path, "rb") as target:
         results = pk.load(target)
-    (pred_labels, true_labels) = (results["pred_labels"], results["true_labels"])
+    (pred_labels, sp_ids) = (results["pred_labels"], results["specimen_ids"])
+    (t_type, met_type) = get_data(sp_ids)[2:]
+    if label_type == "met_type":
+        true_labels = met_type
+    elif label_type == "t_type":
+        true_labels = t_type
+    else:
+        raise ValueError(f'Label type "{label_type}" not recognized.')
     plot_dict = {"Method": [], "Input Modality": [], "Output Modality": [], "Merge": [], "Fold": [], "Rand Score": []}
     for (method, method_dict) in pred_labels.items():
         if method == "hop": continue
         for ((in_modal, out_modal), modal_dict) in method_dict.items():
             for (merge, merge_dict) in modal_dict.items():
                 print(f"Generating {method} scores: {in_modal} -> {out_modal}                     ", end = "\r")
-                true_merged = get_merge_func(merge)(true_labels)
+                true_merged = get_merge_func(merge)(true_labels) if label_type == "t_type" else true_labels
                 label_map = {label:i for (i, label) in enumerate(np.unique(true_merged))}
                 true_indices = np.asarray([label_map[label] for label in true_merged])
                 for (fold, pred_labels) in merge_dict.items():
@@ -261,19 +262,19 @@ def plot(file_path, score_func, graph_text, score_label):
     plt.close()
 
 args = [
-    {"model_path": "results/old_results/simple_loss/cross", 
-     "file_path": "data/clustering/cluster_vanilla.pk",
+    {"model_path": "results/old_results/baselines/met_10d_mse", 
+     "file_path": "results/clustering/no_dijkstra_baseline.pk",
      "title": "",
      "method_funcs": {
-        # "cov": get_cov_distance, 
+        "cov": get_cov_distance, 
         "jac": get_decoded_distance, 
-        "hop": get_hop_distance, 
+        # "hop": get_hop_distance, 
         "eucl": get_euclidean_distance, 
         "raw": None},
      "method_params": {
-        #  "cov": {"num_steps": 10, "cluster_alg": "tree", "distance": True, "batch_size": 128},
+         "cov": {"num_steps": 10, "cluster_alg": "tree", "distance": True, "batch_size": 128},
          "jac": {"num_steps": 10, "cluster_alg": "tree", "distance": True, "batch_size": 128},
-         "hop": {"cluster_alg": "tree", "distance": True},
+        #  "hop": {"cluster_alg": "tree", "distance": True},
          "eucl": {"cluster_alg": "tree", "distance": True},
         },
     "merge_list": list(range(len(next(iter(merge_map.values()))) - 1)),
@@ -282,4 +283,4 @@ args = [
 
 for kwargs in args:
     run(**kwargs)
-    # plot(kwargs["file_path"], adjusted_rand_score, graph_text = kwargs["title"], score_label = "Rand Score")
+    # plot_supervised_score(kwargs["file_path"], "t_type", adjusted_rand_score, graph_text = kwargs["title"], score_label = "Rand Score")
