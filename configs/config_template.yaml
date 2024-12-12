@@ -172,13 +172,14 @@ architecture:
     dropout: 0.1
     std_frac: 0.05
   sholl:
-    data_size: [100]
+    data_size: [190, 4]
     out_activation: relu
+    int_activation: relu
+    conv_params: [[[20], [1], 10]] # [(kernel shape, stride, channels), ...]
     init: [64]
     mean: [64]
-    cov: [64]
-    dropout: 0.1
-    std_frac: 0.0
+    cov: [10]
+    dropout: 0.0
   morphometric_arbors:
     arbors_size: [120, 4, 4]
     feat_size: [75]
