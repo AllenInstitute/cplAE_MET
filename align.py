@@ -49,7 +49,8 @@ def get_correction(reference, query, mutual_neighbors, num_anchors, kernel_scale
         query_dist = torch.square(query[start_i:end_i, None] - query_anchors[None]).sum(-1)**0.5
         nearest_anchors_index = torch.argsort(query_dist, -1)[:, :num_anchors]
         nearest_dists = query_dist[torch.arange(query_dist.shape[0])[:, None], nearest_anchors_index]
-        kernel = torch.exp(-nearest_dists/kernel_scale)
+        dists_centered = nearest_dists - nearest_dists.amin(-1, keepdim = True)
+        kernel = torch.exp(-dists_centered/kernel_scale)
         weights = kernel / kernel.sum(-1, keepdim = True)
         anchor_diff = ref_anchors[nearest_anchors_index] - query_anchors[nearest_anchors_index]
         correction = torch.einsum("nk,nkx->nx", weights, anchor_diff)
