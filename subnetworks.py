@@ -254,12 +254,12 @@ class Dec_arbors(nn.Module):
         x_forms = {self.form: x}
         return x_forms
 
-class Enc_ivscc(nn.Module):
+class Enc_morphometric(nn.Module):
     def __init__(self, forms, architecture, latent_dim, dataset, variational):
         super().__init__()
         self.form = next(iter(forms))
         gauss_frac = architecture["std_frac"]
-        gauss_std = get_gauss_baselines(dataset, "ivscc").astype("float32")
+        gauss_std = get_gauss_baselines(dataset, self.form).astype("float32")
         self.gauss_std = torch.nn.Parameter(torch.from_numpy(gauss_std*gauss_frac), False)
 
         input_dim = architecture["data_size"][0]
@@ -300,7 +300,7 @@ class Enc_ivscc(nn.Module):
             transf = mean[:, None] * torch.zeros_like(mean)[..., None]
         return (mean, transf)
 
-class Dec_ivscc(nn.Module):
+class Dec_morphometric(nn.Module):
     def __init__(self, forms, architecture, latent_dim, dataset):
         super().__init__()
         self.form = next(iter(forms))
@@ -314,37 +314,43 @@ class Dec_ivscc(nn.Module):
         x_forms = {self.form: x}
         return x_forms
 
-class Enc_arbors_ivscc(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset, variational):
+class Enc_arbors_features(nn.Module):
+    def __init__(self, forms, architecture, latent_dim, dataset, variational):
         super().__init__()
-        ((height, radius, process), conv_params) = (architecture["arbors_size"], architecture["conv_params"])
-        conv_out = get_conv_out_size(conv_params, height)*(conv_params[-1][2] if conv_params else radius*process)
-        conv_layers = get_conv(conv_params, radius*process, nn.ReLU, False) if conv_params else []
+        self.feat_name = [form for form in forms if form != "arbors"][0]
+
+        (data_dims, process) = (architecture["arbors_size"][:-1], architecture["arbors_size"][-1])
+        conv_params = architecture["conv_params"]
+        conv_output_dims = get_conv_out_size(conv_params, *data_dims)[0]
+        conv_out = np.prod(conv_output_dims)*(conv_params[-1][2] if conv_params else process)
+        conv_layers = get_conv(conv_params, process, activations["relu"], False) if conv_params else []
         conv_layers.append(nn.Flatten())
 
-        (ivscc_size, ivscc_dims) = (architecture["ivscc_size"][0], architecture["ivscc"])
-        ivscc_out = ivscc_dims[-1] if ivscc_dims else ivscc_size
-        ivscc_layers = get_dense(ivscc_size, ivscc_dims[-1], ivscc_dims[:-1], nn.ReLU) if ivscc_dims else []
+        (feat_input_dim, feat_params) = (architecture["feat_size"][0], architecture["feat_params"])
+        feat_out = feat_params[-1] if feat_params else feat_input_dim
+        feat_layers = get_dense(feat_input_dim, feat_out, feat_params[:-1], nn.ReLU) if feat_params else []
 
         shared_dims = architecture["shared"]
-        shared_in = ivscc_out + conv_out
-        shared_layers = get_dense(shared_in, shared_dims[-1], shared_dims[:-1], nn.ReLU, True) if shared_dims else []
+        shared_in = feat_out + conv_out
         shared_out = shared_dims[-1] if shared_dims else shared_in
+        shared_layers = get_dense(shared_in, shared_out, shared_dims[:-1], nn.ReLU, True) if shared_dims else []
         
         (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
         mean_actvs = [nn.ReLU]*len(mean_dims) + [None]
         transf_actvs = [nn.ReLU]*len(transf_dims) + [None]
 
+        dim = len(data_dims)
+        self.permutation = (0, dim + 1, *range(1, dim + 1))
         self.conv_segment = nn.Sequential(*conv_layers)
-        self.ivscc_segment = nn.Sequential(*ivscc_layers)
+        self.feat_segment = nn.Sequential(*feat_layers)
         self.shared_segment = nn.Sequential(*shared_layers)
-        self.mean_layer = nn.Sequential(*get_dense(shared_out, latent_dim, mean_dims, mean_actvs))
+        self.mean_layer = nn.Sequential(*get_dense(shared_out, latent_dim, mean_dims, mean_actvs, False))
         if variational:
             self.transf_layer = nn.Sequential(*get_dense(shared_out, latent_dim**2, transf_dims, transf_actvs))
         
         self.softplus = nn.Softplus()
         self.arbor_drop = torch.nn.Dropout(architecture["arbors_dropout"])
-        self.ivscc_drop = torch.nn.Dropout(architecture["ivscc_dropout"])
+        self.feat_drop = torch.nn.Dropout(architecture["feat_dropout"])
         self.bn = nn.BatchNorm1d(latent_dim, momentum = 0.05, affine = False)
         self.latent_dim = latent_dim
         self.variational = variational
@@ -352,16 +358,16 @@ class Enc_arbors_ivscc(nn.Module):
     def forward(self, x_forms):
         # Arbor sub-output:
         x = x_forms["arbors"]
-        x = torch.flatten(x, 2).transpose(1, 2)
+        x = torch.permute(x, self.permutation)
         x = self.arbor_drop(x)
         arbor_x = self.conv_segment(x)
-        # IVSCC sub-output:
-        x = x_forms["ivscc"]
+        # Feature sub-output:
+        x = x_forms[self.feat_name]
         x = torch.nan_to_num(x)
-        x = self.ivscc_drop(x)
-        ivscc_x = self.ivscc_segment(x)
+        x = self.feat_drop(x)
+        feat_x = self.feat_segment(x)
         # Dense output:
-        x = torch.concat([arbor_x, ivscc_x], 1)
+        x = torch.concat([arbor_x, feat_x], 1)
         x = self.shared_segment(x)
         mean = self.bn(self.mean_layer(x))
         if self.variational:
@@ -372,52 +378,169 @@ class Enc_arbors_ivscc(nn.Module):
             transf = mean[:, None] * torch.zeros_like(mean)[..., None]
         return (mean, transf)
 
-class Dec_arbors_ivscc(nn.Module):
-    def __init__(self, architecture, latent_dim, dataset):
+class Dec_arbors_features(nn.Module):
+    def __init__(self, forms, architecture, latent_dim, dataset):
         super().__init__()
-        ((height, radius, process), conv_params) = (architecture["arbors_size"], architecture["conv_params"][::-1])
-        conv_input = get_conv_out_size(conv_params, height)*(conv_params[0][2] if conv_params else radius*process)
-        unflat_length = get_conv_out_size(conv_params[::-1], height)
-        unflat_channels = conv_params[0][2] if conv_params else radius*process
+        self.feat_name = [form for form in forms if form != "arbors"][0]
+
+        (conv_dims, process) = (architecture["arbors_size"][:-1], architecture["arbors_size"][-1])
+        conv_params = architecture["conv_params"][::-1]
         arbors_out_actv = activations[architecture["arbors_activation"]]
-        conv_actvs = [nn.ReLU]*len(conv_params[:-1]) + [None]
-        conv_T_layers = get_conv(conv_params, radius*process, conv_actvs, True) if conv_params else []
-        conv_T_layers.insert(0, nn.Unflatten(1, (unflat_channels, unflat_length)))
-        if conv_T_layers:
-            conv_T_layers.insert(1, nn.ReLU())
-        conv_T_layers.append(arbors_out_actv())
+        conv_actvs = [nn.ReLU]*len(conv_params[:-1]) + [arbors_out_actv]
+        (unflat_dims, out_padding) = get_conv_out_size(conv_params[::-1], *conv_dims)
+        unflat_channels = conv_params[0][2] if conv_params else process
+        conv_T_layers = get_conv(conv_params, process, conv_actvs, True, out_padding[::-1]) if conv_params else []
+        conv_T_layers.insert(0, nn.Unflatten(1, (unflat_channels, *unflat_dims)))
 
-        (ivscc_size, ivscc_dims) = (architecture["ivscc_size"][0], architecture["ivscc"])
-        ivscc_input = ivscc_dims[0] if ivscc_dims else ivscc_size
-        ivscc_out_actv = activations[architecture["ivscc_activation"]]
-        ivscc_actvs = [nn.ReLU]*len(ivscc_dims) + [None]
-        ivscc_layers = get_dense(ivscc_input, ivscc_size, ivscc_dims[1:], ivscc_actvs) if ivscc_dims else []
-        if ivscc_layers:
-            ivscc_layers.insert(0, nn.ReLU())
-        ivscc_layers.append(ivscc_out_actv())
+        (feat_size, feat_dims) = (architecture["feat_size"][0], architecture["feat_params"])
+        feat_input = feat_dims[0] if feat_dims else feat_size
+        feat_out_actv = activations[architecture["feat_activation"]]
+        feat_actvs = [nn.ReLU]*len(feat_dims) + [None]
+        feat_layers = get_dense(feat_input, feat_size, feat_dims[1:], feat_actvs) if feat_dims else []
+        if feat_layers:
+            feat_layers.insert(0, nn.ReLU())
+        feat_layers.append(feat_out_actv())
 
+        conv_input = np.prod(unflat_dims)*unflat_channels
         shared_dims = (architecture["shared"] + architecture["mean"])[::-1]
-        shared_out = ivscc_input + conv_input
+        shared_out = feat_input + conv_input
         shared_actvs = [nn.ReLU]*len(shared_dims) + [None]
         shared_layers = get_dense(latent_dim, shared_out, shared_dims, shared_actvs, True)
 
+        dim = len(conv_dims)
+        self.permutation = (0, *range(2, dim + 2), 1)
         self.shared_segment = nn.Sequential(*shared_layers)
         self.conv_T_segment = nn.Sequential(*conv_T_layers)
-        self.ivscc_segment = nn.Sequential(*ivscc_layers)
-        self.reshape_to_arbors = nn.Unflatten(2, (radius, process))
-        self.ivscc_input = ivscc_input
+        self.feat_segment = nn.Sequential(*feat_layers)
+        self.feat_input = feat_input
 
     def forward(self, x):
         # Shared intermediate:
         x = self.shared_segment(x)
-        ivscc_x = x[:, :self.ivscc_input]
-        arbors_x = x[:, self.ivscc_input:]
+        feat_x = x[:, :self.feat_input]
+        arbors_x = x[:, self.feat_input:]
         # Arbor output:
         arbors_x = self.conv_T_segment(arbors_x)
-        arbors_x = self.reshape_to_arbors(arbors_x.transpose(1, 2))
-        # IVSCC output:
-        ivscc_x = self.ivscc_segment(ivscc_x)
-        return {"arbors": arbors_x, "ivscc": ivscc_x}
+        arbors_x = torch.permute(arbors_x, self.permutation)
+        # Feature output:
+        feat_x = self.feat_segment(feat_x)
+        return {"arbors": arbors_x, self.feat_name: feat_x}
+
+class Enc_arbors_sholl(nn.Module):
+    def __init__(self, forms, architecture, latent_dim, dataset, variational):
+        super().__init__()
+
+        (arbor_dims, arbor_process) = (architecture["arbors_size"][:-1], architecture["arbors_size"][-1])
+        arbor_params = architecture["arbor_params"]
+        arbor_output_dims = get_conv_out_size(arbor_params, *arbor_dims)[0]
+        arbor_out = np.prod(arbor_output_dims)*(arbor_params[-1][2] if arbor_params else arbor_process)
+        arbor_conv_layers = get_conv(arbor_params, arbor_process, activations["relu"], False) if arbor_params else []
+        arbor_conv_layers.append(nn.Flatten())
+
+        (sholl_dims, sholl_process) = (architecture["sholl_size"][:-1], architecture["sholl_size"][-1])
+        sholl_params = architecture["sholl_params"]
+        sholl_output_dims = get_conv_out_size(sholl_params, *sholl_dims)[0]
+        sholl_out = np.prod(sholl_output_dims)*(sholl_params[-1][2] if sholl_params else sholl_process)
+        sholl_conv_layers = get_conv(sholl_params, sholl_process, activations["relu"], False) if sholl_params else []
+        sholl_conv_layers.append(nn.Flatten())
+
+        shared_dims = architecture["shared"]
+        shared_in = sholl_out + arbor_out
+        shared_out = shared_dims[-1] if shared_dims else shared_in
+        shared_layers = get_dense(shared_in, shared_out, shared_dims[:-1], nn.ReLU, True) if shared_dims else []
+        
+        (mean_dims, transf_dims) = (architecture["mean"], architecture["cov"])
+        mean_actvs = [nn.ReLU]*len(mean_dims) + [None]
+        transf_actvs = [nn.ReLU]*len(transf_dims) + [None]
+
+        (arbor_dim, sholl_dim) = (len(arbor_dims), len(sholl_dims))
+        self.arbor_permutation = (0, arbor_dim + 1, *range(1, arbor_dim + 1))
+        self.sholl_permutation = (0, sholl_dim + 1, *range(1, sholl_dim + 1))
+        self.arbor_segment = nn.Sequential(*arbor_conv_layers)
+        self.sholl_segment = nn.Sequential(*sholl_conv_layers)
+        self.shared_segment = nn.Sequential(*shared_layers)
+        self.mean_layer = nn.Sequential(*get_dense(shared_out, latent_dim, mean_dims, mean_actvs, False))
+        if variational:
+            self.transf_layer = nn.Sequential(*get_dense(shared_out, latent_dim**2, transf_dims, transf_actvs))
+        
+        self.softplus = nn.Softplus()
+        self.arbor_drop = torch.nn.Dropout(architecture["arbors_dropout"])
+        self.sholl_drop = torch.nn.Dropout(architecture["sholl_dropout"])
+        self.bn = nn.BatchNorm1d(latent_dim, momentum = 0.05, affine = False)
+        self.latent_dim = latent_dim
+        self.variational = variational
+
+    def forward(self, x_forms):
+        # Arbor sub-output:
+        x = x_forms["arbors"]
+        x = torch.permute(x, self.arbor_permutation)
+        x = self.arbor_drop(x)
+        arbor_x = self.arbor_segment(x)
+        # Sholl sub-output:
+        x = x_forms["sholl"]
+        x = torch.permute(x, self.sholl_permutation)
+        x = self.sholl_drop(x)
+        sholl_x = self.sholl_segment(x)
+        # Dense output:
+        x = torch.concat([arbor_x, sholl_x], 1)
+        x = self.shared_segment(x)
+        mean = self.bn(self.mean_layer(x))
+        if self.variational:
+            transf_raw = self.transf_layer(x).reshape(-1, self.latent_dim, self.latent_dim)
+            diagonals = self.softplus(torch.diagonal(transf_raw, 0, -2, -1))
+            transf = torch.diag_embed(diagonals) + torch.tril(transf_raw, -1)
+        else:
+            transf = mean[:, None] * torch.zeros_like(mean)[..., None]
+        return (mean, transf)
+
+class Dec_arbors_sholl(nn.Module):
+    def __init__(self, forms, architecture, latent_dim, dataset):
+        super().__init__()
+
+        (arbor_dims, arbor_process) = (architecture["arbors_size"][:-1], architecture["arbors_size"][-1])
+        arbor_params = architecture["arbor_params"][::-1]
+        arbors_out_actv = activations[architecture["arbors_activation"]]
+        arbor_actvs = [nn.ReLU]*len(arbor_params[:-1]) + [arbors_out_actv]
+        (arbor_unflat_dims, arbor_out_padding) = get_conv_out_size(arbor_params[::-1], *arbor_dims)
+        arbor_unflat_channels = arbor_params[0][2] if arbor_params else arbor_process
+        arbor_T_layers = get_conv(arbor_params, arbor_process, arbor_actvs, True, arbor_out_padding[::-1]) if arbor_params else []
+        arbor_T_layers.insert(0, nn.Unflatten(1, (arbor_unflat_channels, *arbor_unflat_dims)))
+
+        (sholl_dims, sholl_process) = (architecture["sholl_size"][:-1], architecture["sholl_size"][-1])
+        sholl_params = architecture["sholl_params"][::-1]
+        sholl_out_actv = activations[architecture["sholl_activation"]]
+        sholl_actvs = [nn.ReLU]*len(sholl_params[:-1]) + [sholl_out_actv]
+        (sholl_unflat_dims, sholl_out_padding) = get_conv_out_size(sholl_params[::-1], *sholl_dims)
+        sholl_unflat_channels = sholl_params[0][2] if sholl_params else sholl_process
+        sholl_T_layers = get_conv(sholl_params, sholl_process, sholl_actvs, True, sholl_out_padding[::-1]) if sholl_params else []
+        sholl_T_layers.insert(0, nn.Unflatten(1, (sholl_unflat_channels, *sholl_unflat_dims)))
+
+        arbor_input = np.prod(arbor_unflat_dims)*arbor_unflat_channels
+        sholl_input = np.prod(sholl_unflat_dims)*sholl_unflat_channels
+        shared_out = arbor_input + sholl_input
+        shared_dims = (architecture["shared"] + architecture["mean"])[::-1]
+        shared_actvs = [nn.ReLU]*len(shared_dims) + [None]
+        shared_layers = get_dense(latent_dim, shared_out, shared_dims, shared_actvs, True)
+
+        self.arbor_permutation = (0, *range(2, len(arbor_dims) + 2), 1)
+        self.sholl_permutation = (0, *range(2, len(sholl_dims) + 2), 1)
+        self.shared_segment = nn.Sequential(*shared_layers)
+        self.arbor_T_segment = nn.Sequential(*arbor_T_layers)
+        self.sholl_T_segment = nn.Sequential(*sholl_T_layers)
+        self.arbor_input = arbor_input
+
+    def forward(self, x):
+        # Shared intermediate:
+        x = self.shared_segment(x)
+        arbors_x = x[:, :self.arbor_input]
+        sholl_x = x[:, self.arbor_input:]
+        # Arbor output:
+        arbors_x = self.arbor_T_segment(arbors_x)
+        arbors_x = torch.permute(arbors_x, self.arbor_permutation)
+        # Sholl output:
+        sholl_x = self.sholl_T_segment(sholl_x)
+        sholl_x = torch.permute(sholl_x, self.sholl_permutation)
+        return {"arbors": arbors_x, "sholl": sholl_x}
 
 class Enc_captions(nn.Module):
     def __init__(self, forms, architecture, latent_dim, dataset, variational):
@@ -604,13 +727,21 @@ modules = {
         "enc": Enc_arbors,
         "dec": Dec_arbors
         },
-    frozenset(["ivscc"]): {
-        "enc": Enc_ivscc,
-        "dec": Dec_ivscc
+    frozenset(["morphometric"]): {
+        "enc": Enc_morphometric,
+        "dec": Dec_morphometric
     },
-    frozenset(["ivscc", "arbors"]): {
-        "enc": Enc_arbors_ivscc,
-        "dec": Dec_arbors_ivscc
+    frozenset(["sholl"]): {
+        "enc": Enc_arbors,
+        "dec": Dec_arbors
+    },
+    frozenset(["morphometric", "arbors"]): {
+        "enc": Enc_arbors_features,
+        "dec": Dec_arbors_features
+    },
+    frozenset(["sholl", "arbors"]): {
+        "enc": Enc_arbors_sholl,
+        "dec": Dec_arbors_sholl
     },
     frozenset(["m0"]): {
         "enc": Enc_arbors,

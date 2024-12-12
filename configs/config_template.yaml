@@ -8,6 +8,7 @@ device: "cpu"
 data_config: 
   data_paths: 
     patchseq: data/patchseq.hdf5
+    ME: data/ME.hdf5
     EM: data/EM.hdf5
     smartseq: data/smartseq.hdf5
   formats:
@@ -16,11 +17,19 @@ data_config:
       cache: True
       unpack: False
     pca-ipfx:
-      keys: [[patchseq, pca-ipfx]]
+      keys: [[patchseq, pca-ipfx], [ME, pca-ipfx]]
       cache: True
       unpack: False
     arbors:
-      keys: [[patchseq, arbors], [EM, arbors]]
+      keys: [[patchseq, arbors], [ME, arbors], [EM, arbors]]
+      cache: True
+      unpack: False
+    morphometric:
+      keys: [[patchseq, morphometric]]
+      cache: True
+      unpack: False
+    sholl:
+      keys: [[patchseq, sholl]]
       cache: True
       unpack: False
 
@@ -154,7 +163,7 @@ architecture:
     mean: [64]
     cov: [10]
     dropout: 0.0
-  ivscc:
+  morphometric:
     data_size: [75]
     out_activation: linear
     init: [64]
@@ -162,18 +171,38 @@ architecture:
     cov: [64]
     dropout: 0.1
     std_frac: 0.05
-  ivscc_arbors:
+  sholl:
+    data_size: [100]
+    out_activation: relu
+    init: [64]
+    mean: [64]
+    cov: [64]
+    dropout: 0.1
+    std_frac: 0.0
+  morphometric_arbors:
     arbors_size: [120, 4, 4]
-    ivscc_size: [75]
-    conv_params: [[6, 2, 10], [6, 2, 10]] # [(kernel length, stride, channels), ...]
-    ivscc: [64]
+    feat_size: [75]
+    conv_params: [[[20, 4], [1, 1], 10]] # [(kernel shape, stride, channels), ...]
+    feat_params: [64]
     shared: [256]
     mean: [128]
     cov: [128]
     arbors_activation: relu
-    ivscc_activation: linear
+    feat_activation: linear
     arbors_dropout: 0.0
-    ivscc_dropout: 0.0
+    feat_dropout: 0.0
+  sholl_arbors:
+    arbors_size: [120, 4, 4]
+    sholl_size: [190, 4]
+    arbor_params: [[[20, 4], [1, 1], 10]] # [(kernel shape, stride, channels), ...]
+    sholl_params: [[[20], [1], 10]] # [(kernel shape, stride, channels), ...]
+    shared: [256]
+    mean: [128]
+    cov: [128]
+    arbors_activation: relu
+    sholl_activation: relu
+    arbors_dropout: 0.0
+    sholl_dropout: 0.0
 
 # Set loss weights (used when computing the combined loss scalar)
 elbo_weights:
