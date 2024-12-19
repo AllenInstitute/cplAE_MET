@@ -542,34 +542,6 @@ class Dec_arbors_sholl(nn.Module):
         sholl_x = torch.permute(sholl_x, self.sholl_permutation)
         return {"arbors": arbors_x, "sholl": sholl_x}
 
-class Enc_captions(nn.Module):
-    def __init__(self, forms, architecture, latent_dim, dataset, variational):
-        super().__init__()
-        self.form = next(iter(forms))
-        self.inner_module = Enc_arbors(forms, architecture, latent_dim, dataset, variational)
-        self.embedder = nn.Linear(architecture["vocab_size"], architecture["data_size"][1])
-        self.vocab_size = architecture["vocab_size"]
-
-    def forward(self, x_forms):
-        x = x_forms[self.form].long()
-        x = torch.nn.functional.one_hot(x, self.vocab_size).float()
-        x = self.embedder(x).unsqueeze(-1)
-        (means, transfs) = self.inner_module({self.form: x})
-        return (means, transfs)
-
-class Dec_captions(nn.Module):
-    def __init__(self, forms, architecture, latent_dim, dataset):
-        super().__init__()
-        self.form = next(iter(forms))
-        self.inner_module = Dec_arbors(forms, architecture, latent_dim, dataset)
-        self.deembedder = nn.Linear(architecture["data_size"][1], architecture["vocab_size"])
-        self.softmax = nn.Softmax(-1)
-
-    def forward(self, x):
-        x = self.inner_module(x)[self.form].squeeze(-1)
-        x = self.deembedder(x)
-        return {self.form: x}
-
 class Enc_Dummy(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
@@ -599,17 +571,6 @@ class Dec_Dummy(nn.Module):
             xr = 0*self.dummy_param + mean.tile([x.shape[0]] + self.axis_tuples[form])
             x_forms[form] = xr
         return x_forms
-
-class Coupler(nn.Module):
-    def __init__(self, layer_dims, dataset):
-        super().__init__()
-        actvs = [nn.ReLU]*len(layer_dims[1:-1]) + [None]
-        layers = get_dense(layer_dims[0], layer_dims[-1], layer_dims[1:-1], actvs, True)
-        self.network = nn.Sequential(*layers)
-
-    def forward(self, x):
-        x = self.network(x)
-        return x
     
 class Mapper(nn.Module):
     def __init__(self, init_hidden, mean_hidden, transf_hidden, latent_dim, fixed_mean):
@@ -632,55 +593,6 @@ class Mapper(nn.Module):
         diagonals = self.softplus(torch.diagonal(transf_raw, 0, -2, -1)) + 1e-4
         transf = torch.diag_embed(diagonals) + torch.tril(transf_raw, -1)
         return (mean, transf)
-
-class Decoder_Cov(torch.nn.Module):
-    def __init__(self, num_modalities, latent_dim, marg_var, skew_frac, fixed):
-        super().__init__()
-        self.fixed = fixed
-        self.marg_var = marg_var
-        if not fixed:
-            init_params = torch.randn([num_modalities, num_modalities])
-            self.params = torch.nn.Parameter(init_params.float())
-            self.softplus = torch.nn.Softplus()
-            self.num_modalities = num_modalities
-            self.eye = torch.nn.Parameter(torch.eye(latent_dim), False)
-        else:
-            self.cov = torch.nn.Parameter(get_skewed_cov(num_modalities, latent_dim, marg_var, skew_frac).float(), False)
-
-    def forward(self):
-        if not self.fixed:
-            diagonals = self.softplus(torch.diagonal(self.params, 0, -2, -1)) + 1e-4
-            chol = torch.diag_embed(diagonals) + torch.tril(self.params, -1)
-            chol = chol / torch.linalg.norm(chol, dim = 1, keepdim = True)
-            cov = self.marg_var*chol @ chol.T
-            high_d_cov = torch.einsum("ij,kl->ikjl", cov, self.eye)
-        else:
-            high_d_cov = self.cov + 0 # + 0 is necessary for proper TorchScript tracing
-        return high_d_cov
-
-def get_skewed_cov(num_modalities, latent_dim, marg_var, sym_frac):
-    # Implements a Householder reflection to generate a cov with principal component along
-    # vector [1, 1, ...., 1].
-
-    pivot_vec = torch.ones([num_modalities]) / num_modalities**0.5
-    pivot_vec[0] = pivot_vec[0] + torch.sign(pivot_vec[0])
-    unitary = torch.eye(num_modalities) - 2*pivot_vec[:, None]*pivot_vec[None]/torch.square(pivot_vec).sum()
-    diag = torch.full([num_modalities], (1 - sym_frac)/max(1, (num_modalities - 1)))
-    diag[0] = 1
-    cov = (diag[:, None]*unitary).T @ unitary
-    cov = marg_var*cov / torch.diag(cov)[None]
-    high_d_cov = torch.einsum("ij,kl->ikjl", cov, torch.eye(latent_dim))
-    return high_d_cov
-
-def get_coupler(config, train_dataset):
-    model = {}
-    for (in_modal, in_specs) in config["modal_specs"].items():
-        for (out_modal, out_specs) in config["modal_specs"].items():
-            if in_modal == out_modal:
-                continue
-            layer_dims = [in_specs["latent_dim"]] + config["hidden_dims"] + [out_specs["latent_dim"]]
-            model[f"{in_modal}-{out_modal}"] = Coupler(layer_dims, train_dataset)
-    return model
 
 def get_mapper(config, train_dataset):
     model = torch.nn.ModuleDict()
@@ -742,38 +654,5 @@ modules = {
     frozenset(["sholl", "arbors"]): {
         "enc": Enc_arbors_sholl,
         "dec": Dec_arbors_sholl
-    },
-    frozenset(["m0"]): {
-        "enc": Enc_arbors,
-        "dec": Dec_arbors
-    },
-    frozenset(["m1"]): {
-        "enc": Enc_arbors,
-        "dec": Dec_arbors
-    },
-    frozenset(["m2"]): {
-        "enc": Enc_arbors,
-        "dec": Dec_arbors
-    },
-    frozenset(["m3"]): {
-        "enc": Enc_arbors,
-        "dec": Dec_arbors
-    },
-    frozenset(["m4"]): {
-        "enc": Enc_arbors,
-        "dec": Dec_arbors
-    },
-    frozenset(["images"]): {
-        "enc": Enc_arbors,
-        "dec": Dec_arbors
-    },
-    frozenset(["captions"]): {
-        "enc": Enc_captions,
-        "dec": Dec_captions
     }
 }
-
-if __name__ == "__main__":
-    # cov = get_skewed_cov(3, 2, 10, 0.99)
-    cov = Decoder_Cov(3, 2)()
-    print(cov)

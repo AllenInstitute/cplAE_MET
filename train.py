@@ -50,41 +50,6 @@ class EarlyStopping():
         best_state = torch.load(self.exp_dir / "best_params.pt")
         model.load_state_dict(best_state)
 
-class GradFreezer():
-    def __init__(self, model, modules, loss_keys, patience):
-        self.modules = self.get_modules(model, modules)
-        self.loss_keys = loss_keys
-        self.patience = patience
-        self.counter = 0
-        self.best_epoch = 0
-        self.min_loss = np.inf
-        self.initialized = bool(self.modules)
-        self.frozen = False
-
-    def get_modules(self, model, module_strings):
-        modules = []
-        for string in module_strings:
-            (modal, enc_or_dec) = string.split("_")
-            module = model[modal][enc_or_dec]
-            modules.append(module)
-        return modules
-
-    def freeze_check(self, loss_dict, epoch):
-        if self.initialized and not self.frozen:
-            loss = sum([loss_dict[key] for key in self.loss_keys])
-            if loss < self.min_loss:
-                self.counter = 0
-                self.min_loss = loss
-                self.best_epoch = epoch
-            else:
-                self.counter += 1
-            freeze = self.counter > self.patience
-            if freeze:
-                for module in self.modules:
-                    module.requires_grad_(False)
-                self.frozen = True
-                print("Gradient frozen.")
-
 def apply_mask(dct, mask):
     masked = {key: value[mask] for (key, value) in dct.items()}
     return masked
@@ -118,7 +83,6 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     optimizer = torch.optim.Adam(model.parameters(), lr = config["learning_rate"])
     tb_writer = SummaryWriter(log_dir = exp_dir / "tn_board")
     stopper = EarlyStopping(exp_dir, config["patience"], config["improvement_frac"])
-    grad_freezer = GradFreezer(model, config["freeze_modules"], config["freeze_losses"], config["freeze_patience"])
     collate = get_collator(config["device"], torch.float32) # Converts tensors to desired device and type
     train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
@@ -129,7 +93,7 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     else:
         loss_class = ReconstructionLoss
     loss_handler = loss_class(config, train_dataset.MET, train_dataset.allowed_specimen_ids)
-    return (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_handler)
+    return (model, optimizer, tb_writer, stopper, train_loader, val_loader, loss_handler)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     # This function takes trains a model as specified in the passed configuration
@@ -138,7 +102,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     # instance, and also saves the model at regular intervals. At the end of each
     # epoch the training and validation losses are logged in Tensorboard.
     
-    (model, optimizer, tb_writer, stopper, grad_freezer, train_loader, val_loader, loss_handler) = train_setup(
+    (model, optimizer, tb_writer, stopper, train_loader, val_loader, loss_handler) = train_setup(
         exp_dir, config, train_dataset, val_dataset)
     model.to(config["device"])
     for epoch in range(config["num_epochs"]):
@@ -164,7 +128,6 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
         loss_handler.log(tb_writer, avg_losses, avg_val_losses, epoch + 1)
         print(f"Epoch {epoch} -- Train: {avg_losses['total']:.4e} | Val: {avg_val_losses['total']:.4e}")
-        grad_freezer.freeze_check(avg_val_losses, epoch)
         if stopper.stop_check(avg_val_losses["total"], model, epoch):
             break
     stopper.load_best_parameters(model)
