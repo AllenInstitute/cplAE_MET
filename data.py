@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from torch.utils.data import IterableDataset
 from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
 import h5py
 
 def powerset(iterable):
@@ -19,11 +20,12 @@ def powerset(iterable):
 
 def get_collator(device, dtype):
     def collate(X):
-        (X_dict, mask_dict, specimen_ids) = X
+        (X_dict, mask_dict, specimen_ids, labels) = X
         X_torch = {modal: {form: torch.from_numpy(arr).to(device, dtype = dtype) for (form, arr) in forms.items()}
                    for (modal, forms) in X_dict.items()}
         mask_torch = {modal: torch.from_numpy(arr).to(device) for (modal, arr) in mask_dict.items()}
-        return (X_torch, mask_torch, specimen_ids)
+        labels_torch = torch.from_numpy(labels).to(device)
+        return (X_torch, mask_torch, specimen_ids, labels_torch)
     return collate
 
 def filter_specimens(met_data, specimen_ids, config):
@@ -120,6 +122,10 @@ class MET_Data():
         (self.specimens, self.id_map, self.valid, self.local_id_map, self.data) = get_specimens_data(self.hdf5_files, data_keys)
         self._meta = get_meta(self.hdf5_files.values(), self.specimens)
         self._data_funcs = {form: Yielder(self.data[form], self.local_id_map[form], len(self.specimens)) for form in data_keys}
+        subclass_strings = np.vectorize(lambda elem: elem.split(" ")[0])(self._meta["cluster_label"])
+        self.labels = LabelEncoder().fit_transform(subclass_strings)
+        self.labels[subclass_strings == "nan"] = -1
+        self._meta["labels"] = self.labels
 
     def __getitem__(self, id_str):
         if id_str in self._meta:
@@ -268,8 +274,9 @@ class DeterministicDataset(IterableDataset):
             data = {modal: {form: func(indices) for (form, func) in formats.items()}
                     for (modal, formats) in self.data_funcs.items()}
             masks = {modal: mask[indices] for (modal, mask) in self.modal_masks.items()}
+            labels = self.MET.labels[indices]
             for unpacked_data in self.unpack_output(data):
-                yield (unpacked_data, masks, specimen_ids)
+                yield (unpacked_data, masks, specimen_ids, labels)
 
 class RandomizedDataset(IterableDataset):
     def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, unpack, allowed_specimen_ids = None):
@@ -375,8 +382,9 @@ class RandomizedDataset(IterableDataset):
             data = {modal: {form: func(indices) for (form, func) in formats.items()} 
                     for (modal, formats) in self.data_funcs.items()}
             masks = {modal: mask[indices] for (modal, mask) in self.modal_masks.items()}
+            labels = self.MET.labels[indices]
             for unpacked_data in self.unpack_output(data):
-                yield (unpacked_data, masks, specimen_ids)
+                yield (unpacked_data, masks, specimen_ids, labels)
 
 class RepeatingRandomIndex():
     def __init__(self, indices):

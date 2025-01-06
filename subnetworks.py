@@ -594,6 +594,17 @@ class Mapper(nn.Module):
         transf = torch.diag_embed(diagonals) + torch.tril(transf_raw, -1)
         return (mean, transf)
 
+class Classifier(nn.Module):
+    def __init__(self, latent_dim, hidden_dims, num_classes):
+        super().__init__()
+        actvs = len(hidden_dims)*[nn.ReLU] + [None]
+        dense = get_dense(latent_dim, num_classes, hidden_dims, actvs)
+        self.layers = nn.Sequential(*dense)
+
+    def forward(self, z):
+        log_probs = self.layers(z)
+        return log_probs
+
 def get_mapper(config, train_dataset):
     model = torch.nn.ModuleDict()
     specs = config["variational"]["mapper"]
@@ -604,12 +615,20 @@ def get_mapper(config, train_dataset):
                 model[f"{in_modal}-{out_modal}"] = mapper
     return model
 
+def get_classifier(config, train_dataset):
+    model = torch.nn.ModuleDict()
+    specs = config["variational"]["classifier"]
+    num_classes = np.unique(train_dataset.MET.labels).max() + 1
+    for modal in config["modalities"]:
+        model[modal] = Classifier(config["latent_dim"], specs["hidden"], num_classes)
+    return model
+
 def get_model(config, train_dataset):
     architectures = {frozenset(forms.split("_")): params for (forms, params) in config["architecture"].items()}
-    model = {}
+    model = torch.nn.ModuleDict()
     variational = config["inference"]
     for modal in config["modalities"]:
-        arm = {}
+        arm = torch.nn.ModuleDict()
         forms = frozenset(config["formats"][modal])
         architecture = architectures[forms]
         if architecture.get("dummy"):

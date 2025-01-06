@@ -7,8 +7,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 import numpy as np
 
-from data import MET_Data, MET_Simulated, MET_Decoupled, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
-from losses import ReconstructionLoss, VariationalLoss, ELBO_Loss, ContrastiveLoss
+from data import MET_Data, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
+from losses import ReconstructionLoss, VariationalLoss
 import utils
 import subnetworks
 
@@ -70,9 +70,8 @@ def build_model(config, train_dataset):
     
     model_dict = subnetworks.get_model(config, train_dataset)
     mappers = subnetworks.get_mapper(config, train_dataset) if config["inference"] else None
-    (fixed_cov, marg_var, skew_frac) = (config["elbo_cov"]["fixed"], config["elbo_cov"]["marg_var"], config["elbo_cov"]["skew_frac"])
-    decoder_cov = subnetworks.Decoder_Cov(len(config["modalities"]), config["latent_dim"], marg_var, skew_frac, fixed_cov)
-    model = utils.VariationalWrapper(model_dict, mappers, decoder_cov)
+    classifiers = subnetworks.get_classifier(config, train_dataset)
+    model = utils.VariationalWrapper(model_dict, mappers, classifiers)
     # from torchinfo import summary
     # summary(model, input_data = [{"m0": torch.zeros([2, 28, 28, 3])}], in_modal = "A", out_modals = ["A"])
     # input()
@@ -87,7 +86,7 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     train_loader = DataLoader(train_dataset, batch_size = None, collate_fn = collate)
     val_loader = DataLoader(val_dataset, batch_size = None, collate_fn = collate)
     if config["inference"]:
-        loss_class = ELBO_Loss if config["ELBO"] else VariationalLoss
+        loss_class = VariationalLoss
     # elif config["contrastive"]["active"]:
     #     loss_class = ContrastiveLoss
     else:
@@ -111,9 +110,9 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
         model.train()
         if config["check_step"] > 0 and epoch % config["check_step"] == 0:
             utils.save_trace(exp_dir / "checkpoints" / f"model_{epoch}", model, config, train_dataset)
-        for (X_dict, mask_dict, specimen_ids) in train_loader:
+        for (X_dict, mask_dict, _, labels) in train_loader:
             optimizer.zero_grad()
-            (loss_dict, loss) = loss_handler.process_batch(model, X_dict, mask_dict)
+            (loss_dict, loss) = loss_handler.process_batch(model, X_dict, mask_dict, labels)
             loss.backward()
             optimizer.step()
             cuml_losses = combine_losses(loss, cuml_losses, loss_dict)
@@ -121,9 +120,9 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
         # Validation -----------
         with torch.no_grad():
             cuml_val_losses = {}
-            for (X_val, mask_val, _) in val_loader:
+            for (X_val, mask_val, _, labels) in val_loader:
                 model.eval()
-                (val_loss_dict, val_loss) = loss_handler.process_batch(model, X_val, mask_val)
+                (val_loss_dict, val_loss) = loss_handler.process_batch(model, X_val, mask_val, labels)
                 cuml_val_losses = combine_losses(val_loss, cuml_val_losses, val_loss_dict)
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
         loss_handler.log(tb_writer, avg_losses, avg_val_losses, epoch + 1)
@@ -139,12 +138,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
 def train_model(config, exp_dir):
     data_keys = {form: data_config["keys"] for (form, data_config) in config["data_config"]["formats"].items()}
     hdf5_paths = config["data_config"]["data_paths"]
-    if "simulate" in config:
-        met_data = MET_Simulated(config)
-    elif "decouple" in config:
-        met_data = MET_Decoupled(hdf5_paths, config["decouple"]["counts"], config["seed"], config["select"]["platforms"], **data_keys)
-    else:
-        met_data = MET_Data(hdf5_paths, **data_keys)
+    met_data = MET_Data(hdf5_paths, **data_keys)
     num_folds = config["folds"]
     if num_folds > 0:
         indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))

@@ -9,14 +9,11 @@ import torch
 project_dir = pathlib.Path("/Users/ian.convy/code/cplAE_MET")
 
 class VariationalWrapper(torch.nn.Module):
-    def __init__(self, model_dict, mappers, decoder_cov):
+    def __init__(self, model_dict, mappers, classifiers):
         super().__init__()
         self.mappers = mappers
         self.model_dict = model_dict
-        for (modal, arm) in model_dict.items():
-            setattr(self, f"{modal}_enc", arm["enc"])
-            setattr(self, f"{modal}_dec", arm["dec"])
-        self.decoder_cov = decoder_cov
+        self.classifiers = classifiers
 
     def forward(self, x_forms, in_modal, out_modals):
         orig_latent = self[in_modal]["enc"](x_forms)[0]
@@ -42,6 +39,11 @@ class VariationalWrapper(torch.nn.Module):
             recon = self[modal]["dec"](latent)
             outputs[modal] = (latent, recon, mean, transf, out_mean, out_transf, orig_sample)
         return outputs
+
+    def predict(self, x_forms, in_modal):
+        mean = self[in_modal]["enc"](x_forms)[0]
+        log_probs = self.classifiers[in_modal](mean)
+        return log_probs
 
     def z_sample(self, mean, transf, num_samples):
         expanded_mean = mean[:, None].expand(-1, num_samples, -1)
@@ -78,7 +80,10 @@ def assemble_jit(jit_path, device = "cpu"):
         model[modal]["dec"] = torch.jit.load(jit_path / "decoder" / f"{modal}.pt", map_location = device)
     mapper_path = jit_path / "mapper"
     mappers = {path.stem: torch.jit.load(path, device) for path in mapper_path.iterdir()} if mapper_path.exists() else None
-    model = VariationalWrapper(model, mappers, None)
+    classifier_path = jit_path / "classifier"
+    classifiers = {modal: torch.jit.load(classifier_path / f"{modal}.pt", map_location = device) 
+                   for modal in modalities} if classifier_path.exists() else None
+    model = VariationalWrapper(model, mappers, classifiers)
     return model
 
 def save_trace(path, model, config, dataset):
@@ -90,6 +95,8 @@ def save_trace(path, model, config, dataset):
     if model.mappers:
         mapper_path = path / "mapper"
         mapper_path.mkdir(parents = True)
+    classifier_path = path / "classifier"
+    classifier_path.mkdir(parents = True)
     was_training = model.training
     device = next(model.parameters()).device
     model.eval()
@@ -103,16 +110,15 @@ def save_trace(path, model, config, dataset):
             encoder_trace = torch.jit.trace(arm["enc"], encoder_input, strict = False)
             decoder_input = encoder_trace(encoder_input)[0]
             decoder_trace = torch.jit.trace(arm["dec"], decoder_input, strict = False)
-            encoder_trace.save(encoder_path /  f"{modal}.pt")
+            encoder_trace.save(encoder_path / f"{modal}.pt")
             decoder_trace.save(decoder_path / f"{modal}.pt")
             if model.mappers:
                 for (modal_string, mapper) in model.mappers.items():
                     if modal_string[0] == modal:
                         mapper_trace = torch.jit.trace(mapper, decoder_input, strict = False)
                         mapper_trace.save(mapper_path / f"{modal_string}.pt")
-            if model.decoder_cov:
-                cov_trace = torch.jit.trace(model.decoder_cov, tuple())
-                cov_trace.save(path / f"decoder_cov.pt")
+            classifier_trace = torch.jit.trace(model.classifiers[modal], decoder_input, strict = False)
+            classifier_trace.save(classifier_path / f"{modal}.pt")
     if was_training:
         model.train()
 
@@ -168,6 +174,10 @@ def get_tree_merge_map(tree_csv_path, top_node):
     cuml_map = {label.strip(): [out.strip() for out in map_outs]
                 for (label, map_outs) in cuml_map.items()}
     return cuml_map
+
+def get_subclass_mapper():
+    func = np.vectorize(lambda elem: elem.split(" ")[0])
+    return func
 
 def get_forest_AE(base_dir, exp_path, exp_name, merge):
     exp_dict = {
