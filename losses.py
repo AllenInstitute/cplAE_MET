@@ -3,6 +3,7 @@ import itertools
 import torch
 import numpy as np
 from data import get_transformation_function
+import sklearn.metrics
 
 def powerset(iterable, min_size = 0):
     elements = list(iterable)
@@ -108,14 +109,14 @@ class VariationalLoss():
                                  for (form, loss) in config["losses"].items()}
     
     def process_batch(self, model, X_dict, mask_dict, labels):
-        (latent_dict, mapper_dict, loss_dict, coupling_dict) = ({}, {}, {}, {})
+        (latent_dict, mapper_dict, loss_dict, coupling_dict, acc_dict) = ({}, {}, {}, {}, {})
         for modal in self.config["modalities"]:
             (arm, x_forms, mask) = (model[modal], X_dict[modal], mask_dict[modal])
             x_masked = apply_mask(x_forms, mask)
             (z_mean, z_transf) = arm["enc"](x_masked)
             latent_dict[modal] = (z_mean, z_transf)
             loss_dict[modal] = self.get_within_loss(model, modal, x_masked, z_mean, z_transf, self.config["samples"])
-            loss_dict[f"{modal}_pred"] = self.get_prediction_loss(model, modal, z_mean, labels[mask])
+            (loss_dict[f"{modal}_pred"], acc_dict[modal]) = self.get_prediction_loss(model, modal, z_mean, labels[mask])
             for (prev_modal, (prev_mean, prev_transf)) in list(latent_dict.items())[:-1]:
                 (_, cross_sample, cross_mean, cross_transf) = model.cross_z_sample(modal, prev_modal, z_mean, z_transf, self.config["samples"])
                 (_, prev_cross_sample, prev_cross_mean, prev_cross_transf) = model.cross_z_sample(prev_modal, modal, prev_mean, prev_transf, self.config["samples"])
@@ -132,7 +133,7 @@ class VariationalLoss():
                     coupling_dict[f"{modal}={prev_modal}"] = torch.square(z_mean[prev_mask[mask]] - prev_mean[mask[prev_mask]].detach()).mean(0).sum()
                     coupling_dict[f"{prev_modal}={modal}"] = torch.square(z_mean[prev_mask[mask]].detach() - prev_mean[mask[prev_mask]]).mean(0).sum()
         (weighted_loss_dict, total_loss) = self.combine_losses(loss_dict, latent_dict, mapper_dict, coupling_dict)
-        return (weighted_loss_dict, total_loss)
+        return (weighted_loss_dict, total_loss, acc_dict)
 
     def reconstruction_loss(self, x_forms, xr_forms):
         loss = 0
@@ -147,7 +148,8 @@ class VariationalLoss():
         is_labeled = (labels >= 0)
         log_probs = model.classifiers[modal](z_mean)
         loss = torch.nn.functional.cross_entropy(log_probs[is_labeled], labels[is_labeled])
-        return loss
+        acc = sklearn.metrics.accuracy_score(labels[is_labeled].numpy(), log_probs[is_labeled].argmax(-1).numpy(force = True))
+        return (loss, acc)
 
     def get_within_loss(self, model, modal, x_forms, z_mean, z_transf, num_samples):
         z_sample = model.z_sample(z_mean, z_transf, num_samples)
@@ -172,7 +174,7 @@ class VariationalLoss():
             (mean_1, transf_1) = latent_dict[modal_1]
             losses = {
                 "within": var_config["recon_scale"]*var_config["duplicate"]*loss_dict[modal_1],
-                "predict": var_config["pred_scale"]*loss_dict[f"{modal_1}_pred"],
+                "pred": var_config["pred_scale"]*loss_dict[f"{modal_1}_pred"],
                 "mean_reg": var_config["reg_scale"]*var_config["duplicate"]*torch.square(mean_1).sum(1).mean(),
                 "trace_reg": var_config["reg_scale"]*transf_1.square().mean(0).sum(),
                 "det_reg": var_config["reg_scale"]*var_config["duplicate"]*-2*torch.log(torch.diagonal(transf_1, 0, -2, -1)).sum(-1).mean()}
@@ -197,30 +199,34 @@ class VariationalLoss():
                         **{f"{first}-{second}_{key}": var_config[first][second][key]*loss for (key, loss) in losses.items()}}
         return (weighted_loss_dict, total_loss)
     
-    def log(self, tb_writer, train_loss, val_loss, epoch):
+    def log(self, tb_writer, train_loss, val_loss, train_acc, val_acc, epoch):
         # This function takes the training/validation losses and logs them
         # in Tensoboard. The component losses are reported without any scaling,
         # alongside the weighted sum of the losses.
-
+        (train_acc.pop("total"), val_acc.pop("total"))
         tb_writer.add_scalars("Weighted Loss", {"Train": train_loss["total"], "Validation": val_loss["total"]}, epoch)
         tb_writer.add_scalars("MSE/Train", 
             {key: loss for (key, loss) in train_loss.items() if "within" in key}, epoch)
         tb_writer.add_scalars("MSE/Validation", 
             {key: loss for (key, loss) in val_loss.items() if "within" in key}, epoch)
         tb_writer.add_scalars("Predict/Train", 
-            {key: loss for (key, loss) in train_loss.items() if "predict" in key}, epoch)
+            {key: loss for (key, loss) in train_loss.items() if "pred" in key}, epoch)
         tb_writer.add_scalars("Predict/Validation", 
-            {key: loss for (key, loss) in val_loss.items() if "predict" in key}, epoch)
+            {key: loss for (key, loss) in val_loss.items() if "pred" in key}, epoch)
         tb_writer.add_scalars("Cross-MSE/Train", 
             {key: loss for (key, loss) in train_loss.items() if "cross" in key}, epoch)
         tb_writer.add_scalars("Cross-MSE/Validation", 
             {key: loss for (key, loss) in val_loss.items() if "cross" in key}, epoch)
+        tb_writer.add_scalars("Accuracy/Train", 
+            {key: loss for (key, loss) in train_acc.items()}, epoch)
+        tb_writer.add_scalars("Accuracy/Validation", 
+            {key: loss for (key, loss) in val_acc.items()}, epoch)
         tb_writer.add_scalars("Within-Reg/Train", 
             {key: loss for (key, loss) in train_loss.items() 
-             if not ("cross" in key) and not ("within" in key) and not ("total" in key) and not ("predict" in key)}, epoch)
+             if not ("cross" in key) and not ("within" in key) and not ("total" in key) and not ("pred" in key)}, epoch)
         tb_writer.add_scalars("Within-Reg/Validation",
             {key: loss for (key, loss) in val_loss.items() 
-             if not ("cross" in key) and not ("within" in key) and not ("total" in key) and not ("predict" in key)}, epoch)
+             if not ("cross" in key) and not ("within" in key) and not ("total" in key) and not ("pred" in key)}, epoch)
 
 class ReconstructionLoss():
     def __init__(self, config, met_data, specimens):
@@ -229,7 +235,7 @@ class ReconstructionLoss():
         self.losses = {form: loss_classes[loss](config, met_data, specimens) 
                        for (form, loss) in config["losses"].items()}
         
-    def process_batch(self, model, X_dict, mask_dict):
+    def process_batch(self, model, X_dict, mask_dict, labels):
         # This function processes a single batch during model optimization. It takes as
         # argument the target model, a dictionary of data from different modalities, a
         # dictionary of masks specifying which samples hold valid data for each modality,
@@ -247,6 +253,7 @@ class ReconstructionLoss():
             xr_forms = arm["dec"](z)
             (latent_dict[modal], recon_dict[modal]) = (z, xr_forms)
             loss_dict[modal] = self.loss(x_masked, xr_forms)
+            loss_dict[f"{modal}_pred"] = self.get_prediction_loss(model, modal, z, labels[mask])
             for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
                 (prev_x_forms, prev_mask) = (X_dict[prev_modal], mask_dict[prev_modal])
                 if torch.any(prev_mask[mask]):
@@ -272,7 +279,13 @@ class ReconstructionLoss():
         xr_forms = model[out_modal]["dec"](z)
         loss = self.loss(x_forms, xr_forms)
         return loss
-    
+
+    def get_prediction_loss(self, model, modal, z, labels):
+        is_labeled = (labels >= 0)
+        log_probs = model.classifiers[modal](z)
+        loss = torch.nn.functional.cross_entropy(log_probs[is_labeled], labels[is_labeled])
+        return loss
+
     def log(self, tb_writer, train_loss, val_loss, epoch):
         # This function takes the training/validation losses and logs them
         # in Tensoboard. The component losses are reported without any scaling,
@@ -287,6 +300,10 @@ class ReconstructionLoss():
             {key: 1 - value for (key, value) in train_loss.items() if "=" in key}, epoch)
         tb_writer.add_scalars("Cross-R2/Validation", 
             {key: 1 - value for (key, value) in val_loss.items() if "=" in key}, epoch)
+        tb_writer.add_scalars("Predict/Train", 
+            {key: value for (key, value) in train_loss.items() if "pred" in key}, epoch)
+        tb_writer.add_scalars("Predict/Validation", 
+            {key: value for (key, value) in val_loss.items() if "pred" in key}, epoch)
         tb_writer.add_scalars("Coupling/Train", 
             {key: value for (key, value) in train_loss.items() if "-" in key}, epoch)
         tb_writer.add_scalars("Coupling/Validation",

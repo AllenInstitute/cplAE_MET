@@ -106,28 +106,32 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     model.to(config["device"])
     for epoch in range(config["num_epochs"]):
         # Training -----------
-        cuml_losses = {}
+        (cuml_losses, cuml_acc) = ({}, {})
         model.train()
         if config["check_step"] > 0 and epoch % config["check_step"] == 0:
             utils.save_trace(exp_dir / "checkpoints" / f"model_{epoch}", model, config, train_dataset)
         for (X_dict, mask_dict, _, labels) in train_loader:
             optimizer.zero_grad()
-            (loss_dict, loss) = loss_handler.process_batch(model, X_dict, mask_dict, labels)
+            (loss_dict, loss, acc) = loss_handler.process_batch(model, X_dict, mask_dict, labels)
             loss.backward()
             optimizer.step()
             cuml_losses = combine_losses(loss, cuml_losses, loss_dict)
+            cuml_acc = combine_losses(0, cuml_acc, acc)
         avg_losses = {key: value / len(train_dataset) for (key, value) in cuml_losses.items()}
+        avg_accs = {key: value / len(train_dataset) for (key, value) in cuml_acc.items()}
         # Validation -----------
         with torch.no_grad():
-            cuml_val_losses = {}
+            (cuml_val_losses, cuml_val_acc) = ({}, {})
             for (X_val, mask_val, _, labels) in val_loader:
                 model.eval()
-                (val_loss_dict, val_loss) = loss_handler.process_batch(model, X_val, mask_val, labels)
+                (val_loss_dict, val_loss, val_acc) = loss_handler.process_batch(model, X_val, mask_val, labels)
                 cuml_val_losses = combine_losses(val_loss, cuml_val_losses, val_loss_dict)
+                cuml_val_acc = combine_losses(0, cuml_val_acc, val_acc)
             avg_val_losses = {key: value / len(val_dataset) for (key, value) in cuml_val_losses.items()}
-        loss_handler.log(tb_writer, avg_losses, avg_val_losses, epoch + 1)
+            avg_val_accs = {key: value / len(val_dataset) for (key, value) in cuml_val_acc.items()}
+        loss_handler.log(tb_writer, avg_losses, avg_val_losses, avg_accs, avg_val_accs, epoch + 1)
         print(f"Epoch {epoch} -- Train: {avg_losses['total']:.4e} | Val: {avg_val_losses['total']:.4e}")
-        if stopper.stop_check(avg_val_losses["total"], model, epoch):
+        if stopper.stop_check(avg_val_losses["M_pred"], model, epoch):
             break
     stopper.load_best_parameters(model)
     print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
