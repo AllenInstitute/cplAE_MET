@@ -148,7 +148,7 @@ class VariationalLoss():
         is_labeled = (labels >= 0)
         log_probs = model.classifiers[modal](z_mean)
         loss = torch.nn.functional.cross_entropy(log_probs[is_labeled], labels[is_labeled])
-        acc = sklearn.metrics.accuracy_score(labels[is_labeled].numpy(), log_probs[is_labeled].argmax(-1).numpy(force = True))
+        acc = sklearn.metrics.accuracy_score(labels[is_labeled].numpy(force = True), log_probs[is_labeled].argmax(-1).numpy(force = True))
         return (loss, acc)
 
     def get_within_loss(self, model, modal, x_forms, z_mean, z_transf, num_samples):
