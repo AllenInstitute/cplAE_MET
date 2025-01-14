@@ -131,7 +131,7 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             avg_val_accs = {key: value / len(val_dataset) for (key, value) in cuml_val_acc.items()}
         loss_handler.log(tb_writer, avg_losses, avg_val_losses, avg_accs, avg_val_accs, epoch + 1)
         print(f"Epoch {epoch} -- Train: {avg_losses['total']:.4e} | Val: {avg_val_losses['total']:.4e}")
-        if stopper.stop_check(avg_val_losses["M_pred"], model, epoch):
+        if stopper.stop_check(avg_val_losses[config["tracked_loss"]], model, epoch):
             break
     stopper.load_best_parameters(model)
     print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
