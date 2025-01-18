@@ -1,6 +1,7 @@
 import yaml
 import pathlib
 import argparse
+import pickle as pk
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -23,10 +24,9 @@ class EarlyStopping():
         self.patience = patience
         self.frac = min_improvement_fraction
         self.counter = 0
-        self.best_epoch = 0
         self.min_loss = np.inf
 
-    def stop_check(self, loss, model, epoch):
+    def stop_check(self, loss, model):
         # When this method is called, the stopper compares the passed loss
         # value to the minimum value that is has observed. If the new loss is
         # better, the passed model is saved and "False" is returned, If the loss 
@@ -35,12 +35,12 @@ class EarlyStopping():
         if loss < (1 - self.frac) * self.min_loss:
             self.counter = 0
             self.min_loss = loss
-            torch.save(model.state_dict(), self.exp_dir / f"best_params.pt")
-            self.best_epoch = epoch
-            print(f"New best model, loss {loss:.4g}")
+            print(f"New best loss {loss:.4g}")
         else:
             self.counter += 1
         stop = self.counter > self.patience
+        if stop:
+            torch.save(model.state_dict(), self.exp_dir / f"best_params.pt")
         return stop
     
     def load_best_parameters(self, model):
@@ -131,10 +131,8 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
             avg_val_accs = {key: value / len(val_dataset) for (key, value) in cuml_val_acc.items()}
         loss_handler.log(tb_writer, avg_losses, avg_val_losses, avg_accs, avg_val_accs, epoch + 1)
         print(f"Epoch {epoch} -- Train: {avg_losses['total']:.4e} | Val: {avg_val_losses['total']:.4e}")
-        if stopper.stop_check(avg_val_losses[config["tracked_loss"]], model, epoch):
+        if config["tracked_loss"] and stopper.stop_check(avg_val_losses[config["tracked_loss"]], model):
             break
-    stopper.load_best_parameters(model)
-    print(f"Best model was epoch {stopper.best_epoch} with loss {stopper.min_loss:.4g}")
     utils.save_trace(exp_dir / "best", model, config, train_dataset)
     tb_writer.close()
     return model
@@ -143,6 +141,9 @@ def train_model(config, exp_dir):
     data_keys = {form: data_config["keys"] for (form, data_config) in config["data_config"]["formats"].items()}
     hdf5_paths = config["data_config"]["data_paths"]
     met_data = MET_Data(hdf5_paths, **data_keys)
+    label_config = config["variational"]["classifier"]["label"]
+    label_func = utils.label_functions[label_config["name"]](*label_config["args"])
+    label_encoder = met_data.set_labels(label_func)
     num_folds = config["folds"]
     if num_folds > 0:
         indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
@@ -166,6 +167,8 @@ def train_model(config, exp_dir):
         train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_train_ids)
         test_dataset = DeterministicDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_test_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
+        with open(exp_fold_dir / "label_encoder.pk", "wb") as target:
+            pk.dump(label_encoder, target)
         train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
 
 if __name__ == "__main__":

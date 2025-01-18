@@ -122,10 +122,6 @@ class MET_Data():
         (self.specimens, self.id_map, self.valid, self.local_id_map, self.data) = get_specimens_data(self.hdf5_files, data_keys)
         self._meta = get_meta(self.hdf5_files.values(), self.specimens)
         self._data_funcs = {form: Yielder(self.data[form], self.local_id_map[form], len(self.specimens)) for form in data_keys}
-        subclass_strings = np.vectorize(lambda elem: elem.split(" ")[0])(self._meta["cluster_label"])
-        self.labels = LabelEncoder().fit_transform(subclass_strings)
-        self.labels[subclass_strings == "nan"] = -1
-        self._meta["labels"] = self.labels
 
     def __getitem__(self, id_str):
         if id_str in self._meta:
@@ -207,6 +203,14 @@ class MET_Data():
     def close(self):
         for h5_file in self.hdf5_files.values():
             h5_file.close()
+
+    def set_labels(self, label_func):
+        subclass_strings = label_func(self._meta["cluster_label"])
+        label_encoder = LabelEncoder()
+        self.labels = label_encoder.fit_transform(subclass_strings)
+        self.labels[subclass_strings == "nan"] = -1
+        self._meta["labels"] = self.labels
+        return label_encoder
 
 class DeterministicDataset(IterableDataset):
     def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, unpack, allowed_specimen_ids = None):

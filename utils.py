@@ -179,6 +179,11 @@ def get_subclass_mapper():
     func = np.vectorize(lambda elem: elem.split(" ")[0])
     return func
 
+def get_t_type_func(merge):
+    merge_map = get_tree_merge_map("../cplAE_MET/data/meta/tree_Mouse_ALM-VISp_2018.csv", "n3")
+    func = np.vectorize(lambda elem: merge_map[elem][merge] if elem != "nan" else "nan")
+    return func 
+
 def get_forest_AE(base_dir, exp_path, exp_name, merge):
     exp_dict = {
         "config": {},
@@ -218,3 +223,8 @@ def get_forest_AE(base_dir, exp_path, exp_name, merge):
     exp_dict["config"]["modalities"] = modalities
     exp_dict["config"]["formats"] = formats
     return exp_dict
+
+label_functions = {
+    "subclass": get_subclass_mapper,
+    "merge": get_t_type_func
+}
