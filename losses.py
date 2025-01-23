@@ -3,7 +3,7 @@ import itertools
 import torch
 import numpy as np
 from data import get_transformation_function
-import sklearn.metrics
+from sklearn.metrics import accuracy_score
 
 def powerset(iterable, min_size = 0):
     elements = list(iterable)
@@ -116,7 +116,7 @@ class VariationalLoss():
             (z_mean, z_transf) = arm["enc"](x_masked)
             latent_dict[modal] = (z_mean, z_transf)
             loss_dict[modal] = self.get_within_loss(model, modal, x_masked, z_mean, z_transf, self.config["samples"])
-            (loss_dict[f"{modal}_pred"], acc_dict[modal]) = self.get_prediction_loss(model, modal, z_mean, labels[mask])
+            (loss_dict[f"{modal}_pred"], acc_dict[modal]) = self.get_prediction_loss(model, z_mean, labels[mask])
             for (prev_modal, (prev_mean, prev_transf)) in list(latent_dict.items())[:-1]:
                 (_, cross_sample, cross_mean, cross_transf) = model.cross_z_sample(modal, prev_modal, z_mean, z_transf, self.config["samples"])
                 (_, prev_cross_sample, prev_cross_mean, prev_cross_transf) = model.cross_z_sample(prev_modal, modal, prev_mean, prev_transf, self.config["samples"])
@@ -144,11 +144,15 @@ class VariationalLoss():
             loss = loss + loss_func(x.flatten(0, 1), x_recon.flatten(0, 1), form)
         return loss
     
-    def get_prediction_loss(self, model, modal, z_mean, labels):
+    def get_prediction_loss(self, model, z_mean, labels):
         is_labeled = (labels >= 0)
-        log_probs = model.classifiers[modal](z_mean)
-        loss = torch.nn.functional.cross_entropy(log_probs[is_labeled], labels[is_labeled])
-        acc = sklearn.metrics.accuracy_score(labels[is_labeled].numpy(force = True), log_probs[is_labeled].argmax(-1).numpy(force = True))
+        log_probs = [classifier(z_mean) for classifier in model.classifiers.values()]
+        loss = sum(torch.nn.functional.cross_entropy(log_probs[i][is_labeled[:, i]], labels[is_labeled[:, i], i])
+                   for i in range(len(model.classifiers)))
+        (labels_arr, mask_arr) = (labels.numpy(force = True), is_labeled.numpy(force = True))
+        probs_arrs = [tensor.numpy(force = True) for tensor in log_probs]
+        acc = np.mean([accuracy_score(labels_arr[mask_arr[:, i], i], np.argmax(probs_arrs[i][mask_arr[:, i]], -1))
+                       for i in range(len(model.classifiers))])
         return (loss, acc)
 
     def get_within_loss(self, model, modal, x_forms, z_mean, z_transf, num_samples):

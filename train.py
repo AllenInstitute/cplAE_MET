@@ -70,7 +70,7 @@ def build_model(config, train_dataset):
     
     model_dict = subnetworks.get_model(config, train_dataset)
     mappers = subnetworks.get_mapper(config, train_dataset) if config["inference"] else None
-    classifiers = subnetworks.get_classifier(config, train_dataset)
+    classifiers = subnetworks.get_classifiers(config, train_dataset)
     model = utils.VariationalWrapper(model_dict, mappers, classifiers)
     # from torchinfo import summary
     # summary(model, input_data = [{"m0": torch.zeros([2, 28, 28, 3])}], in_modal = "A", out_modals = ["A"])
@@ -141,9 +141,10 @@ def train_model(config, exp_dir):
     data_keys = {form: data_config["keys"] for (form, data_config) in config["data_config"]["formats"].items()}
     hdf5_paths = config["data_config"]["data_paths"]
     met_data = MET_Data(hdf5_paths, **data_keys)
-    label_config = config["variational"]["classifier"]["label"]
-    label_func = utils.label_functions[label_config["name"]](*label_config["args"])
-    label_encoder = met_data.set_labels(label_func)
+    label_configs = config["variational"]["classifier"]["label"]
+    label_funcs = {label_type: utils.label_functions[conf["name"]](*conf["args"])
+                  for (label_type, conf) in label_configs.items()}
+    label_encoders = met_data.set_labels(label_funcs)
     num_folds = config["folds"]
     if num_folds > 0:
         indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
@@ -168,7 +169,7 @@ def train_model(config, exp_dir):
         test_dataset = DeterministicDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_test_ids)
         np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
         with open(exp_fold_dir / "label_encoder.pk", "wb") as target:
-            pk.dump(label_encoder, target)
+            pk.dump(label_encoders, target)
         train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
 
 if __name__ == "__main__":

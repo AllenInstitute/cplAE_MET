@@ -204,13 +204,19 @@ class MET_Data():
         for h5_file in self.hdf5_files.values():
             h5_file.close()
 
-    def set_labels(self, label_func):
-        subclass_strings = label_func(self._meta["cluster_label"])
-        label_encoder = LabelEncoder()
-        self.labels = label_encoder.fit_transform(subclass_strings)
-        self.labels[subclass_strings == "nan"] = -1
+    def set_labels(self, label_funcs):
+        all_labels = []
+        label_encoders = {}
+        for (label_type, label_func) in label_funcs.items():
+            subclass_strings = label_func(self._meta["cluster_label"])
+            label_encoder = LabelEncoder()
+            labels = label_encoder.fit_transform(subclass_strings)
+            labels[subclass_strings == "nan"] = -1
+            all_labels.append(labels)
+            label_encoders[label_type] = label_encoder
+        self.labels = np.stack(all_labels, -1)
         self._meta["labels"] = self.labels
-        return label_encoder
+        return label_encoders
 
 class DeterministicDataset(IterableDataset):
     def __init__(self, met_data, batch_size, modal_formats, modal_frac, transformations, unpack, allowed_specimen_ids = None):

@@ -615,12 +615,12 @@ def get_mapper(config, train_dataset):
                 model[f"{in_modal}-{out_modal}"] = mapper
     return model
 
-def get_classifier(config, train_dataset):
+def get_classifiers(config, train_dataset):
     model = torch.nn.ModuleDict()
     specs = config["variational"]["classifier"]
-    num_classes = np.unique(train_dataset.MET.labels).max() + 1
-    for modal in config["modalities"]:
-        model[modal] = Classifier(config["latent_dim"], specs["hidden"], num_classes)
+    for (i, label_type) in enumerate(config["variational"]["classifier"]["label"]):
+        num_classes = np.unique(train_dataset.MET.labels[:, i]).max() + 1
+        model[label_type] = Classifier(config["latent_dim"], specs["hidden"], num_classes)
     return model
 
 def get_model(config, train_dataset):

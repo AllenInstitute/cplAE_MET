@@ -42,7 +42,7 @@ class VariationalWrapper(torch.nn.Module):
 
     def predict(self, x_forms, in_modal):
         mean = self[in_modal]["enc"](x_forms)[0]
-        log_probs = self.classifiers[in_modal](mean)
+        log_probs = {name: classifier(mean) for (name, classifier) in self.classifiers.items()}
         return log_probs
 
     def z_sample(self, mean, transf, num_samples):
@@ -117,8 +117,9 @@ def save_trace(path, model, config, dataset):
                     if modal_string[0] == modal:
                         mapper_trace = torch.jit.trace(mapper, decoder_input, strict = False)
                         mapper_trace.save(mapper_path / f"{modal_string}.pt")
-            classifier_trace = torch.jit.trace(model.classifiers[modal], decoder_input, strict = False)
-            classifier_trace.save(classifier_path / f"{modal}.pt")
+        for (name, classifier) in model.classifiers.items():
+            classifier_trace = torch.jit.trace(classifier, decoder_input, strict = False)
+            classifier_trace.save(classifier_path / f"{name}.pt")
     if was_training:
         model.train()
 
