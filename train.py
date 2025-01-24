@@ -145,32 +145,33 @@ def train_model(config, exp_dir):
     label_funcs = {label_type: utils.label_functions[conf["name"]](*conf["args"])
                   for (label_type, conf) in label_configs.items()}
     label_encoders = met_data.set_labels(label_funcs)
-    num_folds = config["folds"]
-    if num_folds > 0:
-        indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"]))
-    else:
-        (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = config["seed"])
-        indices = [(train_ids, test_ids)]
-        num_folds = 1
-    fold_list = config["fold_list"] if config["fold_list"] else range(1, num_folds + 1)
-    for fold in fold_list:
-        (train_ids, test_ids) = indices[fold - 1]
-        print(f"Processing fold {fold} / {num_folds}.")
-        exp_fold_dir = exp_dir / f"fold_{fold}"
-        exp_fold_dir.mkdir(exist_ok = True)
-        (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
-        filtered_train_ids = filter_specimens(met_data, train_ids, config)
-        filtered_test_ids = filter_specimens(met_data, test_ids, config)
-        for (form, data_config) in config["data_config"]["formats"].items():
-            if data_config["cache"]:
-                met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = True)
-        unpack = {form: data_config["unpack"] for (form, data_config) in config["data_config"]["formats"].items()}
-        train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_train_ids)
-        test_dataset = DeterministicDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_test_ids)
-        np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
-        with open(exp_fold_dir / "label_encoder.pk", "wb") as target:
-            pk.dump(label_encoders, target)
-        train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
+    (num_reps, num_folds) = (config["fold_reps"], config["folds"])
+    for rep in range(num_reps):
+        if num_folds > 0:
+            indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"] + rep))
+        else:
+            (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = config["seed"] + rep)
+            indices = [(train_ids, test_ids)]
+            num_folds = 1
+        fold_list = config["fold_list"] if config["fold_list"] else range(1, num_folds + 1)
+        for fold in fold_list:
+            (train_ids, test_ids) = indices[fold - 1]
+            print(f"Processing fold {fold + rep*num_folds} / {num_reps*num_folds}.")
+            exp_fold_dir = exp_dir / f"fold_{fold + rep*num_folds}"
+            exp_fold_dir.mkdir(exist_ok = True)
+            (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
+            filtered_train_ids = filter_specimens(met_data, train_ids, config)
+            filtered_test_ids = filter_specimens(met_data, test_ids, config)
+            for (form, data_config) in config["data_config"]["formats"].items():
+                if data_config["cache"]:
+                    met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = True)
+            unpack = {form: data_config["unpack"] for (form, data_config) in config["data_config"]["formats"].items()}
+            train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_train_ids)
+            test_dataset = DeterministicDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_test_ids)
+            np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
+            with open(exp_fold_dir / "label_encoder.pk", "wb") as target:
+                pk.dump(label_encoders, target)
+            train_and_evaluate(exp_fold_dir, config, train_dataset, test_dataset)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
