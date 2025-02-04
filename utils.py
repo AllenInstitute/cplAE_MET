@@ -42,7 +42,8 @@ class VariationalWrapper(torch.nn.Module):
 
     def predict(self, x_forms, in_modal):
         mean = self[in_modal]["enc"](x_forms)[0]
-        log_probs = {name: classifier(mean) for (name, classifier) in self.classifiers.items()}
+        log_probs = {modal: {name: classifier(mean) for (name, classifier) in classifiers.items()}
+                     for (modal, classifiers) in self.classifiers.items()}
         return log_probs
 
     def z_sample(self, mean, transf, num_samples):
@@ -81,8 +82,12 @@ def assemble_jit(jit_path, device = "cpu"):
     mapper_path = jit_path / "mapper"
     mappers = {path.stem: torch.jit.load(path, device) for path in mapper_path.iterdir()} if mapper_path.exists() else None
     classifier_path = jit_path / "classifier"
-    classifiers = {modal: torch.jit.load(classifier_path / f"{modal}.pt", map_location = device) 
-                   for modal in modalities} if classifier_path.exists() else None
+    classifiers = {}
+    if classifier_path.exists():
+        for loss_type_path in classifier_path.iterdir():
+            for modal_path in loss_type_path.iterdir():
+                classifier = torch.jit.load(modal_path, map_location = device)
+                classifiers.setdefault(modal_path.stem, {})[loss_type_path.name] = classifier
     model = VariationalWrapper(model, mappers, classifiers)
     return model
 
@@ -117,9 +122,10 @@ def save_trace(path, model, config, dataset):
                     if modal_string[0] == modal:
                         mapper_trace = torch.jit.trace(mapper, decoder_input, strict = False)
                         mapper_trace.save(mapper_path / f"{modal_string}.pt")
-        for (name, classifier) in model.classifiers.items():
-            classifier_trace = torch.jit.trace(classifier, decoder_input, strict = False)
-            classifier_trace.save(classifier_path / f"{name}.pt")
+            for (name, classifier) in model.classifiers[modal].items():
+                (classifier_path / name).mkdir(exist_ok = True)
+                classifier_trace = torch.jit.trace(classifier, decoder_input, strict = False)
+                classifier_trace.save(classifier_path / name / f"{modal}.pt")
     if was_training:
         model.train()
 

@@ -618,9 +618,11 @@ def get_mapper(config, train_dataset):
 def get_classifiers(config, train_dataset):
     model = torch.nn.ModuleDict()
     specs = config["variational"]["classifier"]
-    for (i, label_type) in enumerate(config["variational"]["classifier"]["label"]):
-        num_classes = np.unique(train_dataset.MET.labels[:, i]).max() + 1
-        model[label_type] = Classifier(config["latent_dim"], specs["hidden"], num_classes)
+    for modal in config["modalities"]:
+        model[modal] = torch.nn.ModuleDict()
+        for (i, label_type) in enumerate(config["variational"]["classifier"]["label"]):
+            num_classes = np.unique(train_dataset.MET.labels[:, i]).max() + 1
+            model[modal][label_type] = Classifier(config["latent_dim"], specs["hidden"], num_classes)
     return model
 
 def get_model(config, train_dataset):

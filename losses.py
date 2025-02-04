@@ -1,6 +1,7 @@
 import itertools
 
 import torch
+from torch.nn.functional import cross_entropy, softmax
 import numpy as np
 from data import get_transformation_function
 from sklearn.metrics import accuracy_score
@@ -116,7 +117,7 @@ class VariationalLoss():
             (z_mean, z_transf) = arm["enc"](x_masked)
             latent_dict[modal] = (z_mean, z_transf)
             loss_dict[modal] = self.get_within_loss(model, modal, x_masked, z_mean, z_transf, self.config["samples"])
-            (loss_dict[f"{modal}_pred"], acc_dict[modal]) = self.get_prediction_loss(model, z_mean, labels[mask])
+            (loss_dict[f"{modal}_pred"], acc_dict[modal]) = self.get_prediction_loss(model.classifiers[modal], z_mean, labels[mask])
             for (prev_modal, (prev_mean, prev_transf)) in list(latent_dict.items())[:-1]:
                 (_, cross_sample, cross_mean, cross_transf) = model.cross_z_sample(modal, prev_modal, z_mean, z_transf, self.config["samples"])
                 (_, prev_cross_sample, prev_cross_mean, prev_cross_transf) = model.cross_z_sample(prev_modal, modal, prev_mean, prev_transf, self.config["samples"])
@@ -130,8 +131,12 @@ class VariationalLoss():
                     prev_cross_loss = self.get_cross_loss(model, modal, x_dbl_masked, prev_cross_masked)
                     loss_dict[f"{modal}={prev_modal}"] = cross_loss
                     loss_dict[f"{prev_modal}={modal}"] = prev_cross_loss
-                    coupling_dict[f"{modal}={prev_modal}"] = torch.square(z_mean[prev_mask[mask]] - prev_mean[mask[prev_mask]].detach()).mean(0).sum()
-                    coupling_dict[f"{prev_modal}={modal}"] = torch.square(z_mean[prev_mask[mask]].detach() - prev_mean[mask[prev_mask]]).mean(0).sum()
+                    coupling_dict[f"{modal}={prev_modal}"] = min_var_loss(z_mean[prev_mask[mask]], prev_mean[mask[prev_mask]].detach())
+                    coupling_dict[f"{prev_modal}={modal}"] = min_var_loss(z_mean[prev_mask[mask]].detach(), prev_mean[mask[prev_mask]])
+                    loss_dict[f"{modal}={prev_modal}_mutual"] = self.get_mutual_loss(model.classifiers[modal], model.classifiers[prev_modal],
+                                                                                     z_mean[prev_mask[mask]].detach(), prev_mean[mask[prev_mask]])
+                    loss_dict[f"{prev_modal}={modal}_mutual"] = self.get_mutual_loss(model.classifiers[modal], model.classifiers[prev_modal],
+                                                                                     prev_mean[mask[prev_mask]].detach(), z_mean[prev_mask[mask]])
         (weighted_loss_dict, total_loss) = self.combine_losses(loss_dict, latent_dict, mapper_dict, coupling_dict)
         return (weighted_loss_dict, total_loss, acc_dict)
 
@@ -144,15 +149,21 @@ class VariationalLoss():
             loss = loss + loss_func(x.flatten(0, 1), x_recon.flatten(0, 1), form)
         return loss
     
-    def get_prediction_loss(self, model, z_mean, labels):
+    def get_mutual_loss(self, classifiers_i, classifiers_j, z_i, z_j, T = 10):
+        y_i = (classifier(z_i) for classifier in classifiers_i.values())
+        y_j = (classifier(z_j) for classifier in classifiers_j.values())
+        loss = sum(cross_entropy(y_1/T, softmax(y_2/T, -1)) for (y_1, y_2) in zip(y_i, y_j))
+        return loss
+
+    def get_prediction_loss(self, classifiers, z_mean, labels):
         is_labeled = (labels >= 0)
-        log_probs = [classifier(z_mean) for classifier in model.classifiers.values()]
+        log_probs = [classifier(z_mean) for classifier in classifiers.values()]
         loss = sum(torch.nn.functional.cross_entropy(log_probs[i][is_labeled[:, i]], labels[is_labeled[:, i], i])
-                   for i in range(len(model.classifiers)))
+                   for i in range(len(classifiers)))
         (labels_arr, mask_arr) = (labels.numpy(force = True), is_labeled.numpy(force = True))
         probs_arrs = [tensor.numpy(force = True) for tensor in log_probs]
         acc = np.mean([accuracy_score(labels_arr[mask_arr[:, i], i], np.argmax(probs_arrs[i][mask_arr[:, i]], -1))
-                       for i in range(len(model.classifiers))])
+                       for i in range(len(classifiers))])
         return (loss, acc)
 
     def get_within_loss(self, model, modal, x_forms, z_mean, z_transf, num_samples):
@@ -196,7 +207,8 @@ class VariationalLoss():
                         "mean_diff_reg": var_config["reg_scale"]*torch.square(map_mean - orig_mean).sum(1).mean(),
                         "map_trace_reg": var_config["reg_scale"]*map_transf.square().mean(0).sum(),
                         "map_det_reg": var_config["reg_scale"]*-2*torch.log(torch.diagonal(map_transf, 0, -2, -1)).sum(-1).mean(),
-                        "coupling": var_config["couple_scale"]*coupling_dict[f"{first}={second}"]}
+                        "coupling": var_config["couple_scale"]*coupling_dict[f"{first}={second}"],
+                        "mutual": var_config["mutual_scale"]*loss_dict[f"{first}={second}_mutual"]}
                     total_loss += sum([var_config[first][second][key]*loss for (key, loss) in losses.items()])
                     weighted_loss_dict = {
                         **weighted_loss_dict,
