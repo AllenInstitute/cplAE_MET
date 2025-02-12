@@ -616,14 +616,16 @@ def get_mapper(config, train_dataset):
     return model
 
 def get_classifiers(config, train_dataset):
-    model = torch.nn.ModuleDict()
-    specs = config["variational"]["classifier"]
-    for modal in config["modalities"]:
-        model[modal] = torch.nn.ModuleDict()
-        for (i, label_type) in enumerate(config["variational"]["classifier"]["label"]):
-            num_classes = np.unique(train_dataset.MET.labels[:, i]).max() + 1
-            model[modal][label_type] = Classifier(config["latent_dim"], specs["hidden"], num_classes)
-    return model
+    models = torch.nn.ModuleDict({modal: torch.nn.ModuleDict() for modal in config["modalities"]})
+    hidden = config["variational"]["classifier"]["hidden"]
+    for (i, label_type) in enumerate(config["variational"]["classifier"]["label"]):
+        num_classes = np.unique(train_dataset.MET.labels[:, i]).max() + 1
+        shared = config["variational"]["classifier"]["label"][label_type]["shared"]
+        shared_model = Classifier(config["latent_dim"], hidden, num_classes) if shared else None
+        for modal in config["modalities"]:
+            modal_model = shared_model if shared else Classifier(config["latent_dim"], hidden, num_classes)
+            models[modal][label_type] = modal_model
+    return models
 
 def get_model(config, train_dataset):
     architectures = {frozenset(forms.split("_")): params for (forms, params) in config["architecture"].items()}
