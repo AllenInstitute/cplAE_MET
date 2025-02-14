@@ -131,8 +131,12 @@ class VariationalLoss():
                     prev_cross_loss = self.get_cross_loss(model, modal, x_dbl_masked, prev_cross_masked)
                     loss_dict[f"{modal}={prev_modal}"] = cross_loss
                     loss_dict[f"{prev_modal}={modal}"] = prev_cross_loss
-                    coupling_dict[f"{modal}={prev_modal}"] = min_var_loss(z_mean[prev_mask[mask]], prev_mean[mask[prev_mask]].detach())
-                    coupling_dict[f"{prev_modal}={modal}"] = min_var_loss(z_mean[prev_mask[mask]].detach(), prev_mean[mask[prev_mask]])
+                    if self.config["var_weights"]["couple_scale"] > 0:
+                        coupling_dict[f"{modal}={prev_modal}"] = min_var_loss(z_mean[prev_mask[mask]], prev_mean[mask[prev_mask]].detach())
+                        coupling_dict[f"{prev_modal}={modal}"] = min_var_loss(z_mean[prev_mask[mask]].detach(), prev_mean[mask[prev_mask]])
+                    else:
+                        coupling_dict[f"{modal}={prev_modal}"] = 0
+                        coupling_dict[f"{prev_modal}={modal}"] = 0
                     loss_dict[f"{modal}={prev_modal}_mutual"] = self.get_mutual_loss(model.classifiers[modal], model.classifiers[prev_modal],
                                                                                      z_mean[prev_mask[mask]].detach(), prev_mean[mask[prev_mask]])
                     loss_dict[f"{prev_modal}={modal}_mutual"] = self.get_mutual_loss(model.classifiers[modal], model.classifiers[prev_modal],
