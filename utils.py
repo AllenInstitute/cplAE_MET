@@ -109,8 +109,8 @@ def save_trace(path, model, config, dataset):
         for (modal, arm) in model.items():
             encoder_input = {}
             for form in config["formats"][modal]:
-                unpack = config["data_config"]["formats"][form]["unpack"] 
-                raw_data = torch.from_numpy(dataset.MET[form][0][:, 0] if unpack else dataset.MET[form][0])
+                unpack = False #config["data_config"]["formats"][form]["unpack"] 
+                raw_data = torch.as_tensor(dataset.multi[form][0][None])
                 encoder_input[form] = torch.nan_to_num(raw_data).to(device, dtype = torch.float32)
             encoder_trace = torch.jit.trace(arm["enc"], encoder_input, strict = False)
             decoder_input = encoder_trace(encoder_input)[0]
@@ -182,14 +182,32 @@ def get_tree_merge_map(tree_csv_path, top_node):
                 for (label, map_outs) in cuml_map.items()}
     return cuml_map
 
-def get_subclass_mapper():
-    func = np.vectorize(lambda elem: elem.split(" ")[0])
+def get_patch_subclass_func():
+    def func(multi_data, specimens):
+        cluster_label = multi_data.get_specimens(specimens, outputs = ["cluster_label"])["cluster_label"]
+        subclasses = np.vectorize(lambda elem: elem.split(" ")[0])(cluster_label)
+        return subclasses
     return func
 
 def get_t_type_func(merge):
     merge_map = get_tree_merge_map("../cplAE_MET/data/meta/tree_Mouse_ALM-VISp_2018.csv", "n3")
-    func = np.vectorize(lambda elem: merge_map[elem][merge] if elem != "nan" else "nan")
+    def func(multi_data, specimens):
+        cluster_label = multi_data.get_specimens(specimens, outputs = ["cluster_label"])["cluster_label"]
+        merged = np.vectorize(lambda elem: merge_map[elem][merge] if elem != "nan" else "nan")(cluster_label)
+        return merged
     return func 
+
+def get_ganglia_subclass_func():
+    def func(multi_data, specimens):
+        subclasses = multi_data.get_specimens(specimens, outputs = ["subclass"])["subclass"]
+        return subclasses
+    return func
+
+def get_ganglia_cluster_func():
+    def func(multi_data, specimens):
+        clusters = multi_data.get_specimens(specimens, outputs = ["cluster_label"])["cluster_label"]
+        return clusters
+    return func
 
 def get_forest_AE(base_dir, exp_path, exp_name, merge):
     exp_dict = {
@@ -232,6 +250,8 @@ def get_forest_AE(base_dir, exp_path, exp_name, merge):
     return exp_dict
 
 label_functions = {
-    "subclass": get_subclass_mapper,
-    "merge": get_t_type_func
+    "subclass": get_patch_subclass_func,
+    "merge": get_t_type_func,
+    "ganglia_subclass": get_ganglia_subclass_func,
+    "ganglia_cluster": get_ganglia_cluster_func
 }

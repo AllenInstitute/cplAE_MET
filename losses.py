@@ -161,6 +161,8 @@ class VariationalLoss():
 
     def get_prediction_loss(self, classifiers, z_mean, labels):
         is_labeled = (labels >= 0)
+        if not is_labeled.any():
+            return (torch.as_tensor(0.0), 0.0)
         log_probs = [classifier(z_mean) for classifier in classifiers.values()]
         loss = sum(torch.nn.functional.cross_entropy(log_probs[i][is_labeled[:, i]], labels[is_labeled[:, i], i])
                    for i in range(len(classifiers)))
@@ -204,15 +206,15 @@ class VariationalLoss():
                 **{f"{modal_1}_{key}": var_config[modal_1][key]*loss for (key, loss) in losses.items()}}
             for modal_2 in self.config["modalities"][i + 1:]:
                 for (first, second) in [(modal_1, modal_2), (modal_2, modal_1)]:
-                    (map_mean, map_transf) = mapper_dict[f"{first}={second}"]
+                    (map_mean, map_transf) = mapper_dict.get(f"{first}={second}", 0)
                     orig_mean = latent_dict[first][0]
                     losses = {
-                        "cross": var_config["recon_scale"]*loss_dict[f"{first}={second}"],
+                        "cross": var_config["recon_scale"]*loss_dict.get(f"{first}={second}", 0),
                         "mean_diff_reg": var_config["reg_scale"]*torch.square(map_mean - orig_mean).sum(1).mean(),
                         "map_trace_reg": var_config["reg_scale"]*map_transf.square().mean(0).sum(),
                         "map_det_reg": var_config["reg_scale"]*-2*torch.log(torch.diagonal(map_transf, 0, -2, -1)).sum(-1).mean(),
-                        "coupling": var_config["couple_scale"]*coupling_dict[f"{first}={second}"],
-                        "mutual": var_config["mutual_scale"]*loss_dict[f"{first}={second}_mutual"]}
+                        "coupling": var_config["couple_scale"]*coupling_dict.get(f"{first}={second}", 0),
+                        "mutual": var_config["mutual_scale"]*loss_dict.get(f"{first}={second}_mutual", 0)}
                     total_loss += sum([var_config[first][second][key]*loss for (key, loss) in losses.items()])
                     weighted_loss_dict = {
                         **weighted_loss_dict,

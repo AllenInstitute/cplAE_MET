@@ -30,7 +30,7 @@ def get_conv_out_size(conv_params, *initial_dims):
     return (outputs, output_padding)
 
 def get_gauss_baselines(dataset, form):
-    data = dataset.MET.query(dataset.allowed_specimen_ids)[form]
+    data = dataset.multi.query(dataset.allowed_specimen_ids)[form]
     std = np.nanstd(data, 0, keepdims = True)
     return std
 
@@ -121,7 +121,7 @@ class Enc_pca_ipfx(nn.Module):
         super().__init__()
         self.form = next(iter(forms))
         gauss_frac = architecture["std_frac"]
-        gauss_std = get_gauss_baselines(dataset, "pca-ipfx").astype("float32")
+        gauss_std = get_gauss_baselines(dataset, self.form).astype("float32")
         self.gauss_std = torch.nn.Parameter(torch.from_numpy(gauss_std*gauss_frac), False)
 
         input_dim = architecture["data_size"][0]
@@ -559,7 +559,7 @@ class Dec_Dummy(nn.Module):
         self.dummy_param = torch.nn.Parameter(torch.as_tensor(0.0))
         (self.means, self.axis_tuples) = ({}, {})
         for form in forms:
-            data = dataset.MET.query(dataset.allowed_specimen_ids, formats = [(form,)])[form]
+            data = dataset.multi.query(dataset.allowed_specimen_ids, formats = [(form,)])[form]
             transformed = trans_funcs.get(form, lambda x: x)(data)
             cleaned = np.nan_to_num(transformed)
             self.means[form] = torch.from_numpy(np.mean(cleaned, 0, keepdims = True))
@@ -619,7 +619,7 @@ def get_classifiers(config, train_dataset):
     models = torch.nn.ModuleDict({modal: torch.nn.ModuleDict() for modal in config["modalities"]})
     hidden = config["variational"]["classifier"]["hidden"]
     for (i, label_type) in enumerate(config["variational"]["classifier"]["label"]):
-        num_classes = np.unique(train_dataset.MET.labels[:, i]).max() + 1
+        num_classes = np.unique(train_dataset.multi.labels[:, i]).max() + 1
         shared = config["variational"]["classifier"]["label"][label_type]["shared"]
         shared_model = Classifier(config["latent_dim"], hidden, num_classes) if shared else None
         for modal in config["modalities"]:
@@ -658,6 +658,10 @@ modules = {
         "enc": Enc_pca_ipfx,
         "dec": Dec_pca_ipfx
         },
+    frozenset(["ephys"]): {
+        "enc": Enc_morphometric,
+        "dec": Dec_morphometric
+        },
     frozenset(["arbors"]): {
         "enc": Enc_arbors,
         "dec": Dec_arbors
@@ -670,6 +674,10 @@ modules = {
         "enc": Enc_arbors,
         "dec": Dec_arbors
     },
+    frozenset(["projections"]): {
+        "enc": Enc_logcpm,
+        "dec": Dec_logcpm
+        },
     frozenset(["morphometric", "arbors"]): {
         "enc": Enc_arbors_features,
         "dec": Dec_arbors_features

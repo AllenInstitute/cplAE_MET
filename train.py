@@ -8,10 +8,12 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 import numpy as np
 
-from data import MET_Data, DeterministicDataset, RandomizedDataset, get_collator, filter_specimens
+from multimodal_data import Multi_Data, DeterministicDataset, RandomizedDataset
 from losses import ReconstructionLoss, VariationalLoss
 import utils
 import subnetworks
+
+from conf_arbors.transform.pipeline import get_required_data_keys, transform_swc_data
 
 class EarlyStopping():
     # This class keeps track of the passed loss value and saves the model
@@ -49,6 +51,16 @@ class EarlyStopping():
 
         best_state = torch.load(self.exp_dir / "best_params.pt")
         model.load_state_dict(best_state)
+
+def get_collator(device, dtype):
+    def collate(X):
+        (X_dict, mask_dict, specimen_ids, labels) = X
+        X_torch = {modal: {form: torch.from_numpy(arr).to(device, dtype = dtype) for (form, arr) in forms.items()}
+                   for (modal, forms) in X_dict.items()}
+        mask_torch = {modal: torch.from_numpy(arr).to(device) for (modal, arr) in mask_dict.items()}
+        labels_torch = torch.from_numpy(labels).to(device)
+        return (X_torch, mask_torch, specimen_ids, labels_torch)
+    return collate
 
 def apply_mask(dct, mask):
     masked = {key: value[mask] for (key, value) in dct.items()}
@@ -91,7 +103,7 @@ def train_setup(exp_dir, config, train_dataset, val_dataset):
     #     loss_class = ContrastiveLoss
     else:
         loss_class = ReconstructionLoss
-    loss_handler = loss_class(config, train_dataset.MET, train_dataset.allowed_specimen_ids)
+    loss_handler = loss_class(config, train_dataset.multi, train_dataset.allowed_specimen_ids)
     return (model, optimizer, tb_writer, stopper, train_loader, val_loader, loss_handler)
 
 def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
@@ -138,19 +150,27 @@ def train_and_evaluate(exp_dir, config, train_dataset, val_dataset):
     return model
 
 def train_model(config, exp_dir):
-    data_keys = {form: data_config["keys"] for (form, data_config) in config["data_config"]["formats"].items()}
+    data_keys = {source: data_config.get("keys", {}) for (source, data_config) in config["data_config"]["formats"].items()}
     hdf5_paths = config["data_config"]["data_paths"]
-    met_data = MET_Data(hdf5_paths, **data_keys)
+    multi_data = Multi_Data(hdf5_paths, **data_keys)
     label_configs = config["variational"]["classifier"]["label"]
     label_funcs = {label_type: utils.label_functions[conf["name"]](*conf["args"])
                   for (label_type, conf) in label_configs.items()}
-    label_encoders = met_data.set_labels(label_funcs)
+    label_encoders = multi_data.set_labels(label_funcs)
     (num_reps, num_folds) = (config["fold_reps"], config["folds"])
+    all_formats = [val for conf in config["formats"].values() for val in conf]
+    selected_specimens = multi_data.query(**config["select"], outputs = "specimen_id")["specimen_id"]
+    if config["SWC"]["use"]:
+        data_keys = list(get_required_data_keys(config["SWC"]["pipeline"]))
+        swc_data = multi_data.query(selected_specimens, outputs = data_keys + ["specimen_id"])
+        data_sources = transform_swc_data(swc_data, config["SWC"]["pipeline"], all_formats)
+        for data_source in data_sources:
+            multi_data.add_data(**data_source)
     for rep in range(num_reps):
         if num_folds > 0:
-            indices = list(met_data.get_stratified_KFold(config["folds"], seed = config["seed"] + rep))
+            indices = list(multi_data.get_stratified_KFold(config["folds"], seed = config["seed"] + rep))
         else:
-            (train_ids, test_ids) = met_data.get_stratified_split(config["val_split"], seed = config["seed"] + rep)
+            (train_ids, test_ids) = multi_data.get_stratified_split(config["val_split"], seed = config["seed"] + rep)
             indices = [(train_ids, test_ids)]
             num_folds = 1
         fold_list = config["fold_list"] if config["fold_list"] else range(1, num_folds + 1)
@@ -160,14 +180,14 @@ def train_model(config, exp_dir):
             exp_fold_dir = exp_dir / f"fold_{fold + rep*num_folds}"
             exp_fold_dir.mkdir(exist_ok = True)
             (exp_fold_dir / "checkpoints").mkdir(exist_ok = True)
-            filtered_train_ids = filter_specimens(met_data, train_ids, config)
-            filtered_test_ids = filter_specimens(met_data, test_ids, config)
-            for (form, data_config) in config["data_config"]["formats"].items():
-                if data_config["cache"]:
-                    met_data.cache_data(form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = True)
-            unpack = {form: data_config["unpack"] for (form, data_config) in config["data_config"]["formats"].items()}
-            train_dataset = RandomizedDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_train_ids)
-            test_dataset = DeterministicDataset(met_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_test_ids)
+            filtered_train_ids = multi_data.query(train_ids, **config["select"], outputs = "specimen_id")["specimen_id"]
+            filtered_test_ids = multi_data.query(test_ids, **config["select"], outputs = "specimen_id")["specimen_id"]
+            for (source, data_config) in config["data_config"]["formats"].items():
+                for form in data_config.get("cache", []):
+                    multi_data.cache_data(source, form, np.concatenate([filtered_train_ids, filtered_test_ids]), verbose = True)
+            unpack = {} #{source: data_config.get("unpack", []) for (source, data_config) in config["data_config"]["formats"].items()}
+            train_dataset = RandomizedDataset(multi_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_train_ids)
+            test_dataset = DeterministicDataset(multi_data, config["batch_size"], config["formats"], config["modal_frac"], config["transform"], unpack, filtered_test_ids)
             np.savez_compressed(exp_fold_dir / "train_test_ids.npz", **{"train": train_ids, "test": test_ids})
             with open(exp_fold_dir / "label_encoder.pk", "wb") as target:
                 pk.dump(label_encoders, target)
