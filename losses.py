@@ -3,7 +3,7 @@ import itertools
 import torch
 from torch.nn.functional import cross_entropy, softmax
 import numpy as np
-from data import get_transformation_function
+from multimodal_data.transforms import get_transformation_function
 from sklearn.metrics import accuracy_score
 
 def powerset(iterable, min_size = 0):
@@ -267,7 +267,7 @@ class ReconstructionLoss():
         # and the cross-modal R2 loss. The modality masks are combined in order to select data for
         # pairs of modalities.
 
-        (latent_dict, recon_dict, loss_dict) = ({}, {}, {})
+        (latent_dict, recon_dict, loss_dict, acc_dict) = ({}, {}, {}, {})
         for modal in self.config["modalities"]:
             (arm, x_forms, mask) = (model[modal], X_dict[modal], mask_dict[modal])
             x_masked = apply_mask(x_forms, mask)
@@ -275,7 +275,7 @@ class ReconstructionLoss():
             xr_forms = arm["dec"](z)
             (latent_dict[modal], recon_dict[modal]) = (z, xr_forms)
             loss_dict[modal] = self.loss(x_masked, xr_forms)
-            loss_dict[f"{modal}_pred"] = self.get_prediction_loss(model, modal, z, labels[mask])
+            (loss_dict[f"{modal}_pred"], acc_dict[modal]) = self.get_prediction_loss(model.classifiers[modal], z, labels[mask])
             for (prev_modal, prev_z) in list(latent_dict.items())[:-1]:
                 (prev_x_forms, prev_mask) = (X_dict[prev_modal], mask_dict[prev_modal])
                 if torch.any(prev_mask[mask]):
@@ -288,7 +288,7 @@ class ReconstructionLoss():
                     loss_dict[f"{modal}={prev_modal}"] = self.cross(model, prev_x_masked, z_masked, prev_modal)
                     loss_dict[f"{prev_modal}={modal}"] = self.cross(model, x_dbl_masked, prev_z_masked, modal)
         weighted = sum([self.config["weights"][key]*loss_value for (key, loss_value) in loss_dict.items()])
-        return (loss_dict, weighted)
+        return (loss_dict, weighted, acc_dict)
 
     def loss(self, x_forms, xr_forms):
         loss = sum([torch.numel(x[0])*self.losses[form](x, xr_forms[form], form)
@@ -302,13 +302,20 @@ class ReconstructionLoss():
         loss = self.loss(x_forms, xr_forms)
         return loss
 
-    def get_prediction_loss(self, model, modal, z, labels):
+    def get_prediction_loss(self, classifiers, z_mean, labels):
         is_labeled = (labels >= 0)
-        log_probs = model.classifiers[modal](z)
-        loss = torch.nn.functional.cross_entropy(log_probs[is_labeled], labels[is_labeled])
-        return loss
+        if not is_labeled.any():
+            return (torch.as_tensor(0.0), 0.0)
+        log_probs = [classifier(z_mean) for classifier in classifiers.values()]
+        loss = sum(torch.nn.functional.cross_entropy(log_probs[i][is_labeled[:, i]], labels[is_labeled[:, i], i])
+                   for i in range(len(classifiers)))
+        (labels_arr, mask_arr) = (labels.numpy(force = True), is_labeled.numpy(force = True))
+        probs_arrs = [tensor.numpy(force = True) for tensor in log_probs]
+        acc = np.mean([accuracy_score(labels_arr[mask_arr[:, i], i], np.argmax(probs_arrs[i][mask_arr[:, i]], -1))
+                       for i in range(len(classifiers))])
+        return (loss, acc)
 
-    def log(self, tb_writer, train_loss, val_loss, epoch):
+    def log(self, tb_writer, train_loss, val_loss, train_acc, val_acc, epoch):
         # This function takes the training/validation losses and logs them
         # in Tensoboard. The component losses are reported without any scaling,
         # alongside the weighted sum of the losses.
@@ -322,6 +329,10 @@ class ReconstructionLoss():
             {key: 1 - value for (key, value) in train_loss.items() if "=" in key}, epoch)
         tb_writer.add_scalars("Cross-R2/Validation", 
             {key: 1 - value for (key, value) in val_loss.items() if "=" in key}, epoch)
+        tb_writer.add_scalars("Accuracy/Train", 
+            {key: loss for (key, loss) in train_acc.items()}, epoch)
+        tb_writer.add_scalars("Accuracy/Validation", 
+            {key: loss for (key, loss) in val_acc.items()}, epoch)
         tb_writer.add_scalars("Predict/Train", 
             {key: value for (key, value) in train_loss.items() if "pred" in key}, epoch)
         tb_writer.add_scalars("Predict/Validation", 

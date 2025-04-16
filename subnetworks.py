@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 
-from data import get_transformation_function
+from multimodal_data.transforms import get_transformation_function
 
 activations = {
     "linear": nn.Identity,
